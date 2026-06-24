@@ -42,6 +42,8 @@ export interface AskParams {
   maxTokens?: number;
   /** Override the KB's default generative model (multi-model routing, SPEC §9). */
   generativeModel?: string;
+  /** Generation temperature. 0 = deterministic — critical for repeatable demos. */
+  temperature?: number;
 }
 
 export interface AskResult {
@@ -231,6 +233,7 @@ export async function askArag(params: AskParams, signal?: AbortSignal): Promise<
     if (params.reranker) body.reranker = params.reranker;
     if (typeof params.maxTokens === "number") body.max_tokens = params.maxTokens;
     if (params.generativeModel) body.generative_model = params.generativeModel;
+    if (typeof params.temperature === "number") body.temperature = params.temperature;
   }
 
   const timeout = AbortSignal.timeout(config.aragTimeoutMs);

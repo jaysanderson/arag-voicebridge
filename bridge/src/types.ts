@@ -61,6 +61,8 @@ export interface ProspectConfig {
   max_tokens?: number;
   /** Override the KB's default generative model (inline path). */
   generative_model?: string;
+  /** Generation temperature (inline path). Defaults to 0 for deterministic demos. */
+  temperature?: number;
   /** Non-secret ElevenAgents identifiers (used by the client, not the bridge). */
   agent_id?: string;
   voice_id?: string;

@@ -96,6 +96,8 @@ export async function runTurn(
     askParams.prompt = buildVoicePrompt(prospect.display_name, prospect.locale);
     askParams.reranker = prospect.reranker ?? "noop";
     askParams.maxTokens = prospect.max_tokens ?? 160;
+    // Default temperature 0 → deterministic answers/handoffs, so the golden set is repeatable.
+    askParams.temperature = prospect.temperature ?? 0;
     if (prospect.generative_model) askParams.generativeModel = prospect.generative_model;
   }
 

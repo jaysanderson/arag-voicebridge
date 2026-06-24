@@ -6,6 +6,8 @@
     "locale": "en-US",
     "greeting": "Hi, thanks for calling. I can help with questions about additive manufacturing and 3D printing systems. What would you like to know?",
     "handoff_msg": "Let me hand you over to a specialist who can help with that.",
+    "reranker": "predict",
+    "temperature": 0,
     "golden_questions": [
       { "q": "Tell me about the Desktop Metal PureSinter furnace.", "expect": "answer", "must_include": ["sinter"] },
       { "q": "Which manufacturers make binder jetting metal printers?", "expect": "answer", "must_include": ["Desktop Metal"] },
