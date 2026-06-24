@@ -4,7 +4,7 @@
 #   fly secrets set ARAG_TOKEN=… ELEVENLABS_API_KEY=…
 
 app = "arag-voice-bridge"
-primary_region = "lhr"   # London — co-located with ARAG europe-1; change per audience.
+primary_region = "iad"   # US-east — co-located with the live KB (aws-us-east-2); cuts the hop.
 
 [build]
   dockerfile = "Dockerfile"

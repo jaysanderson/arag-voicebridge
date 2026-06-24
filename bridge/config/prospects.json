@@ -1,12 +1,23 @@
 {
   "progress": {
-    "display_name": "Progress (Live KB)",
+    "display_name": "Progress",
     "kb_id": "e5085695-83bc-4a48-9cde-8dc7d568f000",
     "region": "aws-us-east-2-1",
     "locale": "en-US",
-    "greeting": "Hi, thanks for calling. How can I help you today?",
+    "greeting": "Hi, thanks for calling. I can help with questions about additive manufacturing and 3D printing systems. What would you like to know?",
     "handoff_msg": "Let me hand you over to a specialist who can help with that.",
-    "golden_questions": []
+    "golden_questions": [
+      { "q": "Tell me about the Desktop Metal PureSinter furnace.", "expect": "answer", "must_include": ["sinter"] },
+      { "q": "Which manufacturers make binder jetting metal printers?", "expect": "answer", "must_include": ["Desktop Metal"] },
+      { "q": "What materials does the PureSinter furnace support?", "expect": "answer" },
+      { "q": "What printers does Desktop Metal offer?", "expect": "answer", "must_include": ["Desktop Metal"] },
+      { "q": "Tell me about Formlabs 3D printers.", "expect": "answer", "must_include": ["Formlabs"] },
+      { "q": "What is binder jetting?", "expect": "answer" },
+      { "q": "What does 3D Systems offer for metal printing?", "expect": "answer" },
+      { "q": "What is the capital of France?", "expect": "handoff" },
+      { "q": "Can you give me medical advice about a headache?", "expect": "handoff" },
+      { "q": "What's the weather forecast for tomorrow?", "expect": "handoff" }
+    ]
   },
   "tangerine": {
     "display_name": "Tangerine",
