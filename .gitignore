@@ -1,0 +1,34 @@
+# dependencies
+node_modules/
+.pnp
+.pnp.js
+
+# build output
+dist/
+build/
+*.tsbuildinfo
+
+# secrets & env — never commit these
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# logs
+logs/
+*.log
+npm-debug.log*
+
+# test / coverage
+coverage/
+.nyc_output/
+
+# editor / OS
+.DS_Store
+.idea/
+.vscode/
+*.swp
+
+# golden-eval output
+scripts/out/

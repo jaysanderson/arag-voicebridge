@@ -1,0 +1,18 @@
+{
+  "name": "arag-voice",
+  "version": "1.0.0",
+  "private": true,
+  "description": "ARAG × ElevenAgents voice demo factory — cascade voice pipeline over Progress Agentic RAG. Dependency-free: runs on bare Node (native TypeScript), no npm install.",
+  "type": "module",
+  "engines": {
+    "node": ">=22.6"
+  },
+  "comment": "npm is intentionally NOT used. Prefer the Makefile (`make test`, `make dev`, …). These script aliases call Node directly so `node --run <name>` works without npm.",
+  "scripts": {
+    "test": "node --experimental-transform-types --test bridge/test/*.test.ts",
+    "dev": "node --experimental-transform-types --watch bridge/src/index.ts",
+    "start": "node --experimental-transform-types bridge/src/index.ts",
+    "provision": "node --experimental-transform-types scripts/create-search-config.ts",
+    "eval": "node --experimental-transform-types scripts/golden-eval.ts"
+  }
+}

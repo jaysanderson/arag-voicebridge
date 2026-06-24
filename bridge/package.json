@@ -1,0 +1,16 @@
+{
+  "name": "arag-voice-bridge",
+  "version": "1.0.0",
+  "private": true,
+  "description": "ask-bridge — stateless webhook between ElevenAgents and ARAG /ask. Zero dependencies: runs on the Node standard library, TypeScript executed natively (no build, no install).",
+  "type": "module",
+  "engines": {
+    "node": ">=22.6"
+  },
+  "comment": "npm is intentionally NOT used. Run with the Makefile or the bare `node` commands below. There are no dependencies to install.",
+  "scripts": {
+    "dev": "node --experimental-transform-types --watch src/index.ts",
+    "start": "node --experimental-transform-types src/index.ts",
+    "test": "node --experimental-transform-types --test test/*.test.ts"
+  }
+}

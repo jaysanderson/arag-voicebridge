@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>ARAG Voice — Control Panel</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="brand">
+        <span class="orb" id="orb" data-state="idle"></span>
+        <div>
+          <h1>ARAG&nbsp;Voice</h1>
+          <p class="tagline">Grounded · Cited · Governed — voice over Progress Agentic RAG</p>
+        </div>
+      </div>
+      <div class="controls">
+        <label class="field">
+          <span>Prospect</span>
+          <select id="prospect"></select>
+        </label>
+        <label class="field">
+          <span>Mode</span>
+          <select id="mode">
+            <option value="assist">Agent-assist (whisper)</option>
+            <option value="selfserve">Self-serve voice</option>
+          </select>
+        </label>
+        <button id="runGolden" class="btn ghost" title="Run this prospect's golden set">
+          Run golden set
+        </button>
+      </div>
+    </header>
+
+    <main class="grid">
+      <!-- LEFT: voice console + ask box -->
+      <section class="panel console">
+        <div class="console-head">
+          <h2 id="consoleTitle">Voice console</h2>
+          <span class="pill" id="connState">offline</span>
+        </div>
+
+        <div id="voiceMount" class="voice-mount">
+          <!-- ElevenLabs ConvAI widget mounts here when an agent_id is configured -->
+          <p class="hint" id="voiceHint">
+            Select a prospect with a configured <code>agent_id</code> to start a live voice call,
+            or use the ask box below to drive the bridge directly (agent-assist view).
+          </p>
+        </div>
+
+        <form id="askForm" class="ask">
+          <input
+            id="askInput"
+            type="text"
+            placeholder="Type a caller question to send to ARAG…"
+            autocomplete="off"
+          />
+          <button class="btn primary" type="submit">Ask</button>
+        </form>
+
+        <p class="greeting" id="greeting"></p>
+      </section>
+
+      <!-- RIGHT: transcript with citations + latency -->
+      <section class="panel transcript">
+        <div class="console-head">
+          <h2>Transcript &amp; citations</h2>
+          <button id="clearLog" class="btn ghost small">Clear</button>
+        </div>
+        <div id="log" class="log" aria-live="polite"></div>
+      </section>
+    </main>
+
+    <!-- BOTTOM: live metrics strip (SPEC §13) -->
+    <footer class="metrics" id="metricsStrip">
+      <div class="metric"><span class="k">turns</span><span class="v" id="mTurns">—</span></div>
+      <div class="metric"><span class="k">p50 total</span><span class="v" id="mP50">—</span></div>
+      <div class="metric"><span class="k">p95 total</span><span class="v" id="mP95">—</span></div>
+      <div class="metric"><span class="k">p50 1st-token</span><span class="v" id="mFt">—</span></div>
+      <div class="metric"><span class="k">handoff rate</span><span class="v" id="mHo">—</span></div>
+      <div class="metric"><span class="k">citation cov.</span><span class="v" id="mCov">—</span></div>
+      <div class="metric"><span class="k">bridge</span><span class="v" id="mBridge">—</span></div>
+    </footer>
+
+    <script src="config.js"></script>
+    <script src="app.js" type="module"></script>
+  </body>
+</html>

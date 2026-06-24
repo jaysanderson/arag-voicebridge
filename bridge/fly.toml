@@ -1,0 +1,44 @@
+# Fly.io deployment for ask-bridge (SPEC §12).
+# Pick `primary_region` nearest the demo audience AND the ARAG region to minimise the
+# extra network hop (SPEC §9.6, §16). Set secrets out-of-band, never in this file:
+#   fly secrets set ARAG_TOKEN=… ELEVENLABS_API_KEY=…
+
+app = "arag-voice-bridge"
+primary_region = "lhr"   # London — co-located with ARAG europe-1; change per audience.
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  NODE_ENV = "production"
+  PORT = "8080"
+  ARAG_REGION_DEFAULT = "europe-1"
+  ARAG_TIMEOUT_MS = "6000"
+  AGENT_TOOL_TIMEOUT_MS = "8000"
+  MAX_HISTORY_TURNS = "6"
+  LOG_LEVEL = "info"
+  # ALLOWED_ORIGINS must list the control-panel origin(s); set via `fly secrets`/`fly config`
+  # if it varies per environment.
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  auto_stop_machines = "suspend"
+  auto_start_machines = true
+  min_machines_running = 1   # keep one warm so the first demo turn isn't a cold start.
+
+  [http_service.concurrency]
+    type = "requests"
+    soft_limit = 40
+    hard_limit = 60
+
+[[http_service.checks]]
+  interval = "15s"
+  timeout = "2s"
+  grace_period = "5s"
+  method = "GET"
+  path = "/healthz"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "512mb"
