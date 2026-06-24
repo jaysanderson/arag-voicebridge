@@ -32,7 +32,7 @@ User  ──audio──▶  ElevenAgent  ──POST /v1/voice-answer──▶  a
 |---|---|
 | [`bridge/`](bridge) | **`ask-bridge`** — the stateless Node/TypeScript service. The only meaningful code we write. |
 | [`bridge/config/prospects.json`](bridge/config/prospects.json) | The **config registry** — one entry per prospect. The only thing that changes per prospect. |
-| [`client/`](client) | Static **control panel + voice console** (prospect selector, transcript, citation chips, latency strip). |
+| [`bridge/public/`](bridge/public) | Static **control panel + voice console** (prospect selector, transcript, citation chips, latency strip). Served by the bridge at `/`. |
 | [`scripts/`](scripts) | `create-search-config` (provision an ARAG stored `ask` config) and `golden-eval` (the golden-question gate). |
 | [`docs/`](docs) | [SPEC](docs/SPEC.md), [ONBOARDING](docs/ONBOARDING.md), [voice-answer prompt](docs/voice-answer-prompt.md), [ElevenAgent template](docs/elevenagent-template.md), [implementation notes/deviations](docs/IMPLEMENTATION.md). |
 | [`Makefile`](Makefile) | The npm-free task runner: `make test`, `make dev`, `make client`, `make eval`, `make provision`. |
@@ -52,22 +52,27 @@ cp .env.example bridge/.env        # fill in ARAG_TOKEN etc.
 # 2. Verify it works — runs the full test suite (43 tests, zero deps)
 make test
 
-# 3. Run the bridge (hot-reload)
-make dev                           # http://localhost:8080
+# 3. Run the bridge (it also serves the web UI at /)
+make dev                           # http://localhost:8080  ← open this in a browser
 
-# 4. Serve the control panel
-make client                        # http://localhost:5173
-
-# 5. Smoke-test the bridge directly
+# 4. Smoke-test the bridge directly
 curl -s localhost:8080/v1/voice-answer \
   -H 'content-type: application/json' \
   -d '{"prospect":"tangerine","question":"How do I change my plan?","conversation_id":"c1","history":[]}'
 ```
 
-Other targets: `make start` (production), `make eval P=tangerine` (golden-set gate),
-`make provision P=tangerine ARGS="--dry-run"` (provision an ARAG stored config). Run `make help`
+Other targets: `make start` (production), `make eval P=progress` (golden-set gate),
+`make provision P=progress ARGS="--dry-run"` (provision an ARAG stored config). Run `make help`
 for the full list. Everything also works as plain `node --experimental-transform-types …` if you
 prefer not to use `make`.
+
+### Live deployment
+
+The bridge is deployed on Fly and **serves the web UI at its own URL**:
+
+- **Web interface:** <https://arag-voice-bridge.fly.dev>
+- It's wired to a live KB (the `progress` prospect) and passes its golden-set gate 10/10.
+- To add **voice** (ElevenLabs), follow [docs/ELEVENLABS_SETUP.md](docs/ELEVENLABS_SETUP.md).
 
 See [docs/ONBOARDING.md](docs/ONBOARDING.md) for the ~30–60 min per-prospect ritual.
 

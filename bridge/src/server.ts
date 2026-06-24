@@ -13,6 +13,9 @@
  */
 
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
+import { readFile } from "node:fs/promises";
+import { fileURLToPath } from "node:url";
+import { dirname, resolve, normalize, extname } from "node:path";
 import { config } from "./config.ts";
 import { log } from "./logger.ts";
 import {
@@ -26,6 +29,39 @@ import { recordTurn, snapshot } from "./metrics.ts";
 import type { VoiceAnswerRequest, ProspectConfig } from "./types.ts";
 
 const MAX_BODY_BYTES = 64 * 1024;
+
+// Static web UI (the control panel) lives in bridge/public and is served at the root,
+// so the deployed bridge URL *is* the interface — no separate static server needed.
+const PUBLIC_DIR = resolve(dirname(fileURLToPath(import.meta.url)), "..", "public");
+
+const CONTENT_TYPES: Record<string, string> = {
+  ".html": "text/html; charset=utf-8",
+  ".js": "text/javascript; charset=utf-8",
+  ".css": "text/css; charset=utf-8",
+  ".json": "application/json; charset=utf-8",
+  ".svg": "image/svg+xml",
+  ".png": "image/png",
+  ".ico": "image/x-icon",
+};
+
+/**
+ * Serve a file from PUBLIC_DIR. Path-traversal safe: the resolved path must stay inside
+ * PUBLIC_DIR. Returns true if it served something, false if not found (caller 404s).
+ */
+async function serveStatic(urlPath: string, res: ServerResponse): Promise<boolean> {
+  const rel = urlPath === "/" ? "/index.html" : urlPath;
+  const filePath = normalize(resolve(PUBLIC_DIR, "." + rel));
+  if (filePath !== PUBLIC_DIR && !filePath.startsWith(PUBLIC_DIR + "/")) return false; // traversal
+  try {
+    const data = await readFile(filePath);
+    const type = CONTENT_TYPES[extname(filePath)] ?? "application/octet-stream";
+    res.writeHead(200, { "Content-Type": type, "Cache-Control": "no-cache" });
+    res.end(data);
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 /** Strip secrets/internal IDs before sending registry data to the browser. */
 function publicProspect(key: string, c: ProspectConfig) {
@@ -202,6 +238,9 @@ export function buildServer(): BridgeServer {
 
       return sendJson(res, 200, result);
     }
+
+    // --- static web UI (GET only) — served from bridge/public ---
+    if (method === "GET" && (await serveStatic(path, res))) return;
 
     // --- fallthrough ---
     sendJson(res, 404, { error: `no route for ${method} ${path}` });

@@ -6,7 +6,8 @@
 #   make test                 run the bridge test suite
 #   make dev                  run the bridge with --watch (hot reload)
 #   make start                run the bridge (production mode)
-#   make client               serve the control panel at http://localhost:5173
+#   make ui                   the bridge serves the web UI itself — just run `make dev`
+#                             and open http://localhost:8080 (or the deployed URL)
 #   make eval P=tangerine     run a prospect's golden set against a running bridge
 #   make provision P=tangerine ARGS="--reranker noop --model <m>"   provision ARAG config
 #   make provision P=tangerine ARGS="--dry-run"                     preview without sending
@@ -14,7 +15,7 @@
 NODE := node --experimental-transform-types
 BRIDGE := bridge
 
-.PHONY: help install test dev start client eval provision
+.PHONY: help install test dev start eval provision
 
 help:
 	@grep -E '^#   make' Makefile | sed 's/^# //'
@@ -32,9 +33,6 @@ dev:
 
 start:
 	cd $(BRIDGE) && $(NODE) src/index.ts
-
-client:
-	cd client && python3 -m http.server 5173
 
 eval:
 	@test -n "$(P)" || (echo "Usage: make eval P=<prospect>"; exit 1)
