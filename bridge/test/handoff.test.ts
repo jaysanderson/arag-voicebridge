@@ -12,6 +12,16 @@ describe("decideHandoff", () => {
     expect(decideHandoff("handoff: nope", 3).handoff).toBe(true);
   });
 
+  it("hands off on ARAG's stock not-found phrasing (belt-and-braces)", () => {
+    const d = decideHandoff("Not enough data to answer this.", 5);
+    expect(d.handoff).toBe(true);
+    expect(d.reason).toBe("not-found-phrase");
+  });
+
+  it("does NOT false-handoff on a real answer that merely contains 'find'", () => {
+    expect(decideHandoff("You can find your plan in the portal.", 2).handoff).toBe(false);
+  });
+
   it("hands off on empty answer", () => {
     expect(decideHandoff("", 4)).toEqual({ handoff: true, reason: "empty-answer" });
   });

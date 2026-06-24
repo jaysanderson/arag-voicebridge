@@ -30,11 +30,18 @@ export interface AskParams {
   query: string;
   context: { author: Author; text: string }[];
   /**
-   * Name of a stored `ask` search_configuration. Optional: when omitted, ARAG uses its
-   * defaults (the bridge still voice-shapes the answer and extracts citations). Provision
-   * one per prospect to apply the voice-answer prompt + governance filters (SPEC §6.3.2).
+   * Name of a stored `ask` search_configuration. Optional: when set, it takes precedence and
+   * the inline fields below are NOT sent (the stored config owns prompt/filters/models).
    */
   searchConfiguration?: string;
+  /** Inline {system,user} prompt (SPEC §8) — used when there's no stored config. */
+  prompt?: { system: string; user: string };
+  /** Reranker: "noop" (fast default) | "predict" (cross-encoder, slower). */
+  reranker?: string;
+  /** Cap generated tokens — bounds generation latency (SPEC §9). */
+  maxTokens?: number;
+  /** Override the KB's default generative model (multi-model routing, SPEC §9). */
+  generativeModel?: string;
 }
 
 export interface AskResult {
@@ -215,8 +222,16 @@ export async function askArag(params: AskParams, signal?: AbortSignal): Promise<
     features: ["semantic", "keyword"],
     citations: true,
   };
-  // Only send a stored config if the prospect has one; otherwise ARAG uses its defaults.
-  if (params.searchConfiguration) body.search_configuration = params.searchConfiguration;
+  if (params.searchConfiguration) {
+    // Stored config wins; it owns prompt/filters/models. Send nothing inline.
+    body.search_configuration = params.searchConfiguration;
+  } else {
+    // Inline config (verified against the live KB): grounding prompt + latency levers.
+    if (params.prompt) body.prompt = params.prompt;
+    if (params.reranker) body.reranker = params.reranker;
+    if (typeof params.maxTokens === "number") body.max_tokens = params.maxTokens;
+    if (params.generativeModel) body.generative_model = params.generativeModel;
+  }
 
   const timeout = AbortSignal.timeout(config.aragTimeoutMs);
   // Combine the caller's signal (barge-in) with our timeout.

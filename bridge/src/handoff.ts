@@ -15,8 +15,21 @@ export const HANDOFF_SENTINEL = "HANDOFF:";
 export interface HandoffDecision {
   handoff: boolean;
   /** Why — for logging/metrics, never spoken. */
-  reason?: "sentinel" | "empty-answer" | "no-retrieval";
+  reason?: "sentinel" | "not-found-phrase" | "empty-answer" | "no-retrieval";
 }
+
+/**
+ * Belt-and-braces: ARAG's stock "no answer" phrasings, in case a turn ever runs without the
+ * voice prompt (e.g. a stored config that omits it) and the model emits its default refusal
+ * instead of the sentinel. Conservative prefixes only, to avoid false handoffs on real answers.
+ */
+const NOT_FOUND_PREFIXES = [
+  "not enough data to answer",
+  "i don't have enough",
+  "i do not have enough",
+  "i couldn't find",
+  "i could not find",
+];
 
 /**
  * Decide whether this turn must hand off to a human.
@@ -30,6 +43,12 @@ export function decideHandoff(answerText: string, retrievalCount: number): Hando
   // 1. Explicit sentinel from the prompt — the primary, deterministic path.
   if (trimmed.toUpperCase().startsWith(HANDOFF_SENTINEL)) {
     return { handoff: true, reason: "sentinel" };
+  }
+
+  // 1b. Belt-and-braces: ARAG's stock refusal phrasings (only if the prompt wasn't applied).
+  const lower = trimmed.toLowerCase();
+  if (NOT_FOUND_PREFIXES.some((p) => lower.startsWith(p))) {
+    return { handoff: true, reason: "not-found-phrase" };
   }
 
   // 2. No grounded content at all → can't have answered.

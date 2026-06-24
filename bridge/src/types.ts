@@ -53,8 +53,14 @@ export interface ProspectConfig {
   display_name: string;
   kb_id: string;
   region: string;
-  /** Stored ask search_configuration name. Optional — omit to use ARAG defaults. */
+  /** Stored ask search_configuration name. Optional — omit to use the inline config below. */
   ask_config?: string;
+  /** Reranker for the inline path: "noop" (default) | "predict". */
+  reranker?: string;
+  /** Max generated tokens for the inline path (default 160). */
+  max_tokens?: number;
+  /** Override the KB's default generative model (inline path). */
+  generative_model?: string;
   /** Non-secret ElevenAgents identifiers (used by the client, not the bridge). */
   agent_id?: string;
   voice_id?: string;

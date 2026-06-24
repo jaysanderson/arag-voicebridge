@@ -20,6 +20,7 @@ import { guardInput, guardOutput } from "./safety.ts";
 import { shapeForVoice } from "./voiceShape.ts";
 import { extractCitations } from "./citations.ts";
 import { decideHandoff } from "./handoff.ts";
+import { buildVoicePrompt } from "./voicePrompt.ts";
 
 export interface PipelineDeps {
   /** Injectable ARAG caller (defaults to the real client). */
@@ -86,8 +87,17 @@ export async function runTurn(
     region,
     query: req.question.trim(),
     context: buildContext(req.history, config.maxHistoryTurns),
-    searchConfiguration: prospect.ask_config,
   };
+  if (prospect.ask_config) {
+    // Stored config path (SPEC §6.3.2) — the config owns prompt/filters/models.
+    askParams.searchConfiguration = prospect.ask_config;
+  } else {
+    // Inline path (verified against the live KB): the grounding voice prompt + latency levers.
+    askParams.prompt = buildVoicePrompt(prospect.display_name, prospect.locale);
+    askParams.reranker = prospect.reranker ?? "noop";
+    askParams.maxTokens = prospect.max_tokens ?? 160;
+    if (prospect.generative_model) askParams.generativeModel = prospect.generative_model;
+  }
 
   // Step 4 — call ARAG and stream. Failures → graceful handoff (SPEC §6.2.3).
   let result: AskResult;
