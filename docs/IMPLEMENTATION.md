@@ -39,10 +39,26 @@ the brief's illustrative wording; they're recorded here so nothing is a silent s
   handoff (no dead air), and `/metrics` aggregation.
 - `make provision … --dry-run` and `make eval` both execute on bare Node.
 
-## What needs a live environment (M0)
+## M0 — verified live against a real KB ✅
 
-- Real ARAG `/ask` against a populated KB — to confirm the exact NDJSON item-type names and
-  `search_configurations` key paths (§18). Only `arag.ts` and `create-search-config.ts` touch
-  those shapes.
-- Real ElevenAgent clone wired to the deployed bridge — to validate latency (S1), barge-in (S2),
-  turn-taking (S3), and the holding phrase end to end.
+Deployed to Fly (`arag-voice-bridge`, region `iad`) and run against a live Progress KB
+(additive-manufacturing content). Confirmed and pinned into the code:
+
+- **ARAG `/ask` NDJSON shapes** (the §18 drift risk). Real schema, now handled in `arag.ts`:
+  - answers: `{ item: { type: "answer", text } }`
+  - retrieval: `{ item: { type: "retrieval", results: { resources: { <id>: { title, fields:{…paragraphs:{…score}} } } } } }`
+  - citations: `{ item: { type: "citations", citations: {…} } }`
+  - plus `status`, `augmented_context`, `metadata` items (ignored).
+- **Grounding recipe** that survives a demo (driven inline per-prospect, no stored config needed):
+  `prompt:{system,user}` with the grounding rules in the **system** slot + `reranker:"predict"`
+  + `max_tokens:160` + **`temperature:0`**. This gives deterministic, repeatable answers and a
+  clean refusal (HANDOFF sentinel) on off-domain questions instead of hallucinating from world
+  knowledge.
+- **Golden gate**: the `progress` prospect's 10-question set passes 10/10, identically across
+  back-to-back runs (temperature 0). p50 ≈ 2.5 s, p95 ≈ 3.7 s end-to-end from `iad`.
+
+### Still needs a live environment
+
+- Real ElevenAgent clone wired to `https://arag-voice-bridge.fly.dev/v1/voice-answer` — to validate
+  spoken latency (S1), barge-in (S2), turn-taking (S3), and the holding phrase end to end.
+- Author ≥ 20 golden questions per prospect (SPEC §13) before a customer-facing demo.
