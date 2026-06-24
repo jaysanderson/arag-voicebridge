@@ -31,6 +31,35 @@ describe("interpretLine (tolerant NDJSON parsing)", () => {
     expect(out.retrieval[0]).toMatchObject({ title: "Doc A", url: "https://a", score: 0.8 });
   });
 
+  it("extracts Progress retrieval resources (item.results.resources + paragraph score)", () => {
+    const out = interpretLine({
+      item: {
+        type: "retrieval",
+        results: {
+          resources: {
+            r1: {
+              title: "Desktop Metal — Puresinter",
+              fields: { "/u/link": { paragraphs: { p1: { score: 0.42 }, p2: { score: 0.31 } } } },
+            },
+          },
+        },
+      },
+    });
+    expect(out.retrieval).toHaveLength(1);
+    expect(out.retrieval[0]).toMatchObject({ title: "Desktop Metal — Puresinter", score: 0.42 });
+  });
+
+  it("extracts a populated citations map (item.citations)", () => {
+    const out = interpretLine({
+      item: { type: "citations", citations: { c1: { title: "Cited Doc", url: "https://c" } } },
+    });
+    expect(out.retrieval[0]).toMatchObject({ title: "Cited Doc", url: "https://c" });
+  });
+
+  it("ignores an empty citations map", () => {
+    expect(interpretLine({ item: { type: "citations", citations: {} } }).retrieval).toEqual([]);
+  });
+
   it("extracts retrieval items from a nested resources map", () => {
     const out = interpretLine({
       resources: { id1: { title: "Doc B", uri: "https://b", rank_score: 0.5 } },

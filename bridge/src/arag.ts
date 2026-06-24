@@ -64,6 +64,70 @@ export function askUrl(region: string, kbId: string): string {
   return `https://${region}.rag.progress.cloud/api/v1/kb/${kbId}/ask`;
 }
 
+/** Best (max) paragraph score across a Progress resource's fields. */
+function bestParagraphScore(r: Record<string, unknown>): number {
+  let best = 0;
+  const fields = r.fields as Record<string, unknown> | undefined;
+  if (fields && typeof fields === "object") {
+    for (const f of Object.values(fields)) {
+      const ps = (f as Record<string, unknown> | null)?.paragraphs as
+        | Record<string, unknown>
+        | undefined;
+      if (ps && typeof ps === "object") {
+        for (const p of Object.values(ps)) {
+          const s = Number((p as Record<string, unknown>)?.score);
+          if (Number.isFinite(s) && s > best) best = s;
+        }
+      }
+    }
+  }
+  return best;
+}
+
+/** Best-effort source URL for a resource (link resources carry it under origin/url). */
+function resourceUrl(r: Record<string, unknown>): string | undefined {
+  const origin = r.origin as Record<string, unknown> | undefined;
+  const meta = r.metadata as Record<string, unknown> | undefined;
+  const u =
+    (r.url as string) ??
+    (r.uri as string) ??
+    (origin?.url as string) ??
+    (origin?.uri as string) ??
+    (meta?.url as string) ??
+    undefined;
+  return typeof u === "string" && u ? u : undefined;
+}
+
+/** Map a Progress "resource" object (from results.resources) to a citation item. */
+function resourceToItem(c: unknown): RetrievalItem | undefined {
+  if (!c || typeof c !== "object") return undefined;
+  const r = c as Record<string, unknown>;
+  const title = ((r.title ?? r.label ?? r.name ?? r.slug) as string | undefined)?.trim();
+  const url = resourceUrl(r)?.trim();
+  const para = bestParagraphScore(r);
+  const fallback = Number(r.score ?? r.rank_score ?? r.bm25);
+  const score = para || (Number.isFinite(fallback) ? fallback : 0);
+  if (!title && !url) return undefined;
+  return { title: title || undefined, url: url || undefined, score };
+}
+
+/** Map a flat retrieval/citation candidate (array form) to a citation item. */
+function simpleItem(c: unknown): RetrievalItem | undefined {
+  if (!c || typeof c !== "object") return undefined;
+  const r = c as Record<string, unknown>;
+  const title = ((r.title ?? r.label ?? r.name) as string | undefined)?.trim();
+  const meta = r.metadata as Record<string, unknown> | undefined;
+  const url = ((r.url ?? r.uri ?? meta?.url) as string | undefined)?.trim();
+  const scoreRaw = r.score ?? r.rank_score ?? r.bm25;
+  const score = typeof scoreRaw === "number" ? scoreRaw : Number(scoreRaw);
+  if (!title && !url) return undefined;
+  return {
+    title: title || undefined,
+    url: url || undefined,
+    score: Number.isFinite(score) ? score : 0,
+  };
+}
+
 /**
  * Interpret one parsed NDJSON object into the things we care about. Tolerant by design:
  * it probes several plausible key paths so minor schema differences don't break a turn.
@@ -97,40 +161,39 @@ export function interpretLine(obj: unknown): {
   }
 
   // --- retrieval items (for citations) ---
-  // Shapes: {type:"retrieval", results:[...]} | {find:{resources:{...}}} | {paragraphs:[...]}
-  const candidates: unknown[] = [];
-  if (Array.isArray(node.results)) candidates.push(...node.results);
-  if (Array.isArray(node.paragraphs)) candidates.push(...node.paragraphs);
-  if (Array.isArray(o.retrieval)) candidates.push(...(o.retrieval as unknown[]));
-  if (Array.isArray(o.citations)) candidates.push(...(o.citations as unknown[]));
+  // Progress shape: { item:{ type:"retrieval", results:{ resources:{ <id>:{ title, fields:{…paragraphs:{…score}} } } } } }
+  //                 and { item:{ type:"citations", citations:{ <id>:… } } }.
+  // Tolerant fallbacks kept for { resources:{…} } | { find:{ resources:{…} } } and array forms.
+  const resourceMaps: Record<string, unknown>[] = [];
+  const results = node.results as Record<string, unknown> | undefined;
+  if (results && typeof results === "object" && !Array.isArray(results)) {
+    const rr = results.resources as Record<string, unknown> | undefined;
+    if (rr && typeof rr === "object") resourceMaps.push(rr);
+  }
+  if (node.resources && typeof node.resources === "object" && !Array.isArray(node.resources))
+    resourceMaps.push(node.resources as Record<string, unknown>);
+  const find = o.find as Record<string, unknown> | undefined;
+  if (find?.resources && typeof find.resources === "object")
+    resourceMaps.push(find.resources as Record<string, unknown>);
+  if (node.citations && typeof node.citations === "object" && !Array.isArray(node.citations))
+    resourceMaps.push(node.citations as Record<string, unknown>);
 
-  // Nested resources map: { resources: { id: { title, ... } } }
-  const resources = (node.resources ?? (o.find as Record<string, unknown>)?.resources) as
-    | Record<string, unknown>
-    | undefined;
-  if (resources && typeof resources === "object") {
-    candidates.push(...Object.values(resources));
+  for (const map of resourceMaps) {
+    for (const r of Object.values(map)) {
+      const item = resourceToItem(r);
+      if (item) retrieval.push(item);
+    }
   }
 
-  for (const c of candidates) {
-    if (typeof c !== "object" || c === null) continue;
-    const r = c as Record<string, unknown>;
-    const title =
-      (r.title as string) ?? (r.label as string) ?? (r.name as string) ?? undefined;
-    const url =
-      (r.url as string) ??
-      (r.uri as string) ??
-      ((r.metadata as Record<string, unknown>)?.url as string) ??
-      undefined;
-    const scoreRaw = r.score ?? r.rank_score ?? r.bm25 ?? undefined;
-    const score = typeof scoreRaw === "number" ? scoreRaw : Number(scoreRaw);
-    if (title || url) {
-      retrieval.push({
-        title: title?.trim(),
-        url: url?.trim(),
-        score: Number.isFinite(score) ? score : 0,
-      });
-    }
+  // Array forms: results[] | paragraphs[] | retrieval[] | citations[].
+  const arr: unknown[] = [];
+  if (Array.isArray(node.results)) arr.push(...node.results);
+  if (Array.isArray(node.paragraphs)) arr.push(...node.paragraphs);
+  if (Array.isArray(o.retrieval)) arr.push(...(o.retrieval as unknown[]));
+  if (Array.isArray(o.citations)) arr.push(...(o.citations as unknown[]));
+  for (const c of arr) {
+    const item = simpleItem(c);
+    if (item) retrieval.push(item);
   }
 
   return { answerChunk, retrieval };
