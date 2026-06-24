@@ -20,10 +20,11 @@ const REQUIRED_FIELDS: (keyof ProspectConfig)[] = [
   "display_name",
   "kb_id",
   "region",
-  "ask_config",
   "locale",
   "greeting",
   "handoff_msg",
+  // `ask_config` is intentionally optional — omit it to use ARAG defaults until a stored
+  // search configuration has been provisioned for the prospect.
 ];
 
 function validate(reg: unknown): Registry {

@@ -53,7 +53,8 @@ export interface ProspectConfig {
   display_name: string;
   kb_id: string;
   region: string;
-  ask_config: string;
+  /** Stored ask search_configuration name. Optional — omit to use ARAG defaults. */
+  ask_config?: string;
   /** Non-secret ElevenAgents identifiers (used by the client, not the bridge). */
   agent_id?: string;
   voice_id?: string;

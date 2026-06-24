@@ -1,4 +1,13 @@
 {
+  "progress": {
+    "display_name": "Progress (Live KB)",
+    "kb_id": "e5085695-83bc-4a48-9cde-8dc7d568f000",
+    "region": "aws-us-east-2-1",
+    "locale": "en-US",
+    "greeting": "Hi, thanks for calling. How can I help you today?",
+    "handoff_msg": "Let me hand you over to a specialist who can help with that.",
+    "golden_questions": []
+  },
   "tangerine": {
     "display_name": "Tangerine",
     "kb_id": "df8b4c24-2807-4888-ad6c-ae97357a638b",

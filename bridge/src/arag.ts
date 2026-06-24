@@ -29,7 +29,12 @@ export interface AskParams {
   region: string;
   query: string;
   context: { author: Author; text: string }[];
-  searchConfiguration: string;
+  /**
+   * Name of a stored `ask` search_configuration. Optional: when omitted, ARAG uses its
+   * defaults (the bridge still voice-shapes the answer and extracts citations). Provision
+   * one per prospect to apply the voice-answer prompt + governance filters (SPEC §6.3.2).
+   */
+  searchConfiguration?: string;
 }
 
 export interface AskResult {
@@ -140,14 +145,15 @@ export function interpretLine(obj: unknown): {
  */
 export async function askArag(params: AskParams, signal?: AbortSignal): Promise<AskResult> {
   const url = askUrl(params.region, params.kbId);
-  const body = {
+  const body: Record<string, unknown> = {
     query: params.query,
     context: params.context,
     // SPEC §6.3.1: relations excluded for speed; never add unless a demo needs NER/graph.
     features: ["semantic", "keyword"],
-    search_configuration: params.searchConfiguration,
     citations: true,
   };
+  // Only send a stored config if the prospect has one; otherwise ARAG uses its defaults.
+  if (params.searchConfiguration) body.search_configuration = params.searchConfiguration;
 
   const timeout = AbortSignal.timeout(config.aragTimeoutMs);
   // Combine the caller's signal (barge-in) with our timeout.
