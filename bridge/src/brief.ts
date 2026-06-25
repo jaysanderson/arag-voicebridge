@@ -105,6 +105,31 @@ export interface BriefRequest {
   model?: string;
 }
 
+/** Render a previous brief object as brace-free "Label: value" lines for the prompt. */
+function prevBriefToText(prev: unknown): string {
+  if (!prev || typeof prev !== "object") return "";
+  const o = prev as Record<string, unknown>;
+  const lines: string[] = [];
+  const str = (label: string, v: unknown) => {
+    if (typeof v === "string" && v.trim()) lines.push(`${label}: ${v.trim()}`);
+  };
+  const arr = (label: string, v: unknown) => {
+    if (Array.isArray(v)) {
+      const items = v.filter((x) => x && String(x).trim()).map((x) => String(x).trim());
+      if (items.length) lines.push(`${label}: ${items.join("; ")}`);
+    }
+  };
+  str("Topic", o.topic);
+  str("Caller profile", o.caller_profile);
+  str("Their goal", o.their_goal);
+  str("Stage", o.stage);
+  str("Summary", o.summary);
+  arr("Key points", o.key_points);
+  arr("Suggested questions", o.suggested_questions);
+  arr("Suggested answers", o.suggested_answers);
+  return lines.join("\n");
+}
+
 export interface BriefResult {
   brief: unknown | null;
   citations: Citation[];
@@ -133,12 +158,15 @@ export async function runBrief(
   const guard = guardInput(req.text);
   if (!guard.ok) return { brief: null, citations: [], latency_ms: latency() };
 
-  const transcript = (req.transcript ?? "").slice(-MAX_TRANSCRIPT_CHARS);
-  const prevJson = req.prev ? JSON.stringify(req.prev).slice(0, MAX_PREV_CHARS) : "";
+  // ARAG's prompt templater only allows {context}/{question}; any other curly braces 400.
+  // So strip braces from injected text and render the previous brief as brace-free lines.
+  const stripBraces = (s: string) => s.replace(/[{}]/g, "");
+  const transcript = stripBraces((req.transcript ?? "").slice(-MAX_TRANSCRIPT_CHARS));
+  const prevText = req.prev ? stripBraces(prevBriefToText(req.prev)).slice(0, MAX_PREV_CHARS) : "";
   const user =
     "Knowledge base context:\n{context}\n\n" +
     (transcript ? `Conversation so far (most recent last):\n${transcript}\n\n` : "") +
-    (prevJson ? `Your brief so far (JSON) — refine and extend it, do not restart:\n${prevJson}\n\n` : "") +
+    (prevText ? `Your brief so far — refine and extend it, do not restart:\n${prevText}\n\n` : "") +
     "Most recent words from the conversation: {question}\n\nReturn the updated brief.";
 
   const askParams: AskParams = {
