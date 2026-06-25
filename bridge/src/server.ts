@@ -31,6 +31,7 @@ import { resolveSecretId, startLiteSession, LiveAvatarError } from "./liveavatar
 import { mintScribeToken, ScribeError } from "./scribe.ts";
 import { runBrief } from "./brief.ts";
 import { fetchModels } from "./models.ts";
+import { fetchVoices } from "./voices.ts";
 import type { VoiceAnswerRequest, ProspectConfig } from "./types.ts";
 
 const MAX_BODY_BYTES = 64 * 1024;
@@ -246,6 +247,16 @@ export function buildServer(): BridgeServer {
       });
 
       return sendJson(res, 200, result);
+    }
+
+    // --- Available ElevenLabs voices (powers the Call voice dropdown) ---
+    if (method === "GET" && path === "/v1/voices") {
+      if (!scribeEnabled()) return sendJson(res, 503, { error: "voices not configured" });
+      try {
+        return sendJson(res, 200, { voices: await fetchVoices() });
+      } catch (err) {
+        return sendJson(res, 502, { error: (err as Error).message });
+      }
     }
 
     // --- Available generative models for a prospect's KB (powers the model dropdown) ---

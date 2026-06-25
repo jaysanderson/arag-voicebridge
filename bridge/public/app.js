@@ -11,6 +11,7 @@ const log = el("log");
 let prospects = [];
 let current = null;
 let selectedModel = ""; // "" = KB default; otherwise an ARAG generative_model id
+let selectedVoice = ""; // "" = agent default; otherwise an ElevenLabs voice_id (Call mode)
 
 function setOrb(state) {
   orb.dataset.state = state;
@@ -61,6 +62,24 @@ function selectProspect(key) {
   setMode(defaultModeFor(current));
   mountVoice(current);
   loadModels(current);
+}
+
+// Populate the voice dropdown from the ElevenLabs account (voices are account-wide).
+async function loadVoices() {
+  const sel = el("voice");
+  try {
+    const res = await fetch(`${BRIDGE_URL}/v1/voices`);
+    if (!res.ok) return; // 503 when no EL key — leave just "Agent default"
+    const { voices } = await res.json();
+    for (const v of voices || []) {
+      const o = document.createElement("option");
+      o.value = v.id;
+      o.textContent = v.category && v.category !== "premade" ? `${v.name} ★` : v.name;
+      sel.appendChild(o);
+    }
+  } catch {
+    /* leave just Agent default */
+  }
 }
 
 // Populate the model dropdown from the prospect's KB (its available generative models).
@@ -140,8 +159,10 @@ function mountVoice(p) {
   if (hasRealAgent(p)) {
     setConn("connecting", "connecting voice…");
     // Render the widget element + a caption that frames the agent-assist story.
+    // override-voice-id applies the selected voice (agent must allow the voice_id override).
+    const voiceAttr = selectedVoice ? ` override-voice-id="${escapeHtml(selectedVoice)}"` : "";
     mount.innerHTML =
-      `<elevenlabs-convai agent-id="${escapeHtml(p.agent_id)}"></elevenlabs-convai>` +
+      `<elevenlabs-convai agent-id="${escapeHtml(p.agent_id)}"${voiceAttr}></elevenlabs-convai>` +
       `<p class="hint voice-caption">🎙️ Click the <b>talk</b> button to start a voice call with ` +
       `<b>${escapeHtml(p.display_name)}</b> (allow your mic when asked). Answers are grounded in ` +
       `the knowledge base; the <b>transcript &amp; citations</b> panel and the <b>live metrics</b> ` +
@@ -731,6 +752,11 @@ async function pollMetrics() {
 // ---- wiring ----------------------------------------------------------------
 el("prospect").addEventListener("change", (e) => selectProspect(e.target.value));
 el("model").addEventListener("change", (e) => (selectedModel = e.target.value));
+el("voice").addEventListener("change", (e) => {
+  selectedVoice = e.target.value;
+  // Re-mount the Call widget so the new voice applies at the next session start.
+  if (viewMode === "voice" && current && current.agent_id) mountVoice(current);
+});
 el("askForm").addEventListener("submit", (e) => {
   e.preventDefault();
   const v = el("askInput").value.trim();
@@ -745,5 +771,6 @@ el("avatarBtn").addEventListener("click", () => (avatarRoom ? stopAvatar() : sta
 el("listenBtn").addEventListener("click", () => (listenWS ? stopListen() : startListen()));
 
 loadProspects();
+loadVoices();
 pollMetrics();
 setInterval(pollMetrics, METRICS_POLL_MS);
