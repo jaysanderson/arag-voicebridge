@@ -227,16 +227,43 @@ function stopAvatar() {
   if (viewMode === "avatar") setOrb("idle");
 }
 
-// ---- Ambient "Listen" mode (Scribe STT → silent KB cards) ------------------
+// ---- Ambient "Listen" mode (Scribe STT → continuously updated live brief) ---
+// Continuously transcribes and, off the ROLLING transcript (no waiting for you to pause),
+// keeps a single live brief refreshed with the most relevant knowledge as you talk.
 let listenWS = null;
 let listenCtx = null;
 let listenStream = null;
 let listenNodes = null;
-let lastHeard = "";
-let interimTimer = null;
+let committedText = "";
+let partialText = "";
+let querying = false;
+let lastQueryNorm = "";
+let lastFireAt = 0;
+let briefLoop = null;
+const briefSources = new Map();
+
+const WINDOW_WORDS = 28; // size of the rolling window we keep relevant to "now"
+const KEEP_WORDS = 60; // committed-buffer cap
+const MIN_QUERY_GAP_MS = 1500; // don't fire faster than ARAG can answer
+const TICK_MS = 600; // how often we consider refreshing
 
 function listenStatus(msg) {
   el("listenStatus").textContent = msg;
+}
+function lastWords(str, n) {
+  const w = (str || "").trim().split(/\s+/).filter(Boolean);
+  return w.slice(-n).join(" ");
+}
+function normWords(str) {
+  return (str || "").toLowerCase().replace(/[^a-z0-9 ]/g, " ").replace(/\s+/g, " ").trim();
+}
+function jaccard(a, b) {
+  const A = new Set(a.split(" ").filter(Boolean));
+  const B = new Set(b.split(" ").filter(Boolean));
+  if (!A.size || !B.size) return 0;
+  let inter = 0;
+  for (const x of A) if (B.has(x)) inter++;
+  return inter / (A.size + B.size - inter);
 }
 
 function floatTo16BitPCM(input) {
@@ -315,15 +342,19 @@ async function startListen() {
       el("listenBtn").textContent = "Stop listening";
       el("listenBtn").disabled = false;
       setOrb("idle");
+      // Continuously consider refreshing the brief off the rolling transcript.
+      briefLoop = setInterval(tickBrief, TICK_MS);
     };
     ws.onmessage = (ev) => {
       let m;
       try { m = JSON.parse(ev.data); } catch { return; }
       if (m.message_type === "partial_transcript") {
-        el("listenInterim").textContent = m.text || "…";
+        partialText = m.text || "";
+        el("listenInterim").textContent = partialText || "…";
       } else if (m.message_type === "committed_transcript") {
+        committedText = lastWords(`${committedText} ${m.text || ""}`, KEEP_WORDS);
+        partialText = "";
         el("listenInterim").textContent = "…";
-        onUtterance(m.text || "");
       } else if (m.message_type === "error" || m.message_type === "auth_error" || m.message_type === "quota_exceeded") {
         listenStatus(`error: ${m.error || m.message_type}`);
       }
@@ -345,7 +376,7 @@ async function startListen() {
 }
 
 function stopListen() {
-  if (interimTimer) { clearTimeout(interimTimer); interimTimer = null; }
+  if (briefLoop) { clearInterval(briefLoop); briefLoop = null; }
   if (listenWS) {
     const ws = listenWS;
     listenWS = null;
@@ -357,55 +388,79 @@ function stopListen() {
   }
   if (listenCtx) { try { listenCtx.close(); } catch {} listenCtx = null; }
   if (listenStream) { listenStream.getTracks().forEach((t) => t.stop()); listenStream = null; }
-  lastHeard = "";
+  committedText = "";
+  partialText = "";
+  lastQueryNorm = "";
+  querying = false;
   const btn = el("listenBtn");
   if (btn) { btn.textContent = "Start listening"; btn.disabled = false; }
   el("listenInterim").textContent = "…";
   if (viewMode === "listen") listenStatus("Idle.");
 }
 
-// A finalized utterance → look it up; pop a card only when the KB actually has something.
-async function onUtterance(text) {
-  const q = (text || "").trim();
-  const norm = q.toLowerCase().replace(/[^a-z0-9 ]/g, "").trim();
-  if (norm.split(/\s+/).length < 3) return; // ignore filler / very short
-  if (norm === lastHeard || (lastHeard && norm.includes(lastHeard)) ) return; // dedupe
-  lastHeard = norm;
+// Runs on a timer while listening: refresh the brief off the rolling transcript window.
+// Fires WHILE you're still talking (uses partials), not only when you pause.
+function tickBrief() {
+  if (querying || !listenWS) return;
+  const window = lastWords(`${committedText} ${partialText}`, WINDOW_WORDS);
+  const norm = normWords(window);
+  if (norm.split(" ").filter(Boolean).length < 4) return; // need a little context
+  if (Date.now() - lastFireAt < MIN_QUERY_GAP_MS) return; // rate-limit to ARAG's pace
+  if (norm === lastQueryNorm) return; // nothing new said
+  if (lastQueryNorm && jaccard(norm, lastQueryNorm) > 0.85) return; // not enough changed
+  fireBriefQuery(window, norm);
+}
+
+async function fireBriefQuery(window, norm) {
+  querying = true;
+  lastFireAt = Date.now();
+  lastQueryNorm = norm;
   setOrb("thinking");
+  el("briefMeta").textContent = "updating…";
   try {
     const res = await fetch(`${BRIDGE_URL}/v1/voice-answer`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ prospect: current.key, question: q, conversation_id: "listen", history: [] }),
+      body: JSON.stringify({ prospect: current.key, question: window, conversation_id: "listen", history: [] }),
     });
     const data = await res.json();
-    if (!data.handoff && data.citations && data.citations.length) {
-      renderListenCard(q, data);
+    if (!data.handoff && data.answer) {
+      updateBrief(data);
       setOrb("speaking");
-      setTimeout(() => setOrb("idle"), 1200);
     } else {
+      el("briefMeta").textContent = "listening… (nothing relevant yet)";
       setOrb("idle");
     }
   } catch {
+    el("briefMeta").textContent = "listening…";
     setOrb("idle");
+  } finally {
+    querying = false;
   }
 }
 
-function renderListenCard(heard, data) {
-  const div = document.createElement("div");
-  div.className = "turn listen-card";
-  const cites = (data.citations || [])
+// Update the single live brief IN PLACE; accumulate a deduped source rail.
+function updateBrief(data) {
+  el("briefBody").textContent = data.answer;
+  for (const c of data.citations || []) {
+    const key = (c.title || "").toLowerCase();
+    if (!key) continue;
+    const prev = briefSources.get(key);
+    briefSources.set(key, {
+      title: c.title,
+      url: c.url,
+      score: Math.max(c.score || 0, prev ? prev.score : 0),
+      seen: Date.now(),
+    });
+  }
+  const top = [...briefSources.values()].sort((a, b) => b.seen - a.seen).slice(0, 8);
+  el("briefSources").innerHTML = top
     .map((c) => {
       const href = c.url ? escapeHtml(c.url) : "#";
-      return `<a class="cite" href="${href}" target="_blank" rel="noopener">📄 ${escapeHtml(c.title)} <span class="score">${c.score.toFixed(2)}</span></a>`;
+      return `<a class="cite" href="${href}" target="_blank" rel="noopener">📄 ${escapeHtml(c.title)}</a>`;
     })
     .join("");
-  div.innerHTML =
-    `<div class="q">🎧 heard: “${escapeHtml(heard)}”</div>` +
-    `<div class="a">${escapeHtml(data.answer)}</div>` +
-    (cites ? `<div class="cites">${cites}</div>` : "") +
-    `<div class="latstrip"><span>total <b>${data.latency_ms.total}ms</b></span></div>`;
-  log.prepend(div);
+  el("briefMeta").textContent = "updated live";
 }
 
 // ---- ask one question via the bridge ---------------------------------------

@@ -145,8 +145,15 @@ elevenlabs-convai { display: block; }
 }
 .listen-label { font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.6px; color: var(--muted); }
 .listen-interim { font-size: 14px; color: var(--text); }
-.listen-card { border-color: var(--accent-2); }
-.listen-card .q { color: var(--accent-2); }
+/* Live brief — the single, continuously-updated information panel */
+.live-brief {
+  border: 1px solid var(--accent-2); border-radius: 10px; background: var(--panel-2);
+  padding: 14px; display: flex; flex-direction: column; gap: 10px;
+}
+.brief-head { display: flex; align-items: baseline; justify-content: space-between; }
+.brief-title { font-size: 13px; font-weight: 600; color: var(--accent-2); letter-spacing: 0.3px; }
+.brief-meta { font-size: 11px; color: var(--muted); }
+.brief-body { font-size: 16px; line-height: 1.55; color: var(--text); min-height: 48px; transition: opacity 0.15s; }
 code { background: var(--chip); padding: 1px 6px; border-radius: 5px; font-size: 12px; }
 
 .ask { display: flex; gap: 8px; }

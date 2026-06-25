@@ -62,7 +62,7 @@
           </div>
         </div>
 
-        <!-- Ambient "Listen" pane — continuous STT (Scribe), silent, pops KB cards -->
+        <!-- Ambient "Listen" pane — continuous STT (Scribe), silent, live brief -->
         <div id="listenPane" class="listen-pane" hidden>
           <div class="listen-controls">
             <button id="listenBtn" class="btn primary">Start listening</button>
@@ -72,10 +72,17 @@
             <span class="listen-label">hearing</span>
             <span id="listenInterim" class="listen-interim">…</span>
           </div>
-          <p class="hint">
-            I listen continuously and stay silent — relevant knowledge-base cards pop into the
-            transcript panel as you speak. Nothing is spoken back.
-          </p>
+          <div id="liveBrief" class="live-brief">
+            <div class="brief-head">
+              <span class="brief-title">Live brief</span>
+              <span id="briefMeta" class="brief-meta"></span>
+            </div>
+            <div id="briefBody" class="brief-body">
+              Start listening — I'll keep this updated, hands-free, with the most relevant
+              knowledge as you talk. I stay silent; nothing is spoken back.
+            </div>
+            <div id="briefSources" class="cites"></div>
+          </div>
         </div>
 
         <form id="askForm" class="ask">
