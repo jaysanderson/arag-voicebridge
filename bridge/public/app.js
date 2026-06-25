@@ -176,12 +176,18 @@ function mountVoice(p) {
   }
 }
 
-async function startCall() {
+function isVoiceOverrideError(msg) {
+  return /voice_id|override/i.test(String(msg || ""));
+}
+
+// useVoiceOverride lets us retry without the voice override if the agent forbids it.
+async function startCall(useVoiceOverride = true) {
   if (!current || !current.agent_id || callConvo) return;
   const btn = el("callBtn");
   btn.disabled = true;
   callStatus("connecting…");
   setOrb("thinking");
+  const applyingVoice = Boolean(selectedVoice && useVoiceOverride);
   try {
     const { Conversation } = await loadSdk();
     const opts = {
@@ -191,7 +197,7 @@ async function startCall() {
         btn.textContent = "End call";
         btn.disabled = false;
         el("muteBtn").hidden = false;
-        callStatus("connected — listening");
+        callStatus(applyingVoice ? "connected — listening (custom voice)" : "connected — listening");
         setConn("ready", "in call");
         setOrb("idle");
       },
@@ -202,13 +208,27 @@ async function startCall() {
         callStatus(mode === "speaking" ? "agent speaking…" : "listening…");
       },
       onMessage: ({ message, source }) => renderCallMessage(source, message),
-      onError: (m) => callStatus(`error: ${m}`),
+      onError: (m) => {
+        // Agent forbids the voice override → reconnect with the default voice instead of failing.
+        if (applyingVoice && isVoiceOverrideError(m)) {
+          callStatus("selected voice isn't enabled on the agent — using default voice");
+          endCall().then(() => startCall(false));
+        } else {
+          callStatus(`error: ${m}`);
+        }
+      },
     };
-    // Apply the selected voice (agent must allow the voice_id override).
-    if (selectedVoice) opts.overrides = { tts: { voiceId: selectedVoice } };
+    if (applyingVoice) opts.overrides = { tts: { voiceId: selectedVoice } };
     callConvo = await Conversation.startSession(opts);
   } catch (err) {
-    callStatus(`error: ${err.message || err}`);
+    const msg = err && err.message ? err.message : String(err);
+    if (applyingVoice && isVoiceOverrideError(msg)) {
+      callStatus("selected voice isn't enabled on the agent — using default voice");
+      callConvo = null;
+      startCall(false); // retry without the override
+      return;
+    }
+    callStatus(`error: ${msg}`);
     setOrb("idle");
     btn.disabled = false;
     callConvo = null;

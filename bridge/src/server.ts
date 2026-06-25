@@ -61,7 +61,8 @@ async function serveStatic(urlPath: string, res: ServerResponse): Promise<boolea
   try {
     const data = await readFile(filePath);
     const type = CONTENT_TYPES[extname(filePath)] ?? "application/octet-stream";
-    res.writeHead(200, { "Content-Type": type, "Cache-Control": "no-cache" });
+    // no-store so the demo UI is always fresh (avoids a stale app.js lingering in the browser).
+    res.writeHead(200, { "Content-Type": type, "Cache-Control": "no-store" });
     res.end(data);
     return true;
   } catch {
