@@ -55,10 +55,34 @@ function selectProspect(key) {
   el("consoleTitle").textContent = `Voice console — ${current.display_name}`;
   el("greeting").textContent = current.greeting ? `Greeting: “${current.greeting}”` : "";
   stopAvatar(); // tear down any avatar session from the previous prospect
-  // Show the Voice/Avatar switch only when this prospect's avatar is ready (creds + avatar_id).
-  el("modeSwitch").hidden = !current.avatar_ready;
-  setMode("voice");
+  stopListen();
+  buildModeSwitch(current);
+  setMode(defaultModeFor(current));
   mountVoice(current);
+}
+
+// Available modes for a prospect, in display order.
+function modesFor(p) {
+  const modes = [];
+  if (p.agent_id) modes.push({ key: "voice", label: "Voice" });
+  if (p.scribe_ready) modes.push({ key: "listen", label: "Listen" });
+  if (p.avatar_ready) modes.push({ key: "avatar", label: "Avatar" });
+  if (modes.length === 0) modes.push({ key: "voice", label: "Voice" }); // text-only fallback
+  return modes;
+}
+function defaultModeFor(p) {
+  return modesFor(p)[0].key;
+}
+function buildModeSwitch(p) {
+  const modes = modesFor(p);
+  const sw = el("modeSwitch");
+  sw.innerHTML = modes
+    .map((m) => `<button data-mode="${m.key}" class="seg">${m.label}</button>`)
+    .join("");
+  sw.hidden = modes.length < 2;
+  for (const b of sw.querySelectorAll(".seg")) {
+    b.addEventListener("click", () => setMode(b.dataset.mode));
+  }
 }
 
 // ---- ElevenLabs ConvAI widget (live audio) ---------------------------------
@@ -113,7 +137,7 @@ function mountVoice(p) {
   }
 }
 
-// ---- Voice / Avatar mode switch --------------------------------------------
+// ---- Voice / Listen / Avatar mode switch -----------------------------------
 let viewMode = "voice";
 function setMode(mode) {
   viewMode = mode;
@@ -122,7 +146,9 @@ function setMode(mode) {
   }
   el("voiceMount").hidden = mode !== "voice";
   el("avatarPane").hidden = mode !== "avatar";
-  if (mode === "voice") stopAvatar();
+  el("listenPane").hidden = mode !== "listen";
+  if (mode !== "avatar") stopAvatar();
+  if (mode !== "listen") stopListen();
 }
 
 // ---- LiveAvatar (HeyGen) video pane over LiveKit ---------------------------
@@ -199,6 +225,187 @@ function stopAvatar() {
   if (btn) { btn.textContent = "Start avatar call"; btn.disabled = false; }
   avatarStatus("Idle.");
   if (viewMode === "avatar") setOrb("idle");
+}
+
+// ---- Ambient "Listen" mode (Scribe STT → silent KB cards) ------------------
+let listenWS = null;
+let listenCtx = null;
+let listenStream = null;
+let listenNodes = null;
+let lastHeard = "";
+let interimTimer = null;
+
+function listenStatus(msg) {
+  el("listenStatus").textContent = msg;
+}
+
+function floatTo16BitPCM(input) {
+  const out = new Int16Array(input.length);
+  for (let i = 0; i < input.length; i++) {
+    const s = Math.max(-1, Math.min(1, input[i]));
+    out[i] = s < 0 ? s * 0x8000 : s * 0x7fff;
+  }
+  return out;
+}
+function downsample(buffer, inRate, outRate) {
+  if (outRate >= inRate) return buffer;
+  const ratio = inRate / outRate;
+  const newLen = Math.round(buffer.length / ratio);
+  const result = new Float32Array(newLen);
+  let oR = 0;
+  let oB = 0;
+  while (oR < newLen) {
+    const next = Math.round((oR + 1) * ratio);
+    let acc = 0;
+    let cnt = 0;
+    for (let i = oB; i < next && i < buffer.length; i++) {
+      acc += buffer[i];
+      cnt++;
+    }
+    result[oR++] = cnt ? acc / cnt : 0;
+    oB = next;
+  }
+  return result;
+}
+function bytesToBase64(bytes) {
+  let bin = "";
+  const chunk = 0x8000;
+  for (let i = 0; i < bytes.length; i += chunk) {
+    bin += String.fromCharCode.apply(null, bytes.subarray(i, i + chunk));
+  }
+  return btoa(bin);
+}
+
+async function startListen() {
+  if (!current || listenWS) return;
+  el("listenBtn").disabled = true;
+  listenStatus("getting token…");
+  setOrb("thinking");
+  try {
+    // 1. Mint a single-use Scribe token via the bridge (key stays server-side).
+    const tr = await fetch(`${BRIDGE_URL}/v1/scribe-token`);
+    if (!tr.ok) throw new Error((await tr.json().catch(() => ({}))).error || `token HTTP ${tr.status}`);
+    const { token } = await tr.json();
+
+    // 2. Mic.
+    listenStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    listenCtx = new (window.AudioContext || window.webkitAudioContext)();
+    const inRate = listenCtx.sampleRate;
+    const source = listenCtx.createMediaStreamSource(listenStream);
+    const processor = listenCtx.createScriptProcessor(4096, 1, 1);
+    const mute = listenCtx.createGain();
+    mute.gain.value = 0; // avoid echoing the mic to the speakers
+    source.connect(processor);
+    processor.connect(mute);
+    mute.connect(listenCtx.destination);
+    listenNodes = { source, processor, mute };
+
+    // 3. Scribe realtime WebSocket (VAD auto-commits utterances).
+    const qs = new URLSearchParams({
+      model_id: "scribe_v2_realtime",
+      audio_format: "pcm_16000",
+      commit_strategy: "vad",
+      token,
+    });
+    const ws = new WebSocket(`wss://api.elevenlabs.io/v1/speech-to-text/realtime?${qs}`);
+    listenWS = ws;
+
+    ws.onopen = () => {
+      listenStatus("listening — speak naturally");
+      el("listenBtn").textContent = "Stop listening";
+      el("listenBtn").disabled = false;
+      setOrb("idle");
+    };
+    ws.onmessage = (ev) => {
+      let m;
+      try { m = JSON.parse(ev.data); } catch { return; }
+      if (m.message_type === "partial_transcript") {
+        el("listenInterim").textContent = m.text || "…";
+      } else if (m.message_type === "committed_transcript") {
+        el("listenInterim").textContent = "…";
+        onUtterance(m.text || "");
+      } else if (m.message_type === "error" || m.message_type === "auth_error" || m.message_type === "quota_exceeded") {
+        listenStatus(`error: ${m.error || m.message_type}`);
+      }
+    };
+    ws.onerror = () => listenStatus("connection error");
+    ws.onclose = () => { if (listenWS) stopListen(); };
+
+    processor.onaudioprocess = (e) => {
+      if (!listenWS || listenWS.readyState !== WebSocket.OPEN) return;
+      const f32 = downsample(e.inputBuffer.getChannelData(0), inRate, 16000);
+      const b64 = bytesToBase64(new Uint8Array(floatTo16BitPCM(f32).buffer));
+      listenWS.send(JSON.stringify({ message_type: "input_audio_chunk", audio_base_64: b64, commit: false }));
+    };
+  } catch (err) {
+    listenStatus(`error: ${err.message}`);
+    setOrb("idle");
+    stopListen();
+  }
+}
+
+function stopListen() {
+  if (interimTimer) { clearTimeout(interimTimer); interimTimer = null; }
+  if (listenWS) {
+    const ws = listenWS;
+    listenWS = null;
+    try { ws.close(); } catch {}
+  }
+  if (listenNodes) {
+    try { listenNodes.processor.disconnect(); listenNodes.source.disconnect(); listenNodes.mute.disconnect(); } catch {}
+    listenNodes = null;
+  }
+  if (listenCtx) { try { listenCtx.close(); } catch {} listenCtx = null; }
+  if (listenStream) { listenStream.getTracks().forEach((t) => t.stop()); listenStream = null; }
+  lastHeard = "";
+  const btn = el("listenBtn");
+  if (btn) { btn.textContent = "Start listening"; btn.disabled = false; }
+  el("listenInterim").textContent = "…";
+  if (viewMode === "listen") listenStatus("Idle.");
+}
+
+// A finalized utterance → look it up; pop a card only when the KB actually has something.
+async function onUtterance(text) {
+  const q = (text || "").trim();
+  const norm = q.toLowerCase().replace(/[^a-z0-9 ]/g, "").trim();
+  if (norm.split(/\s+/).length < 3) return; // ignore filler / very short
+  if (norm === lastHeard || (lastHeard && norm.includes(lastHeard)) ) return; // dedupe
+  lastHeard = norm;
+  setOrb("thinking");
+  try {
+    const res = await fetch(`${BRIDGE_URL}/v1/voice-answer`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ prospect: current.key, question: q, conversation_id: "listen", history: [] }),
+    });
+    const data = await res.json();
+    if (!data.handoff && data.citations && data.citations.length) {
+      renderListenCard(q, data);
+      setOrb("speaking");
+      setTimeout(() => setOrb("idle"), 1200);
+    } else {
+      setOrb("idle");
+    }
+  } catch {
+    setOrb("idle");
+  }
+}
+
+function renderListenCard(heard, data) {
+  const div = document.createElement("div");
+  div.className = "turn listen-card";
+  const cites = (data.citations || [])
+    .map((c) => {
+      const href = c.url ? escapeHtml(c.url) : "#";
+      return `<a class="cite" href="${href}" target="_blank" rel="noopener">📄 ${escapeHtml(c.title)} <span class="score">${c.score.toFixed(2)}</span></a>`;
+    })
+    .join("");
+  div.innerHTML =
+    `<div class="q">🎧 heard: “${escapeHtml(heard)}”</div>` +
+    `<div class="a">${escapeHtml(data.answer)}</div>` +
+    (cites ? `<div class="cites">${cites}</div>` : "") +
+    `<div class="latstrip"><span>total <b>${data.latency_ms.total}ms</b></span></div>`;
+  log.prepend(div);
 }
 
 // ---- ask one question via the bridge ---------------------------------------
@@ -370,10 +577,9 @@ el("askForm").addEventListener("submit", (e) => {
 });
 el("runGolden").addEventListener("click", runGolden);
 el("clearLog").addEventListener("click", () => (log.innerHTML = ""));
-for (const b of document.querySelectorAll("#modeSwitch .seg")) {
-  b.addEventListener("click", () => setMode(b.dataset.mode));
-}
+// Mode-switch segments get their listeners in buildModeSwitch() per prospect.
 el("avatarBtn").addEventListener("click", () => (avatarRoom ? stopAvatar() : startAvatar()));
+el("listenBtn").addEventListener("click", () => (listenWS ? stopListen() : startListen()));
 
 loadProspects();
 pollMetrics();

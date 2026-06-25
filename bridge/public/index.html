@@ -39,10 +39,8 @@
         <div class="console-head">
           <h2 id="consoleTitle">Voice console</h2>
           <div class="head-right">
-            <div id="modeSwitch" class="segmented" hidden>
-              <button data-mode="voice" class="seg active">Voice</button>
-              <button data-mode="avatar" class="seg">Avatar</button>
-            </div>
+            <!-- Segments are built in app.js from each prospect's capabilities. -->
+            <div id="modeSwitch" class="segmented" hidden></div>
             <span class="pill" id="connState">offline</span>
           </div>
         </div>
@@ -62,6 +60,22 @@
             <button id="avatarBtn" class="btn primary">Start avatar call</button>
             <span class="hint" id="avatarStatus">Idle.</span>
           </div>
+        </div>
+
+        <!-- Ambient "Listen" pane — continuous STT (Scribe), silent, pops KB cards -->
+        <div id="listenPane" class="listen-pane" hidden>
+          <div class="listen-controls">
+            <button id="listenBtn" class="btn primary">Start listening</button>
+            <span class="hint" id="listenStatus">Idle.</span>
+          </div>
+          <div class="listen-live">
+            <span class="listen-label">hearing</span>
+            <span id="listenInterim" class="listen-interim">…</span>
+          </div>
+          <p class="hint">
+            I listen continuously and stay silent — relevant knowledge-base cards pop into the
+            transcript panel as you speak. Nothing is spoken back.
+          </p>
         </div>
 
         <form id="askForm" class="ask">

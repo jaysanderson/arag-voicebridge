@@ -16,7 +16,7 @@ import { createServer, type IncomingMessage, type ServerResponse } from "node:ht
 import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { dirname, resolve, normalize, extname } from "node:path";
-import { config, avatarEnabled } from "./config.ts";
+import { config, avatarEnabled, scribeEnabled } from "./config.ts";
 import { log } from "./logger.ts";
 import {
   getRegistry,
@@ -28,6 +28,7 @@ import { runTurn } from "./pipeline.ts";
 import { recordTurn, snapshot } from "./metrics.ts";
 import { mintLiveKitToken, newRoomName } from "./livekit.ts";
 import { resolveSecretId, startLiteSession, LiveAvatarError } from "./liveavatar.ts";
+import { mintScribeToken, ScribeError } from "./scribe.ts";
 import type { VoiceAnswerRequest, ProspectConfig } from "./types.ts";
 
 const MAX_BODY_BYTES = 64 * 1024;
@@ -78,6 +79,8 @@ function publicProspect(key: string, c: ProspectConfig) {
     golden_questions: c.golden_questions ?? [],
     // True when the LiveAvatar pane can run for this prospect (creds set + avatar_id present).
     avatar_ready: avatarEnabled() && Boolean(c.avatar_id),
+    // True when the ambient "Listen" mode can run (an ElevenLabs key is set for Scribe STT).
+    scribe_ready: scribeEnabled(),
     // kb_id / ask_config / region / avatar_id are deliberately omitted — the browser never needs them.
   };
 }
@@ -241,6 +244,19 @@ export function buildServer(): BridgeServer {
       });
 
       return sendJson(res, 200, result);
+    }
+
+    // --- Scribe single-use token for the ambient Listen mode (browser STT) ---
+    if (method === "GET" && path === "/v1/scribe-token") {
+      if (!scribeEnabled()) return sendJson(res, 503, { error: "scribe not configured" });
+      try {
+        const token = await mintScribeToken();
+        return sendJson(res, 200, { token });
+      } catch (err) {
+        const status = err instanceof ScribeError ? (err.status ?? 502) : 500;
+        log.error("scribe.token.fail", { message: (err as Error).message });
+        return sendJson(res, status, { error: `scribe token failed: ${(err as Error).message}` });
+      }
     }
 
     // --- LiveAvatar session: mint a LiveKit room + viewer token, start a LITE session ---

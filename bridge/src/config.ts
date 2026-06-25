@@ -67,6 +67,7 @@ export interface AppConfig {
   liveAvatarSessionPath: string;
   liveAvatarElevenLabsSecretId: string;
   elevenLabsApiKey: string;
+  elevenLabsApiBase: string;
   livekitUrl: string;
   livekitApiKey: string;
   livekitApiSecret: string;
@@ -91,6 +92,7 @@ export const config: AppConfig = {
   liveAvatarSessionPath: str("LIVEAVATAR_SESSION_PATH", "/sessions"),
   liveAvatarElevenLabsSecretId: str("LIVEAVATAR_ELEVENLABS_SECRET_ID"),
   elevenLabsApiKey: str("ELEVENLABS_API_KEY"),
+  elevenLabsApiBase: str("ELEVENLABS_API_BASE", "https://api.elevenlabs.io"),
   livekitUrl: str("LIVEKIT_URL"),
   livekitApiKey: str("LIVEKIT_API_KEY"),
   livekitApiSecret: str("LIVEKIT_API_SECRET"),
@@ -100,6 +102,11 @@ export const config: AppConfig = {
  * Is the LiveAvatar pane configured? It stays dormant (endpoint 503s, UI hides the toggle)
  * until the LiveKit creds, a LiveAvatar key, and an ElevenLabs key/secret are all present.
  */
+/** Is the ambient "Listen" mode available? Needs only an ElevenLabs key (Scribe STT). */
+export function scribeEnabled(): boolean {
+  return Boolean(config.elevenLabsApiKey);
+}
+
 export function avatarEnabled(): boolean {
   return Boolean(
     config.liveAvatarApiKey &&

@@ -134,6 +134,19 @@ elevenlabs-convai { display: block; }
   border-radius: 10px; object-fit: cover;
 }
 .avatar-controls { display: flex; align-items: center; gap: 12px; }
+
+/* Ambient Listen pane */
+.listen-pane[hidden] { display: none; }
+.listen-pane { display: flex; flex-direction: column; gap: 10px; margin-bottom: 12px; }
+.listen-controls { display: flex; align-items: center; gap: 12px; }
+.listen-live {
+  display: flex; align-items: baseline; gap: 8px; min-height: 22px;
+  border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; background: var(--panel-2);
+}
+.listen-label { font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.6px; color: var(--muted); }
+.listen-interim { font-size: 14px; color: var(--text); }
+.listen-card { border-color: var(--accent-2); }
+.listen-card .q { color: var(--accent-2); }
 code { background: var(--chip); padding: 1px 6px; border-radius: 5px; font-size: 12px; }
 
 .ask { display: flex; gap: 8px; }
