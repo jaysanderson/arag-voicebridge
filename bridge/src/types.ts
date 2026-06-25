@@ -66,6 +66,8 @@ export interface ProspectConfig {
   /** Non-secret ElevenAgents identifiers (used by the client, not the bridge). */
   agent_id?: string;
   voice_id?: string;
+  /** HeyGen/LiveAvatar avatar id for this prospect's video avatar (LiveAvatar pane). */
+  avatar_id?: string;
   locale: string;
   greeting: string;
   handoff_msg: string;

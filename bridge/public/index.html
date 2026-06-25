@@ -38,7 +38,13 @@
       <section class="panel console">
         <div class="console-head">
           <h2 id="consoleTitle">Voice console</h2>
-          <span class="pill" id="connState">offline</span>
+          <div class="head-right">
+            <div id="modeSwitch" class="segmented" hidden>
+              <button data-mode="voice" class="seg active">Voice</button>
+              <button data-mode="avatar" class="seg">Avatar</button>
+            </div>
+            <span class="pill" id="connState">offline</span>
+          </div>
         </div>
 
         <div id="voiceMount" class="voice-mount">
@@ -47,6 +53,15 @@
             Select a prospect with a configured <code>agent_id</code> to start a live voice call,
             or use the ask box below to drive the bridge directly (agent-assist view).
           </p>
+        </div>
+
+        <!-- LiveAvatar (HeyGen) video pane — shown when avatar mode is selected -->
+        <div id="avatarPane" class="avatar-pane" hidden>
+          <video id="avatarVideo" class="avatar-video" autoplay playsinline></video>
+          <div class="avatar-controls">
+            <button id="avatarBtn" class="btn primary">Start avatar call</button>
+            <span class="hint" id="avatarStatus">Idle.</span>
+          </div>
         </div>
 
         <form id="askForm" class="ask">

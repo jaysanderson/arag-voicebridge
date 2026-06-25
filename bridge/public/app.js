@@ -54,6 +54,10 @@ function selectProspect(key) {
   if (!current) return;
   el("consoleTitle").textContent = `Voice console — ${current.display_name}`;
   el("greeting").textContent = current.greeting ? `Greeting: “${current.greeting}”` : "";
+  stopAvatar(); // tear down any avatar session from the previous prospect
+  // Show the Voice/Avatar switch only when this prospect's avatar is ready (creds + avatar_id).
+  el("modeSwitch").hidden = !current.avatar_ready;
+  setMode("voice");
   mountVoice(current);
 }
 
@@ -107,6 +111,94 @@ function mountVoice(p) {
     )}</b> yet. Add one to the registry to enable the voice widget. Meanwhile, use the ask box ` +
       `below — it drives the same bridge → ARAG path (the agent-assist “whisper” view).</p>`;
   }
+}
+
+// ---- Voice / Avatar mode switch --------------------------------------------
+let viewMode = "voice";
+function setMode(mode) {
+  viewMode = mode;
+  for (const b of document.querySelectorAll("#modeSwitch .seg")) {
+    b.classList.toggle("active", b.dataset.mode === mode);
+  }
+  el("voiceMount").hidden = mode !== "voice";
+  el("avatarPane").hidden = mode !== "avatar";
+  if (mode === "voice") stopAvatar();
+}
+
+// ---- LiveAvatar (HeyGen) video pane over LiveKit ---------------------------
+let livekitPromise = null;
+function ensureLiveKit() {
+  if (livekitPromise) return livekitPromise;
+  livekitPromise = new Promise((resolve) => {
+    const s = document.createElement("script");
+    s.src = "https://cdn.jsdelivr.net/npm/livekit-client/dist/livekit-client.umd.min.js";
+    s.async = true;
+    s.onload = () => resolve(window.LivekitClient || window.LiveKitClient || null);
+    s.onerror = () => resolve(null);
+    document.head.appendChild(s);
+  });
+  return livekitPromise;
+}
+
+let avatarRoom = null;
+function avatarStatus(msg) {
+  el("avatarStatus").textContent = msg;
+}
+
+async function startAvatar() {
+  if (!current || avatarRoom) return;
+  el("avatarBtn").disabled = true;
+  avatarStatus("connecting…");
+  setOrb("thinking");
+  try {
+    const LK = await ensureLiveKit();
+    if (!LK) throw new Error("LiveKit client failed to load");
+    // 1. Ask the bridge to mint a room + viewer token and start the LiveAvatar session.
+    const res = await fetch(`${BRIDGE_URL}/v1/avatar/session`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ prospect: current.key }),
+    });
+    if (!res.ok) {
+      const e = await res.json().catch(() => ({}));
+      throw new Error(e.error || `bridge HTTP ${res.status}`);
+    }
+    const { livekit_url, token } = await res.json();
+    // 2. Join the room; attach the avatar's video/audio; publish our mic.
+    const room = new LK.Room({ adaptiveStream: true, dynacast: true });
+    avatarRoom = room;
+    room.on(LK.RoomEvent.TrackSubscribed, (track) => {
+      if (track.kind === "video" || track.kind === "audio") {
+        track.attach(el("avatarVideo"));
+        avatarStatus("live — talk to the avatar");
+        setOrb("speaking");
+      }
+    });
+    room.on(LK.RoomEvent.Disconnected, () => stopAvatar());
+    await room.connect(livekit_url, token);
+    await room.localParticipant.setMicrophoneEnabled(true);
+    avatarStatus("connected — waiting for avatar…");
+    el("avatarBtn").textContent = "End avatar call";
+    el("avatarBtn").disabled = false;
+  } catch (err) {
+    avatarStatus(`error: ${err.message}`);
+    el("avatarBtn").disabled = false;
+    setOrb("idle");
+    avatarRoom = null;
+  }
+}
+
+function stopAvatar() {
+  if (avatarRoom) {
+    try { avatarRoom.disconnect(); } catch {}
+    avatarRoom = null;
+  }
+  const v = el("avatarVideo");
+  if (v) v.srcObject = null;
+  const btn = el("avatarBtn");
+  if (btn) { btn.textContent = "Start avatar call"; btn.disabled = false; }
+  avatarStatus("Idle.");
+  if (viewMode === "avatar") setOrb("idle");
 }
 
 // ---- ask one question via the bridge ---------------------------------------
@@ -278,6 +370,10 @@ el("askForm").addEventListener("submit", (e) => {
 });
 el("runGolden").addEventListener("click", runGolden);
 el("clearLog").addEventListener("click", () => (log.innerHTML = ""));
+for (const b of document.querySelectorAll("#modeSwitch .seg")) {
+  b.addEventListener("click", () => setMode(b.dataset.mode));
+}
+el("avatarBtn").addEventListener("click", () => (avatarRoom ? stopAvatar() : startAvatar()));
 
 loadProspects();
 pollMetrics();

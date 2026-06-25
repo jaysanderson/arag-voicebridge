@@ -16,7 +16,7 @@ import { createServer, type IncomingMessage, type ServerResponse } from "node:ht
 import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { dirname, resolve, normalize, extname } from "node:path";
-import { config } from "./config.ts";
+import { config, avatarEnabled } from "./config.ts";
 import { log } from "./logger.ts";
 import {
   getRegistry,
@@ -26,6 +26,8 @@ import {
 } from "./registry.ts";
 import { runTurn } from "./pipeline.ts";
 import { recordTurn, snapshot } from "./metrics.ts";
+import { mintLiveKitToken, newRoomName } from "./livekit.ts";
+import { resolveSecretId, startLiteSession, LiveAvatarError } from "./liveavatar.ts";
 import type { VoiceAnswerRequest, ProspectConfig } from "./types.ts";
 
 const MAX_BODY_BYTES = 64 * 1024;
@@ -74,7 +76,9 @@ function publicProspect(key: string, c: ProspectConfig) {
     agent_id: c.agent_id ?? null,
     voice_id: c.voice_id ?? null,
     golden_questions: c.golden_questions ?? [],
-    // kb_id / ask_config / region are deliberately omitted — the browser never needs them.
+    // True when the LiveAvatar pane can run for this prospect (creds set + avatar_id present).
+    avatar_ready: avatarEnabled() && Boolean(c.avatar_id),
+    // kb_id / ask_config / region / avatar_id are deliberately omitted — the browser never needs them.
   };
 }
 
@@ -237,6 +241,71 @@ export function buildServer(): BridgeServer {
       });
 
       return sendJson(res, 200, result);
+    }
+
+    // --- LiveAvatar session: mint a LiveKit room + viewer token, start a LITE session ---
+    if (method === "POST" && path === "/v1/avatar/session") {
+      if (!avatarEnabled()) {
+        return sendJson(res, 503, { error: "avatar not configured" });
+      }
+      let body: { prospect?: string };
+      try {
+        body = await readJsonBody(req);
+      } catch (err) {
+        return sendJson(res, 400, { error: (err as Error).message });
+      }
+      if (!body || typeof body.prospect !== "string") {
+        return sendJson(res, 400, { error: "Body must include string field `prospect`." });
+      }
+      let prospect: ProspectConfig;
+      try {
+        prospect = resolveProspect(body.prospect);
+      } catch (err) {
+        if (err instanceof ProspectNotFoundError) return sendJson(res, 404, { error: err.message });
+        throw err;
+      }
+      if (!prospect.agent_id || !prospect.avatar_id) {
+        return sendJson(res, 400, {
+          error: `Prospect "${body.prospect}" needs both agent_id and avatar_id for the avatar.`,
+        });
+      }
+
+      try {
+        const room = newRoomName(body.prospect);
+        const viewerToken = mintLiveKitToken({
+          apiKey: config.livekitApiKey,
+          apiSecret: config.livekitApiSecret,
+          identity: `viewer-${Math.random().toString(36).slice(2, 10)}`,
+          name: "viewer",
+          grant: { room, canPublish: true, canSubscribe: true },
+        });
+        const workerToken = mintLiveKitToken({
+          apiKey: config.livekitApiKey,
+          apiSecret: config.livekitApiSecret,
+          identity: "liveavatar-worker",
+          name: "avatar",
+          grant: { room, canPublish: true, canSubscribe: true },
+        });
+        const secretId = await resolveSecretId();
+        const session = await startLiteSession({
+          avatarId: prospect.avatar_id,
+          secretId,
+          agentId: prospect.agent_id,
+          livekitUrl: config.livekitUrl,
+          livekitRoom: room,
+          livekitWorkerToken: workerToken,
+        });
+        return sendJson(res, 200, {
+          livekit_url: config.livekitUrl,
+          room,
+          token: viewerToken,
+          session_id: session.sessionId ?? null,
+        });
+      } catch (err) {
+        const status = err instanceof LiveAvatarError ? (err.status ?? 502) : 500;
+        log.error("avatar.session.fail", { prospect: body.prospect, message: (err as Error).message });
+        return sendJson(res, status, { error: `avatar session failed: ${(err as Error).message}` });
+      }
     }
 
     // --- static web UI (GET only) — served from bridge/public ---

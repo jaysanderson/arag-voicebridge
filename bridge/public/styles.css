@@ -115,6 +115,25 @@ select {
 .voice-mount { flex-direction: column; gap: 4px; }
 elevenlabs-convai { display: block; }
 .pill[data-on="false"] { color: var(--muted); }
+
+/* Voice/Avatar segmented switch */
+.head-right { display: flex; align-items: center; gap: 10px; }
+.segmented { display: inline-flex; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
+.segmented[hidden] { display: none; }
+.seg {
+  background: var(--panel-2); color: var(--muted); border: none; cursor: pointer;
+  font-size: 12.5px; padding: 5px 12px;
+}
+.seg.active { background: var(--accent); color: #1a1206; font-weight: 600; }
+
+/* LiveAvatar (HeyGen) video pane */
+.avatar-pane[hidden] { display: none; }
+.avatar-pane { display: flex; flex-direction: column; gap: 10px; margin-bottom: 12px; }
+.avatar-video {
+  width: 100%; aspect-ratio: 16 / 9; background: #0a0e14; border: 1px solid var(--border);
+  border-radius: 10px; object-fit: cover;
+}
+.avatar-controls { display: flex; align-items: center; gap: 12px; }
 code { background: var(--chip); padding: 1px 6px; border-radius: 5px; font-size: 12px; }
 
 .ask { display: flex; gap: 8px; }

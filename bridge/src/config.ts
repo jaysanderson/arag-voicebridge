@@ -60,6 +60,16 @@ export interface AppConfig {
   agentToolTimeoutMs: number;
   maxHistoryTurns: number;
   allowedOrigins: string[];
+  // --- LiveAvatar (HeyGen) + LiveKit (optional; the avatar pane is dormant until set) ---
+  liveAvatarApiKey: string;
+  liveAvatarApiBase: string;
+  liveAvatarSecretsPath: string;
+  liveAvatarSessionPath: string;
+  liveAvatarElevenLabsSecretId: string;
+  elevenLabsApiKey: string;
+  livekitUrl: string;
+  livekitApiKey: string;
+  livekitApiSecret: string;
 }
 
 export const config: AppConfig = {
@@ -75,7 +85,30 @@ export const config: AppConfig = {
     .split(",")
     .map((s) => s.trim())
     .filter(Boolean),
+  liveAvatarApiKey: str("LIVEAVATAR_API_KEY"),
+  liveAvatarApiBase: str("LIVEAVATAR_API_BASE", "https://api.liveavatar.com/v1"),
+  liveAvatarSecretsPath: str("LIVEAVATAR_SECRETS_PATH", "/secrets"),
+  liveAvatarSessionPath: str("LIVEAVATAR_SESSION_PATH", "/sessions"),
+  liveAvatarElevenLabsSecretId: str("LIVEAVATAR_ELEVENLABS_SECRET_ID"),
+  elevenLabsApiKey: str("ELEVENLABS_API_KEY"),
+  livekitUrl: str("LIVEKIT_URL"),
+  livekitApiKey: str("LIVEKIT_API_KEY"),
+  livekitApiSecret: str("LIVEKIT_API_SECRET"),
 };
+
+/**
+ * Is the LiveAvatar pane configured? It stays dormant (endpoint 503s, UI hides the toggle)
+ * until the LiveKit creds, a LiveAvatar key, and an ElevenLabs key/secret are all present.
+ */
+export function avatarEnabled(): boolean {
+  return Boolean(
+    config.liveAvatarApiKey &&
+      config.livekitUrl &&
+      config.livekitApiKey &&
+      config.livekitApiSecret &&
+      (config.liveAvatarElevenLabsSecretId || config.elevenLabsApiKey),
+  );
+}
 
 /**
  * Fail fast on misconfiguration that would make every turn dead air, but only in

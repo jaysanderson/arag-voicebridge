@@ -34,7 +34,7 @@ User  ──audio──▶  ElevenAgent  ──POST /v1/voice-answer──▶  a
 | [`bridge/config/prospects.json`](bridge/config/prospects.json) | The **config registry** — one entry per prospect. The only thing that changes per prospect. |
 | [`bridge/public/`](bridge/public) | Static **control panel + voice console** (prospect selector, transcript, citation chips, latency strip). Served by the bridge at `/`. |
 | [`scripts/`](scripts) | `create-search-config` (provision an ARAG stored `ask` config) and `golden-eval` (the golden-question gate). |
-| [`docs/`](docs) | [SPEC](docs/SPEC.md), [ONBOARDING](docs/ONBOARDING.md), [voice-answer prompt](docs/voice-answer-prompt.md), [ElevenAgent template](docs/elevenagent-template.md), [implementation notes/deviations](docs/IMPLEMENTATION.md). |
+| [`docs/`](docs) | [SPEC](docs/SPEC.md), [ONBOARDING](docs/ONBOARDING.md), [voice-answer prompt](docs/voice-answer-prompt.md), [ElevenAgent template](docs/elevenagent-template.md), [ElevenLabs setup](docs/ELEVENLABS_SETUP.md), [LiveAvatar (HeyGen) setup](docs/LIVEAVATAR_SETUP.md), [implementation notes](docs/IMPLEMENTATION.md). |
 | [`Makefile`](Makefile) | The npm-free task runner: `make test`, `make dev`, `make client`, `make eval`, `make provision`. |
 
 ---
