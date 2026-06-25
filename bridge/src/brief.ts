@@ -104,7 +104,7 @@ export async function runBrief(
     result = await askArag(askParams, signal);
   } catch (err) {
     const kind = err instanceof AragError ? err.kind : "network";
-    log.warn("brief.fail", { prospect: prospect.display_name, kind });
+    log.warn("brief.fail", { prospect: prospect.display_name, kind, message: (err as Error).message });
     return { brief: null, citations: [], latency_ms: latency() };
   }
 

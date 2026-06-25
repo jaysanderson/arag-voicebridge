@@ -239,8 +239,10 @@ export async function askArag(params: AskParams, signal?: AbortSignal): Promise<
     context: params.context,
     // SPEC §6.3.1: relations excluded for speed; never add unless a demo needs NER/graph.
     features: ["semantic", "keyword"],
-    citations: true,
   };
+  // ARAG rejects `citations` together with `answer_json_schema` (422). Source chips still come
+  // from the separate retrieval results, so the brief path simply omits citations.
+  if (!params.answerJsonSchema) body.citations = true;
   if (params.searchConfiguration) {
     // Stored config wins; it owns prompt/filters/models. Send nothing inline.
     body.search_configuration = params.searchConfiguration;
@@ -279,7 +281,8 @@ export async function askArag(params: AskParams, signal?: AbortSignal): Promise<
   }
 
   if (!res.ok || !res.body) {
-    throw new AragError(`ARAG returned HTTP ${res.status}`, "http", res.status);
+    const detail = await res.text().catch(() => "");
+    throw new AragError(`ARAG returned HTTP ${res.status}: ${detail.slice(0, 400)}`, "http", res.status);
   }
 
   let answerText = "";

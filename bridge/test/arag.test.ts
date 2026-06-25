@@ -67,6 +67,11 @@ describe("interpretLine (tolerant NDJSON parsing)", () => {
     expect(out.retrieval[0]).toMatchObject({ title: "Doc B", url: "https://b", score: 0.5 });
   });
 
+  it("captures a structured answer_json (top-level and unwrapped)", () => {
+    expect(interpretLine({ answer: "", answer_json: { topic: "X" } }).answerJson).toMatchObject({ topic: "X" });
+    expect(interpretLine({ item: { answer_json: { summary: "y" } } }).answerJson).toMatchObject({ summary: "y" });
+  });
+
   it("ignores non-objects and empty lines gracefully", () => {
     expect(interpretLine(null).retrieval).toEqual([]);
     expect(interpretLine(42).retrieval).toEqual([]);

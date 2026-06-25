@@ -64,10 +64,10 @@ function selectProspect(key) {
 // Available modes for a prospect, in display order.
 function modesFor(p) {
   const modes = [];
-  if (p.agent_id) modes.push({ key: "voice", label: "Voice" });
+  if (p.agent_id) modes.push({ key: "voice", label: "Call" });
   if (p.scribe_ready) modes.push({ key: "listen", label: "Listen" });
   if (p.avatar_ready) modes.push({ key: "avatar", label: "Avatar" });
-  if (modes.length === 0) modes.push({ key: "voice", label: "Voice" }); // text-only fallback
+  if (modes.length === 0) modes.push({ key: "voice", label: "Call" }); // text-only fallback
   return modes;
 }
 function defaultModeFor(p) {
@@ -418,14 +418,17 @@ async function fireBriefQuery(window, norm) {
   setOrb("thinking");
   el("briefMeta").textContent = "updating…";
   try {
-    const res = await fetch(`${BRIDGE_URL}/v1/voice-answer`, {
+    // Structured: ARAG returns a JSON brief (answer_json_schema), not a text blob.
+    const res = await fetch(`${BRIDGE_URL}/v1/brief`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ prospect: current.key, question: window, conversation_id: "listen", history: [] }),
+      body: JSON.stringify({ prospect: current.key, text: window }),
     });
     const data = await res.json();
-    if (!data.handoff && data.answer) {
-      updateBrief(data);
+    const b = data.brief;
+    const hasContent = b && ((b.summary && b.summary.trim()) || (Array.isArray(b.key_points) && b.key_points.length));
+    if (hasContent) {
+      updateBrief(b, data.citations || []);
       setOrb("speaking");
     } else {
       el("briefMeta").textContent = "listening… (nothing relevant yet)";
@@ -439,10 +442,24 @@ async function fireBriefQuery(window, norm) {
   }
 }
 
-// Update the single live brief IN PLACE; accumulate a deduped source rail.
-function updateBrief(data) {
-  el("briefBody").textContent = data.answer;
-  for (const c of data.citations || []) {
+function briefList(items, cls) {
+  const arr = (items || []).filter((x) => x && String(x).trim());
+  if (!arr.length) return "";
+  return `<ul class="${cls}">${arr.map((x) => `<li>${escapeHtml(x)}</li>`).join("")}</ul>`;
+}
+
+// Render the structured brief IN PLACE as laid-out sections; accumulate a deduped source rail.
+function updateBrief(b, citations) {
+  let html = "";
+  if (b.topic && b.topic.trim()) html += `<div class="brief-topic">${escapeHtml(b.topic)}</div>`;
+  if (b.summary && b.summary.trim()) html += `<p class="brief-summary">${escapeHtml(b.summary)}</p>`;
+  html += briefList(b.key_points, "brief-points");
+  if (Array.isArray(b.suggested_responses) && b.suggested_responses.filter((x) => x && x.trim()).length) {
+    html += `<div class="brief-suggest-label">You could say</div>` + briefList(b.suggested_responses, "brief-suggest");
+  }
+  el("briefBody").innerHTML = html || "<span class='hint'>Listening…</span>";
+
+  for (const c of citations) {
     const key = (c.title || "").toLowerCase();
     if (!key) continue;
     const prev = briefSources.get(key);
@@ -453,7 +470,7 @@ function updateBrief(data) {
       seen: Date.now(),
     });
   }
-  const top = [...briefSources.values()].sort((a, b) => b.seen - a.seen).slice(0, 8);
+  const top = [...briefSources.values()].sort((a, b2) => b2.seen - a.seen).slice(0, 8);
   el("briefSources").innerHTML = top
     .map((c) => {
       const href = c.url ? escapeHtml(c.url) : "#";
