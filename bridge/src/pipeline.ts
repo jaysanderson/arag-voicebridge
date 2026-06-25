@@ -98,7 +98,9 @@ export async function runTurn(
     askParams.maxTokens = prospect.max_tokens ?? 160;
     // Default temperature 0 → deterministic answers/handoffs, so the golden set is repeatable.
     askParams.temperature = prospect.temperature ?? 0;
-    if (prospect.generative_model) askParams.generativeModel = prospect.generative_model;
+    // Per-request model override (UI dropdown) wins over the prospect's configured model.
+    const model = req.generative_model || prospect.generative_model;
+    if (model) askParams.generativeModel = model;
   }
 
   // Step 4 — call ARAG and stream. Failures → graceful handoff (SPEC §6.2.3).

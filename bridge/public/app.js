@@ -10,6 +10,7 @@ const orb = el("orb");
 const log = el("log");
 let prospects = [];
 let current = null;
+let selectedModel = ""; // "" = KB default; otherwise an ARAG generative_model id
 
 function setOrb(state) {
   orb.dataset.state = state;
@@ -59,6 +60,28 @@ function selectProspect(key) {
   buildModeSwitch(current);
   setMode(defaultModeFor(current));
   mountVoice(current);
+  loadModels(current);
+}
+
+// Populate the model dropdown from the prospect's KB (its available generative models).
+async function loadModels(p) {
+  const sel = el("model");
+  sel.innerHTML = '<option value="">KB default</option>';
+  selectedModel = "";
+  try {
+    const res = await fetch(`${BRIDGE_URL}/v1/models?prospect=${encodeURIComponent(p.key)}`);
+    if (!res.ok) return;
+    const { models, current: def } = await res.json();
+    if (def) sel.options[0].textContent = `KB default (${def})`;
+    for (const m of models || []) {
+      const o = document.createElement("option");
+      o.value = m.id;
+      o.textContent = m.label || m.id;
+      sel.appendChild(o);
+    }
+  } catch {
+    /* leave just KB default */
+  }
 }
 
 // Available modes for a prospect, in display order.
@@ -422,7 +445,7 @@ async function fireBriefQuery(window, norm) {
     const res = await fetch(`${BRIDGE_URL}/v1/brief`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ prospect: current.key, text: window }),
+      body: JSON.stringify({ prospect: current.key, text: window, generative_model: selectedModel || undefined }),
     });
     const data = await res.json();
     const b = data.brief;
@@ -494,6 +517,7 @@ async function ask(question) {
         question,
         conversation_id: "panel",
         history: [],
+        generative_model: selectedModel || undefined,
       }),
     });
     if (!res.ok) throw new Error(`bridge HTTP ${res.status}`);
@@ -640,6 +664,7 @@ async function pollMetrics() {
 
 // ---- wiring ----------------------------------------------------------------
 el("prospect").addEventListener("change", (e) => selectProspect(e.target.value));
+el("model").addEventListener("change", (e) => (selectedModel = e.target.value));
 el("askForm").addEventListener("submit", (e) => {
   e.preventDefault();
   const v = el("askInput").value.trim();

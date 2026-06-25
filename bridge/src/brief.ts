@@ -75,6 +75,7 @@ export async function runBrief(
   text: string,
   prospect: ProspectConfig,
   schema: unknown,
+  model?: string,
   signal?: AbortSignal,
 ): Promise<BriefResult> {
   const t0 = performance.now();
@@ -98,6 +99,8 @@ export async function runBrief(
     temperature: prospect.temperature ?? 0,
     answerJsonSchema: schema ?? LIVE_BRIEF_SCHEMA,
   };
+  const m = model || prospect.generative_model;
+  if (m) askParams.generativeModel = m;
 
   let result: AskResult;
   try {

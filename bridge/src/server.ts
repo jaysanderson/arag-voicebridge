@@ -30,6 +30,7 @@ import { mintLiveKitToken, newRoomName } from "./livekit.ts";
 import { resolveSecretId, startLiteSession, LiveAvatarError } from "./liveavatar.ts";
 import { mintScribeToken, ScribeError } from "./scribe.ts";
 import { runBrief } from "./brief.ts";
+import { fetchModels } from "./models.ts";
 import type { VoiceAnswerRequest, ProspectConfig } from "./types.ts";
 
 const MAX_BODY_BYTES = 64 * 1024;
@@ -247,9 +248,23 @@ export function buildServer(): BridgeServer {
       return sendJson(res, 200, result);
     }
 
+    // --- Available generative models for a prospect's KB (powers the model dropdown) ---
+    if (method === "GET" && path === "/v1/models") {
+      const key = url.searchParams.get("prospect") ?? "";
+      let prospect: ProspectConfig;
+      try {
+        prospect = resolveProspect(key);
+      } catch (err) {
+        if (err instanceof ProspectNotFoundError) return sendJson(res, 404, { error: err.message });
+        throw err;
+      }
+      const out = await fetchModels(prospect);
+      return sendJson(res, 200, out);
+    }
+
     // --- Structured live brief (ambient Listen): ARAG answer_json_schema → laid-out sections ---
     if (method === "POST" && path === "/v1/brief") {
-      let body: { prospect?: string; text?: string; schema?: unknown };
+      let body: { prospect?: string; text?: string; schema?: unknown; generative_model?: string };
       try {
         body = await readJsonBody(req);
       } catch (err) {
@@ -268,7 +283,7 @@ export function buildServer(): BridgeServer {
       const controller = new AbortController();
       let finished = false;
       res.on("close", () => { if (!finished) controller.abort(); });
-      const result = await runBrief(body.text, prospect, body.schema, controller.signal);
+      const result = await runBrief(body.text, prospect, body.schema, body.generative_model, controller.signal);
       finished = true;
       return sendJson(res, 200, result);
     }

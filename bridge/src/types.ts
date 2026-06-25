@@ -21,6 +21,8 @@ export interface VoiceAnswerRequest {
   question: string;
   conversation_id?: string;
   history?: HistoryTurn[];
+  /** Optional per-request generative model override (from the UI model dropdown). */
+  generative_model?: string;
 }
 
 /** A citation surfaced in the UI — never spoken. */
