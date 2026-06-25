@@ -264,7 +264,14 @@ export function buildServer(): BridgeServer {
 
     // --- Structured live brief (ambient Listen): ARAG answer_json_schema → laid-out sections ---
     if (method === "POST" && path === "/v1/brief") {
-      let body: { prospect?: string; text?: string; schema?: unknown; generative_model?: string };
+      let body: {
+        prospect?: string;
+        text?: string;
+        transcript?: string;
+        prev?: unknown;
+        schema?: unknown;
+        generative_model?: string;
+      };
       try {
         body = await readJsonBody(req);
       } catch (err) {
@@ -283,7 +290,17 @@ export function buildServer(): BridgeServer {
       const controller = new AbortController();
       let finished = false;
       res.on("close", () => { if (!finished) controller.abort(); });
-      const result = await runBrief(body.text, prospect, body.schema, body.generative_model, controller.signal);
+      const result = await runBrief(
+        {
+          text: body.text,
+          transcript: typeof body.transcript === "string" ? body.transcript : undefined,
+          prev: body.prev,
+          schema: body.schema,
+          model: body.generative_model,
+        },
+        prospect,
+        controller.signal,
+      );
       finished = true;
       return sendJson(res, 200, result);
     }

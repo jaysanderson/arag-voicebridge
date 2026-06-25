@@ -253,20 +253,26 @@ function stopAvatar() {
 // ---- Ambient "Listen" mode (Scribe STT → continuously updated live brief) ---
 // Continuously transcribes and, off the ROLLING transcript (no waiting for you to pause),
 // keeps a single live brief refreshed with the most relevant knowledge as you talk.
+let listenActive = false; // intent: the user wants to be listening (survives WS reconnects)
 let listenWS = null;
 let listenCtx = null;
 let listenStream = null;
 let listenNodes = null;
+let listenInRate = 16000;
+let reconnectTimer = null;
 let committedText = "";
 let partialText = "";
+let fullTranscript = ""; // the whole conversation so far (for context/persona)
+let lastBrief = null; // previous brief object, fed back so the model builds it up
 let querying = false;
 let lastQueryNorm = "";
 let lastFireAt = 0;
 let briefLoop = null;
 const briefSources = new Map();
 
-const WINDOW_WORDS = 28; // size of the rolling window we keep relevant to "now"
+const WINDOW_WORDS = 28; // size of the rolling window used for retrieval ("now")
 const KEEP_WORDS = 60; // committed-buffer cap
+const TRANSCRIPT_KEEP_CHARS = 8000; // running transcript cap
 const MIN_QUERY_GAP_MS = 1500; // don't fire faster than ARAG can answer
 const TICK_MS = 600; // how often we consider refreshing
 
@@ -326,79 +332,112 @@ function bytesToBase64(bytes) {
   return btoa(bin);
 }
 
-async function startListen() {
-  if (!current || listenWS) return;
-  el("listenBtn").disabled = true;
-  listenStatus("getting token…");
-  setOrb("thinking");
+// Mic is set up ONCE and kept alive across WebSocket reconnects.
+async function setupMic() {
+  listenStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+  listenCtx = new (window.AudioContext || window.webkitAudioContext)();
+  if (listenCtx.state === "suspended") { try { await listenCtx.resume(); } catch {} }
+  listenInRate = listenCtx.sampleRate;
+  const source = listenCtx.createMediaStreamSource(listenStream);
+  const processor = listenCtx.createScriptProcessor(4096, 1, 1);
+  const mute = listenCtx.createGain();
+  mute.gain.value = 0; // avoid echoing the mic to the speakers
+  source.connect(processor);
+  processor.connect(mute);
+  mute.connect(listenCtx.destination);
+  processor.onaudioprocess = (e) => {
+    if (!listenWS || listenWS.readyState !== WebSocket.OPEN) return;
+    const f32 = downsample(e.inputBuffer.getChannelData(0), listenInRate, 16000);
+    const b64 = bytesToBase64(new Uint8Array(floatTo16BitPCM(f32).buffer));
+    try {
+      listenWS.send(JSON.stringify({ message_type: "input_audio_chunk", audio_base_64: b64, commit: false }));
+    } catch {
+      /* socket mid-close; chunk dropped, fine */
+    }
+  };
+  listenNodes = { source, processor, mute };
+}
+
+// (Re)connect the Scribe WebSocket. Auto-reconnects on drop while listenActive.
+async function connectScribe() {
+  if (!listenActive) return;
+  listenStatus(listenWS ? "reconnecting…" : "connecting…");
+  let token;
   try {
-    // 1. Mint a single-use Scribe token via the bridge (key stays server-side).
     const tr = await fetch(`${BRIDGE_URL}/v1/scribe-token`);
     if (!tr.ok) throw new Error((await tr.json().catch(() => ({}))).error || `token HTTP ${tr.status}`);
-    const { token } = await tr.json();
-
-    // 2. Mic.
-    listenStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-    listenCtx = new (window.AudioContext || window.webkitAudioContext)();
-    const inRate = listenCtx.sampleRate;
-    const source = listenCtx.createMediaStreamSource(listenStream);
-    const processor = listenCtx.createScriptProcessor(4096, 1, 1);
-    const mute = listenCtx.createGain();
-    mute.gain.value = 0; // avoid echoing the mic to the speakers
-    source.connect(processor);
-    processor.connect(mute);
-    mute.connect(listenCtx.destination);
-    listenNodes = { source, processor, mute };
-
-    // 3. Scribe realtime WebSocket (VAD auto-commits utterances).
-    const qs = new URLSearchParams({
-      model_id: "scribe_v2_realtime",
-      audio_format: "pcm_16000",
-      commit_strategy: "vad",
-      token,
-    });
-    const ws = new WebSocket(`wss://api.elevenlabs.io/v1/speech-to-text/realtime?${qs}`);
-    listenWS = ws;
-
-    ws.onopen = () => {
-      listenStatus("listening — speak naturally");
-      el("listenBtn").textContent = "Stop listening";
-      el("listenBtn").disabled = false;
-      setOrb("idle");
-      // Continuously consider refreshing the brief off the rolling transcript.
-      briefLoop = setInterval(tickBrief, TICK_MS);
-    };
-    ws.onmessage = (ev) => {
-      let m;
-      try { m = JSON.parse(ev.data); } catch { return; }
-      if (m.message_type === "partial_transcript") {
-        partialText = m.text || "";
-        el("listenInterim").textContent = partialText || "…";
-      } else if (m.message_type === "committed_transcript") {
-        committedText = lastWords(`${committedText} ${m.text || ""}`, KEEP_WORDS);
-        partialText = "";
-        el("listenInterim").textContent = "…";
-      } else if (m.message_type === "error" || m.message_type === "auth_error" || m.message_type === "quota_exceeded") {
-        listenStatus(`error: ${m.error || m.message_type}`);
-      }
-    };
-    ws.onerror = () => listenStatus("connection error");
-    ws.onclose = () => { if (listenWS) stopListen(); };
-
-    processor.onaudioprocess = (e) => {
-      if (!listenWS || listenWS.readyState !== WebSocket.OPEN) return;
-      const f32 = downsample(e.inputBuffer.getChannelData(0), inRate, 16000);
-      const b64 = bytesToBase64(new Uint8Array(floatTo16BitPCM(f32).buffer));
-      listenWS.send(JSON.stringify({ message_type: "input_audio_chunk", audio_base_64: b64, commit: false }));
-    };
+    token = (await tr.json()).token;
   } catch (err) {
-    listenStatus(`error: ${err.message}`);
-    setOrb("idle");
-    stopListen();
+    listenStatus(`token error: ${err.message}`);
+    scheduleReconnect();
+    return;
   }
+  const qs = new URLSearchParams({
+    model_id: "scribe_v2_realtime",
+    audio_format: "pcm_16000",
+    commit_strategy: "vad",
+    token,
+  });
+  const ws = new WebSocket(`wss://api.elevenlabs.io/v1/speech-to-text/realtime?${qs}`);
+  listenWS = ws;
+  ws.onopen = () => {
+    listenStatus("listening — speak naturally");
+    el("listenBtn").textContent = "Stop listening";
+    el("listenBtn").disabled = false;
+    setOrb("idle");
+  };
+  ws.onmessage = (ev) => {
+    let m;
+    try { m = JSON.parse(ev.data); } catch { return; }
+    if (m.message_type === "partial_transcript") {
+      partialText = m.text || "";
+      el("listenInterim").textContent = partialText || "…";
+    } else if (m.message_type === "committed_transcript") {
+      const t = (m.text || "").trim();
+      if (t) {
+        committedText = lastWords(`${committedText} ${t}`, KEEP_WORDS);
+        fullTranscript = `${fullTranscript} ${t}`.slice(-TRANSCRIPT_KEEP_CHARS);
+      }
+      partialText = "";
+      el("listenInterim").textContent = "…";
+    } else if (m.message_type === "error" || m.message_type === "auth_error" || m.message_type === "quota_exceeded") {
+      listenStatus(`error: ${m.error || m.message_type}`);
+    }
+  };
+  ws.onerror = () => {};
+  ws.onclose = () => {
+    if (ws === listenWS) listenWS = null;
+    if (listenActive) { listenStatus("reconnecting…"); scheduleReconnect(); } // keep the session alive
+  };
+}
+
+function scheduleReconnect() {
+  if (!listenActive || reconnectTimer) return;
+  reconnectTimer = setTimeout(() => { reconnectTimer = null; connectScribe(); }, 1200);
+}
+
+async function startListen() {
+  if (!current || listenActive) return;
+  listenActive = true;
+  el("listenBtn").disabled = true;
+  setOrb("thinking");
+  listenStatus("starting mic…");
+  try {
+    await setupMic();
+  } catch (err) {
+    listenStatus(`mic error: ${err.message}`);
+    listenActive = false;
+    setOrb("idle");
+    el("listenBtn").disabled = false;
+    return;
+  }
+  briefLoop = setInterval(tickBrief, TICK_MS); // keeps refreshing across reconnects
+  connectScribe();
 }
 
 function stopListen() {
+  listenActive = false;
+  if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
   if (briefLoop) { clearInterval(briefLoop); briefLoop = null; }
   if (listenWS) {
     const ws = listenWS;
@@ -413,6 +452,8 @@ function stopListen() {
   if (listenStream) { listenStream.getTracks().forEach((t) => t.stop()); listenStream = null; }
   committedText = "";
   partialText = "";
+  fullTranscript = "";
+  lastBrief = null;
   lastQueryNorm = "";
   querying = false;
   const btn = el("listenBtn");
@@ -424,7 +465,7 @@ function stopListen() {
 // Runs on a timer while listening: refresh the brief off the rolling transcript window.
 // Fires WHILE you're still talking (uses partials), not only when you pause.
 function tickBrief() {
-  if (querying || !listenWS) return;
+  if (querying || !listenActive) return; // keep refreshing even during a brief WS reconnect
   const window = lastWords(`${committedText} ${partialText}`, WINDOW_WORDS);
   const norm = normWords(window);
   if (norm.split(" ").filter(Boolean).length < 4) return; // need a little context
@@ -445,11 +486,21 @@ async function fireBriefQuery(window, norm) {
     const res = await fetch(`${BRIDGE_URL}/v1/brief`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ prospect: current.key, text: window, generative_model: selectedModel || undefined }),
+      body: JSON.stringify({
+        prospect: current.key,
+        text: window,
+        transcript: fullTranscript, // whole conversation → context + persona
+        prev: lastBrief, // previous brief → build it up, don't restart
+        generative_model: selectedModel || undefined,
+      }),
     });
     const data = await res.json();
     const b = data.brief;
-    const hasContent = b && ((b.summary && b.summary.trim()) || (Array.isArray(b.key_points) && b.key_points.length));
+    const hasContent =
+      b &&
+      ((b.summary && b.summary.trim()) ||
+        (Array.isArray(b.key_points) && b.key_points.length) ||
+        (b.caller_profile && b.caller_profile.trim()));
     if (hasContent) {
       updateBrief(b, data.citations || []);
       setOrb("speaking");
@@ -471,15 +522,30 @@ function briefList(items, cls) {
   return `<ul class="${cls}">${arr.map((x) => `<li>${escapeHtml(x)}</li>`).join("")}</ul>`;
 }
 
-// Render the structured brief IN PLACE as laid-out sections; accumulate a deduped source rail.
+function hasItems(a) {
+  return Array.isArray(a) && a.filter((x) => x && String(x).trim()).length;
+}
+
+// Render the evolving call brief IN PLACE; accumulate a deduped source rail.
 function updateBrief(b, citations) {
+  lastBrief = b; // remember it so the next refresh builds on it
   let html = "";
   if (b.topic && b.topic.trim()) html += `<div class="brief-topic">${escapeHtml(b.topic)}</div>`;
+
+  const chips = [];
+  if (b.their_goal && b.their_goal.trim()) chips.push(`<span class="persona-chip goal">🎯 ${escapeHtml(b.their_goal)}</span>`);
+  if (b.stage && b.stage.trim()) chips.push(`<span class="persona-chip stage">${escapeHtml(b.stage)}</span>`);
+  if (chips.length) html += `<div class="persona-row">${chips.join("")}</div>`;
+  if (b.caller_profile && b.caller_profile.trim())
+    html += `<div class="brief-profile">👤 ${escapeHtml(b.caller_profile)}</div>`;
+
   if (b.summary && b.summary.trim()) html += `<p class="brief-summary">${escapeHtml(b.summary)}</p>`;
-  html += briefList(b.key_points, "brief-points");
-  if (Array.isArray(b.suggested_responses) && b.suggested_responses.filter((x) => x && x.trim()).length) {
-    html += `<div class="brief-suggest-label">You could say</div>` + briefList(b.suggested_responses, "brief-suggest");
-  }
+  if (hasItems(b.key_points))
+    html += `<div class="brief-section-label">Key points</div>` + briefList(b.key_points, "brief-points");
+  if (hasItems(b.suggested_questions))
+    html += `<div class="brief-section-label ask">Ask them</div>` + briefList(b.suggested_questions, "brief-suggest");
+  if (hasItems(b.suggested_answers))
+    html += `<div class="brief-section-label say">You could say</div>` + briefList(b.suggested_answers, "brief-suggest");
   el("briefBody").innerHTML = html || "<span class='hint'>Listening…</span>";
 
   for (const c of citations) {

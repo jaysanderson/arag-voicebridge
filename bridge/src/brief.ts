@@ -1,9 +1,12 @@
 /**
- * Structured "live brief" — used by the ambient Listen mode.
+ * Structured "live call brief" — used by the ambient Listen mode.
  *
  * Instead of a text blob, we pass an `answer_json_schema` to ARAG `/ask` so the answer comes
- * back as a well-structured object (ARAG's `answer_json`). The client renders it as laid-out
- * sections (topic / summary / key points / suggested responses) plus the citation rail.
+ * back as a well-structured object (ARAG's `answer_json`). It is an EVOLVING brief: each refresh
+ * receives the running conversation transcript and the previous brief, so it builds up a persona
+ * of the call and of the person being spoken to, infers what they want, and suggests questions to
+ * ask and answers to give. Product facts stay grounded in the knowledge base; the persona/intent
+ * reasoning is over the conversation.
  */
 
 import type { ProspectConfig, Citation } from "./types.ts";
@@ -17,48 +20,89 @@ import { buildContext } from "./pipeline.ts";
 
 /** OpenAI-function-style schema ARAG expects in `answer_json_schema`. */
 export const LIVE_BRIEF_SCHEMA = {
-  name: "live_brief",
+  name: "call_brief",
   description:
-    "A concise, well-structured live brief of the knowledge most relevant to the current moment " +
-    "in a conversation, for someone who needs to stay informed hands-free.",
+    "An evolving, structured brief for someone handling a live conversation: who the other " +
+    "person is, what they want, where the conversation is, the most relevant knowledge, and the " +
+    "best questions to ask and answers to give to move them forward.",
   parameters: {
     type: "object",
     properties: {
       topic: {
         type: "string",
-        description: "The current subject being discussed, in 3 to 6 words. Empty if unclear.",
+        description: "The current subject being discussed, in 3 to 6 words.",
+      },
+      caller_profile: {
+        type: "string",
+        description:
+          "What can be inferred about the OTHER person from the conversation so far — their role, " +
+          "situation, and level of knowledge. One or two sentences. Empty if not yet clear.",
+      },
+      their_goal: {
+        type: "string",
+        description:
+          "Your best inference of the underlying outcome the other person wants. One sentence.",
+      },
+      stage: {
+        type: "string",
+        description:
+          "Where the conversation is right now: e.g. exploring, evaluating, objection, ready, " +
+          "off-topic. One or two words.",
       },
       summary: {
         type: "string",
         description:
-          "One or two short sentences summarising the most relevant information right now, " +
-          "drawn ONLY from the knowledge base. Empty string if nothing relevant.",
+          "One or two sentences on the current state of the conversation and the most relevant " +
+          "information right now, grounded in the knowledge base.",
       },
       key_points: {
         type: "array",
         items: { type: "string" },
         description:
-          "2 to 5 short, factual bullet points grounded ONLY in the knowledge base. " +
-          "Empty array if nothing relevant.",
+          "2 to 5 short factual bullets drawn ONLY from the knowledge base that matter right now.",
       },
-      suggested_responses: {
+      suggested_questions: {
         type: "array",
         items: { type: "string" },
         description:
-          "0 to 3 helpful, grounded things the listener could say next. Empty array if none.",
+          "1 to 3 questions the handler could ASK the other person to qualify them or move them " +
+          "toward their goal.",
+      },
+      suggested_answers: {
+        type: "array",
+        items: { type: "string" },
+        description:
+          "1 to 3 things the handler could SAY, grounded ONLY in the knowledge base, to address " +
+          "the other person's need.",
       },
     },
-    required: ["topic", "summary", "key_points"],
+    required: ["summary"],
   },
 } as const;
 
-function briefSystemPrompt(displayName: string): string {
+function briefSystemPrompt(displayName: string, locale: string): string {
   return (
-    `You produce a live brief for someone in a live conversation related to ${displayName}. ` +
-    `Use ONLY the information in the provided context. Fill the fields from the knowledge base; ` +
-    `never use outside knowledge and never invent facts. If the context contains nothing relevant ` +
-    `to the latest discussion, return an empty summary and empty arrays. Keep everything concise.`
+    `You are a real-time call copilot for someone (the handler) in a live conversation related ` +
+    `to ${displayName}. Across the whole call you maintain ONE evolving brief. ` +
+    `Infer caller_profile (who the OTHER person is), their_goal (the outcome they want), and ` +
+    `stage from the CONVERSATION so far — these are reasoning, not product facts. ` +
+    `Draw key_points and suggested_answers ONLY from the provided knowledge-base context; never ` +
+    `invent product facts, prices, model numbers, or policies — if the knowledge base lacks it, ` +
+    `leave it out. suggested_questions are questions the handler could ask the other person to ` +
+    `qualify them or advance toward their goal. ` +
+    `Refine and EXTEND your previous brief each time; do not restart from scratch. Keep every ` +
+    `field concise and written in ${locale} English.`
   );
+}
+
+export interface BriefRequest {
+  text: string;
+  /** Accumulated conversation transcript so far (most recent last). */
+  transcript?: string;
+  /** The previous brief object, so the model refines rather than restarts. */
+  prev?: unknown;
+  schema?: unknown;
+  model?: string;
 }
 
 export interface BriefResult {
@@ -67,15 +111,16 @@ export interface BriefResult {
   latency_ms: { retrieve: number; first_token: number; total: number };
 }
 
+const MAX_TRANSCRIPT_CHARS = 6000;
+const MAX_PREV_CHARS = 2000;
+
 /**
  * Run one structured-brief lookup. Never throws — on any failure returns brief:null so the
- * client simply keeps the previous brief on screen.
+ * client keeps the previous brief on screen.
  */
 export async function runBrief(
-  text: string,
+  req: BriefRequest,
   prospect: ProspectConfig,
-  schema: unknown,
-  model?: string,
   signal?: AbortSignal,
 ): Promise<BriefResult> {
   const t0 = performance.now();
@@ -85,21 +130,31 @@ export async function runBrief(
     total: Math.round(performance.now() - t0),
   });
 
-  const guard = guardInput(text);
+  const guard = guardInput(req.text);
   if (!guard.ok) return { brief: null, citations: [], latency_ms: latency() };
+
+  const transcript = (req.transcript ?? "").slice(-MAX_TRANSCRIPT_CHARS);
+  const prevJson = req.prev ? JSON.stringify(req.prev).slice(0, MAX_PREV_CHARS) : "";
+  const user =
+    "Knowledge base context:\n{context}\n\n" +
+    (transcript ? `Conversation so far (most recent last):\n${transcript}\n\n` : "") +
+    (prevJson ? `Your brief so far (JSON) — refine and extend it, do not restart:\n${prevJson}\n\n` : "") +
+    "Most recent words from the conversation: {question}\n\nReturn the updated brief.";
 
   const askParams: AskParams = {
     kbId: prospect.kb_id,
     region: prospect.region || config.aragRegionDefault,
-    query: text.trim(),
+    // Retrieval is focused on the latest words (the current topic); the conversation arc lives
+    // in the prompt above so the model reasons over the whole call.
+    query: req.text.trim(),
     context: buildContext([], config.maxHistoryTurns),
-    prompt: { system: briefSystemPrompt(prospect.display_name), user: "Context:\n{context}\n\nDiscussion: {question}" },
+    prompt: { system: briefSystemPrompt(prospect.display_name, prospect.locale), user },
     reranker: prospect.reranker ?? "predict",
-    maxTokens: 500,
+    maxTokens: 700,
     temperature: prospect.temperature ?? 0,
-    answerJsonSchema: schema ?? LIVE_BRIEF_SCHEMA,
+    answerJsonSchema: req.schema ?? LIVE_BRIEF_SCHEMA,
   };
-  const m = model || prospect.generative_model;
+  const m = req.model || prospect.generative_model;
   if (m) askParams.generativeModel = m;
 
   let result: AskResult;
@@ -111,7 +166,6 @@ export async function runBrief(
     return { brief: null, citations: [], latency_ms: latency() };
   }
 
-  // Prefer the structured answer_json; fall back to parsing answerText if a model returned text.
   let brief: unknown | null = result.answerJson ?? null;
   if (!brief && result.answerText) {
     try {
