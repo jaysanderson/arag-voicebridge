@@ -44,11 +44,18 @@ export interface AskParams {
   generativeModel?: string;
   /** Generation temperature. 0 = deterministic — critical for repeatable demos. */
   temperature?: number;
+  /**
+   * OpenAI-function-style JSON schema { name, description, parameters }. When set, ARAG forces
+   * a structured answer: the result lands in `answer_json` (an object) and `answer` is empty.
+   */
+  answerJsonSchema?: unknown;
 }
 
 export interface AskResult {
-  /** Concatenated answer text, raw (not yet voice-shaped). */
+  /** Concatenated answer text, raw (not yet voice-shaped). Empty when a JSON schema was used. */
   answerText: string;
+  /** Structured answer object when answerJsonSchema was set (ARAG's `answer_json`). */
+  answerJson?: unknown;
   /** Retrieval items collected from the stream. */
   retrieval: RetrievalItem[];
   /** ms from request start to first answer token (or 0 if none). */
@@ -145,10 +152,12 @@ function simpleItem(c: unknown): RetrievalItem | undefined {
  */
 export function interpretLine(obj: unknown): {
   answerChunk?: string;
+  answerJson?: unknown;
   retrieval: RetrievalItem[];
 } {
   const retrieval: RetrievalItem[] = [];
   let answerChunk: string | undefined;
+  let answerJson: unknown;
 
   if (typeof obj !== "object" || obj === null) return { retrieval };
   const o = obj as Record<string, unknown>;
@@ -156,6 +165,14 @@ export function interpretLine(obj: unknown): {
   // Some streams wrap each event as { item: {...} }; unwrap if present.
   const node = (o.item && typeof o.item === "object" ? o.item : o) as Record<string, unknown>;
   const type = typeof node.type === "string" ? node.type.toLowerCase() : undefined;
+
+  // --- structured answer (answer_json_schema) — lands in answer_json as an object ---
+  // Tolerant: probe top-level and unwrapped node, plus a typed {type:"answer_json", object} item.
+  const aj =
+    o.answer_json ??
+    node.answer_json ??
+    (type === "answer_json" ? (node.object ?? node.json ?? node.value) : undefined);
+  if (aj && typeof aj === "object") answerJson = aj;
 
   // --- answer text chunks ---
   // Shapes seen/expected: {type:"answer", text:"..."} | {answer:"..."} | {text:"..."}
@@ -205,7 +222,7 @@ export function interpretLine(obj: unknown): {
     if (item) retrieval.push(item);
   }
 
-  return { answerChunk, retrieval };
+  return { answerChunk, answerJson, retrieval };
 }
 
 /**
@@ -235,6 +252,8 @@ export async function askArag(params: AskParams, signal?: AbortSignal): Promise<
     if (params.generativeModel) body.generative_model = params.generativeModel;
     if (typeof params.temperature === "number") body.temperature = params.temperature;
   }
+  // Structured output: forces ARAG to answer as JSON in `answer_json` (SPEC: JSON output).
+  if (params.answerJsonSchema) body.answer_json_schema = params.answerJsonSchema;
 
   const timeout = AbortSignal.timeout(config.aragTimeoutMs);
   // Combine the caller's signal (barge-in) with our timeout.
@@ -264,6 +283,7 @@ export async function askArag(params: AskParams, signal?: AbortSignal): Promise<
   }
 
   let answerText = "";
+  let answerJson: unknown;
   const retrieval: RetrievalItem[] = [];
   let firstTokenMs = 0;
   let retrieveMs = 0;
@@ -293,9 +313,10 @@ export async function askArag(params: AskParams, signal?: AbortSignal): Promise<
           log.warn("arag.ndjson.skip", { line: line.slice(0, 120) });
           continue;
         }
-        const { answerChunk, retrieval: items } = interpretLine(parsed);
+        const { answerChunk, answerJson: aj, retrieval: items } = interpretLine(parsed);
         if (items.length && retrieveMs === 0) retrieveMs = performance.now() - start;
         retrieval.push(...items);
+        if (aj !== undefined) answerJson = aj;
         if (answerChunk) {
           if (firstTokenMs === 0) firstTokenMs = performance.now() - start;
           answerText += answerChunk;
@@ -312,8 +333,9 @@ export async function askArag(params: AskParams, signal?: AbortSignal): Promise<
   const tail = buffer.trim();
   if (tail) {
     try {
-      const { answerChunk, retrieval: items } = interpretLine(JSON.parse(tail));
+      const { answerChunk, answerJson: aj, retrieval: items } = interpretLine(JSON.parse(tail));
       retrieval.push(...items);
+      if (aj !== undefined) answerJson = aj;
       if (answerChunk) {
         if (firstTokenMs === 0) firstTokenMs = performance.now() - start;
         answerText += answerChunk;
@@ -323,5 +345,5 @@ export async function askArag(params: AskParams, signal?: AbortSignal): Promise<
     }
   }
 
-  return { answerText: answerText.trim(), retrieval, firstTokenMs, retrieveMs };
+  return { answerText: answerText.trim(), answerJson, retrieval, firstTokenMs, retrieveMs };
 }

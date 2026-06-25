@@ -29,6 +29,7 @@ import { recordTurn, snapshot } from "./metrics.ts";
 import { mintLiveKitToken, newRoomName } from "./livekit.ts";
 import { resolveSecretId, startLiteSession, LiveAvatarError } from "./liveavatar.ts";
 import { mintScribeToken, ScribeError } from "./scribe.ts";
+import { runBrief } from "./brief.ts";
 import type { VoiceAnswerRequest, ProspectConfig } from "./types.ts";
 
 const MAX_BODY_BYTES = 64 * 1024;
@@ -243,6 +244,32 @@ export function buildServer(): BridgeServer {
           result.handoff && result.citations.length === 0 && result.latency_ms.retrieve === 0,
       });
 
+      return sendJson(res, 200, result);
+    }
+
+    // --- Structured live brief (ambient Listen): ARAG answer_json_schema → laid-out sections ---
+    if (method === "POST" && path === "/v1/brief") {
+      let body: { prospect?: string; text?: string; schema?: unknown };
+      try {
+        body = await readJsonBody(req);
+      } catch (err) {
+        return sendJson(res, 400, { error: (err as Error).message });
+      }
+      if (!body || typeof body.prospect !== "string" || typeof body.text !== "string") {
+        return sendJson(res, 400, { error: "Body must include string fields `prospect` and `text`." });
+      }
+      let prospect: ProspectConfig;
+      try {
+        prospect = resolveProspect(body.prospect);
+      } catch (err) {
+        if (err instanceof ProspectNotFoundError) return sendJson(res, 404, { error: err.message });
+        throw err;
+      }
+      const controller = new AbortController();
+      let finished = false;
+      res.on("close", () => { if (!finished) controller.abort(); });
+      const result = await runBrief(body.text, prospect, body.schema, controller.signal);
+      finished = true;
       return sendJson(res, 200, result);
     }
 
