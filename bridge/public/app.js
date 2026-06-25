@@ -58,36 +58,54 @@ function selectProspect(key) {
 }
 
 // ---- ElevenLabs ConvAI widget (live audio) ---------------------------------
-let widgetScriptLoaded = false;
+// The widget script upgrades any <elevenlabs-convai> element on the page. We load it once,
+// resolve a promise on load/error, and reflect the state in the console's connection pill.
+let widgetScriptPromise = null;
 function ensureWidgetScript() {
-  if (widgetScriptLoaded) return;
-  const s = document.createElement("script");
-  s.src = "https://unpkg.com/@elevenlabs/convai-widget-embed";
-  s.async = true;
-  s.type = "text/javascript";
-  document.head.appendChild(s);
-  widgetScriptLoaded = true;
+  if (widgetScriptPromise) return widgetScriptPromise;
+  widgetScriptPromise = new Promise((resolve) => {
+    const s = document.createElement("script");
+    s.src = "https://unpkg.com/@elevenlabs/convai-widget-embed";
+    s.async = true;
+    s.type = "text/javascript";
+    s.onload = () => resolve(true);
+    s.onerror = () => resolve(false);
+    document.head.appendChild(s);
+  });
+  return widgetScriptPromise;
 }
 
 function hasRealAgent(p) {
   return p.agent_id && !/REPLACE_ME/i.test(p.agent_id);
 }
 
+function setConn(state, label) {
+  el("connState").dataset.on = state === "ready" ? "true" : "false";
+  el("connState").textContent = label;
+}
+
 function mountVoice(p) {
   const mount = el("voiceMount");
-  el("connState").dataset.on = "false";
-  el("connState").textContent = "offline";
   if (hasRealAgent(p)) {
-    ensureWidgetScript();
-    mount.innerHTML = `<elevenlabs-convai agent-id="${escapeHtml(p.agent_id)}"></elevenlabs-convai>`;
-    el("connState").dataset.on = "true";
-    el("connState").textContent = "voice ready";
+    setConn("connecting", "connecting voice…");
+    // Render the widget element + a caption that frames the agent-assist story.
+    mount.innerHTML =
+      `<elevenlabs-convai agent-id="${escapeHtml(p.agent_id)}"></elevenlabs-convai>` +
+      `<p class="hint voice-caption">🎙️ Click the <b>talk</b> button to start a voice call with ` +
+      `<b>${escapeHtml(p.display_name)}</b> (allow your mic when asked). Answers are grounded in ` +
+      `the knowledge base; the <b>transcript &amp; citations</b> panel and the <b>live metrics</b> ` +
+      `bar below update as the call runs.</p>`;
+    ensureWidgetScript().then((ok) =>
+      ok
+        ? setConn("ready", "voice ready")
+        : setConn("error", "voice widget failed to load"),
+    );
   } else {
+    setConn("offline", "text mode");
     mount.innerHTML = `<p class="hint">No live <code>agent_id</code> for <b>${escapeHtml(
       p.display_name,
-    )}</b> yet. Clone the ElevenAgent template, set its <code>agent_id</code> in the registry,
-      and reload. Meanwhile, use the ask box below — it drives the same bridge → ARAG path
-      (this is exactly the agent-assist “whisper” screen).</p>`;
+    )}</b> yet. Add one to the registry to enable the voice widget. Meanwhile, use the ask box ` +
+      `below — it drives the same bridge → ARAG path (the agent-assist “whisper” view).</p>`;
   }
 }
 

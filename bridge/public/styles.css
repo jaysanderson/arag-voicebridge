@@ -110,6 +110,11 @@ select {
   text-align: center; margin-bottom: 12px;
 }
 .hint { color: var(--muted); font-size: 13px; margin: 0; line-height: 1.5; }
+.hint b { color: var(--text); }
+.voice-caption { margin-top: 4px; text-align: left; }
+.voice-mount { flex-direction: column; gap: 4px; }
+elevenlabs-convai { display: block; }
+.pill[data-on="false"] { color: var(--muted); }
 code { background: var(--chip); padding: 1px 6px; border-radius: 5px; font-size: 12px; }
 
 .ask { display: flex; gap: 8px; }
