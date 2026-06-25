@@ -127,58 +127,125 @@ function buildModeSwitch(p) {
   }
 }
 
-// ---- ElevenLabs ConvAI widget (live audio) ---------------------------------
-// The widget script upgrades any <elevenlabs-convai> element on the page. We load it once,
-// resolve a promise on load/error, and reflect the state in the console's connection pill.
-let widgetScriptPromise = null;
-function ensureWidgetScript() {
-  if (widgetScriptPromise) return widgetScriptPromise;
-  widgetScriptPromise = new Promise((resolve) => {
-    const s = document.createElement("script");
-    s.src = "https://unpkg.com/@elevenlabs/convai-widget-embed";
-    s.async = true;
-    s.type = "text/javascript";
-    s.onload = () => resolve(true);
-    s.onerror = () => resolve(false);
-    document.head.appendChild(s);
-  });
-  return widgetScriptPromise;
+// ---- On-brand Call (ElevenLabs JS SDK, not the embed widget) ----------------
+// We drive the conversation with @elevenlabs/client so the UI is our own (no floating
+// launcher) and we can apply the voice override + stream the transcript into the panel.
+let callConvo = null;
+let callMuted = false;
+let ElevenSDK = null;
+
+async function loadSdk() {
+  if (ElevenSDK) return ElevenSDK;
+  ElevenSDK = await import("https://esm.sh/@elevenlabs/client@1.14.0");
+  return ElevenSDK;
 }
 
 function hasRealAgent(p) {
   return p.agent_id && !/REPLACE_ME/i.test(p.agent_id);
 }
-
 function setConn(state, label) {
   el("connState").dataset.on = state === "ready" ? "true" : "false";
   el("connState").textContent = label;
 }
+function callStatus(msg) {
+  const s = el("callStatus");
+  if (s) s.textContent = msg;
+}
 
 function mountVoice(p) {
   const mount = el("voiceMount");
+  endCall(); // tear down any active call when (re)mounting
   if (hasRealAgent(p)) {
-    setConn("connecting", "connecting voice…");
-    // Render the widget element + a caption that frames the agent-assist story.
-    // override-voice-id applies the selected voice (agent must allow the voice_id override).
-    const voiceAttr = selectedVoice ? ` override-voice-id="${escapeHtml(selectedVoice)}"` : "";
+    setConn("ready", "ready");
     mount.innerHTML =
-      `<elevenlabs-convai agent-id="${escapeHtml(p.agent_id)}"${voiceAttr}></elevenlabs-convai>` +
-      `<p class="hint voice-caption">🎙️ Click the <b>talk</b> button to start a voice call with ` +
-      `<b>${escapeHtml(p.display_name)}</b> (allow your mic when asked). Answers are grounded in ` +
-      `the knowledge base; the <b>transcript &amp; citations</b> panel and the <b>live metrics</b> ` +
-      `bar below update as the call runs.</p>`;
-    ensureWidgetScript().then((ok) =>
-      ok
-        ? setConn("ready", "voice ready")
-        : setConn("error", "voice widget failed to load"),
-    );
+      `<div class="call-pane">` +
+      `<button id="callBtn" class="btn primary call-btn">📞 Start call</button>` +
+      `<button id="muteBtn" class="btn ghost small" hidden>Mute</button>` +
+      `<span class="hint" id="callStatus">Tap start and allow your mic to talk to ${escapeHtml(p.display_name)}.</span>` +
+      `</div>` +
+      `<p class="hint voice-caption">Answers are grounded in the knowledge base. The transcript ` +
+      `appears in the panel and the live-metrics bar updates as the call runs.</p>`;
+    el("callBtn").addEventListener("click", () => (callConvo ? endCall() : startCall()));
+    el("muteBtn").addEventListener("click", toggleMute);
   } else {
     setConn("offline", "text mode");
     mount.innerHTML = `<p class="hint">No live <code>agent_id</code> for <b>${escapeHtml(
       p.display_name,
-    )}</b> yet. Add one to the registry to enable the voice widget. Meanwhile, use the ask box ` +
+    )}</b> yet. Add one to the registry to enable the call. Meanwhile, use the ask box ` +
       `below — it drives the same bridge → ARAG path (the agent-assist “whisper” view).</p>`;
   }
+}
+
+async function startCall() {
+  if (!current || !current.agent_id || callConvo) return;
+  const btn = el("callBtn");
+  btn.disabled = true;
+  callStatus("connecting…");
+  setOrb("thinking");
+  try {
+    const { Conversation } = await loadSdk();
+    const opts = {
+      agentId: current.agent_id,
+      connectionType: "webrtc",
+      onConnect: () => {
+        btn.textContent = "End call";
+        btn.disabled = false;
+        el("muteBtn").hidden = false;
+        callStatus("connected — listening");
+        setConn("ready", "in call");
+        setOrb("idle");
+      },
+      onDisconnect: () => { callConvo = null; resetCallUI(); },
+      onStatusChange: ({ status }) => { if (status && status !== "connected") callStatus(status); },
+      onModeChange: ({ mode }) => {
+        setOrb(mode === "speaking" ? "speaking" : "idle");
+        callStatus(mode === "speaking" ? "agent speaking…" : "listening…");
+      },
+      onMessage: ({ message, source }) => renderCallMessage(source, message),
+      onError: (m) => callStatus(`error: ${m}`),
+    };
+    // Apply the selected voice (agent must allow the voice_id override).
+    if (selectedVoice) opts.overrides = { tts: { voiceId: selectedVoice } };
+    callConvo = await Conversation.startSession(opts);
+  } catch (err) {
+    callStatus(`error: ${err.message || err}`);
+    setOrb("idle");
+    btn.disabled = false;
+    callConvo = null;
+  }
+}
+
+async function endCall() {
+  const c = callConvo;
+  callConvo = null;
+  if (c) { try { await c.endSession(); } catch {} }
+  resetCallUI();
+}
+
+function resetCallUI() {
+  callMuted = false;
+  const btn = el("callBtn");
+  if (btn) { btn.textContent = "📞 Start call"; btn.disabled = false; }
+  const mb = el("muteBtn");
+  if (mb) { mb.hidden = true; mb.textContent = "Mute"; }
+  if (viewMode === "voice") { setOrb("idle"); callStatus("Ready."); setConn("ready", "ready"); }
+}
+
+function toggleMute() {
+  if (!callConvo) return;
+  callMuted = !callMuted;
+  try { callConvo.setMicMuted(callMuted); } catch {}
+  el("muteBtn").textContent = callMuted ? "Unmute" : "Mute";
+}
+
+// Stream the live call transcript into the panel.
+function renderCallMessage(source, text) {
+  if (!text || !String(text).trim()) return;
+  const who = source === "user" ? "Caller" : (current ? current.display_name : "Agent");
+  const div = document.createElement("div");
+  div.className = `turn call-turn ${source === "user" ? "from-user" : "from-agent"}`;
+  div.innerHTML = `<div class="q"><b>${escapeHtml(who)}:</b> ${escapeHtml(text)}</div>`;
+  log.prepend(div);
 }
 
 // ---- Voice / Listen / Avatar mode switch -----------------------------------
@@ -754,8 +821,12 @@ el("prospect").addEventListener("change", (e) => selectProspect(e.target.value))
 el("model").addEventListener("change", (e) => (selectedModel = e.target.value));
 el("voice").addEventListener("change", (e) => {
   selectedVoice = e.target.value;
-  // Re-mount the Call widget so the new voice applies at the next session start.
-  if (viewMode === "voice" && current && current.agent_id) mountVoice(current);
+  // The voice override applies at session start, so restart an active call to apply it.
+  if (viewMode === "voice" && current && current.agent_id) {
+    const wasInCall = !!callConvo;
+    mountVoice(current); // ends any active call + rebuilds the controls
+    if (wasInCall) startCall();
+  }
 });
 el("askForm").addEventListener("submit", (e) => {
   e.preventDefault();

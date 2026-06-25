@@ -112,9 +112,14 @@ select {
 .hint { color: var(--muted); font-size: 13px; margin: 0; line-height: 1.5; }
 .hint b { color: var(--text); }
 .voice-caption { margin-top: 4px; text-align: left; }
-.voice-mount { flex-direction: column; gap: 4px; }
-elevenlabs-convai { display: block; }
+.voice-mount { flex-direction: column; gap: 8px; align-items: stretch; }
 .pill[data-on="false"] { color: var(--muted); }
+
+/* On-brand call controls */
+.call-pane { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.call-btn { font-size: 15px; padding: 11px 18px; }
+.call-turn.from-agent { border-color: var(--accent); }
+.call-turn.from-user .q b { color: var(--accent-2); }
 
 /* Voice/Avatar segmented switch */
 .head-right { display: flex; align-items: center; gap: 10px; }
