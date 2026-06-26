@@ -120,8 +120,8 @@ async function startCall(useVoiceOverride = true) {
   const live = () => gen === callGen;
 
   const fallbackToDefault = () => {
-    if (!live()) return;
-    callStatus("selected voice isn't enabled on the agent — using default voice");
+    if (!live()) return; // already superseded → don't double-retry
+    callStatus("custom voice needs 'Voice ID' override on the agent — using default voice");
     startCall(false);
   };
 
@@ -139,7 +139,21 @@ async function startCall(useVoiceOverride = true) {
         callStatus(applyingVoice ? "connected — listening (custom voice)" : "connected — listening");
         setOrb("idle");
       },
-      onDisconnect: () => { if (live()) { callConvo = null; resetCallUI(); } },
+      onDisconnect: (details) => {
+        const reason = details && details.reason;
+        const msg = (details && (details.message || details.closeReason)) || "";
+        // The override is rejected via an error-disconnect. While applying a voice override,
+        // ANY error-disconnect is almost certainly that → retry on the default voice instead
+        // of dropping the call. (fallbackToDefault self-guards against double-retry.)
+        if (applyingVoice && (reason === "error" || isVoiceOverrideError(msg))) {
+          fallbackToDefault();
+          return;
+        }
+        if (!live()) return;
+        callConvo = null;
+        resetCallUI();
+        if (reason === "error" && msg) callStatus(`disconnected: ${msg}`);
+      },
       onStatusChange: ({ status }) => { if (live() && status && status !== "connected") callStatus(status); },
       onModeChange: ({ mode }) => {
         if (!live()) return;
