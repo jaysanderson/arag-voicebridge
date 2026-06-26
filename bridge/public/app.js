@@ -132,6 +132,7 @@ function buildModeSwitch(p) {
 // launcher) and we can apply the voice override + stream the transcript into the panel.
 let callConvo = null;
 let callMuted = false;
+let callGen = 0; // generation guard: each call attempt bumps this; stale handlers no-op
 let ElevenSDK = null;
 
 async function loadSdk() {
@@ -181,19 +182,33 @@ function isVoiceOverrideError(msg) {
 }
 
 // useVoiceOverride lets us retry without the voice override if the agent forbids it.
+// A generation counter (callGen) guards against a rejected session resolving late and
+// clobbering the fallback retry.
 async function startCall(useVoiceOverride = true) {
-  if (!current || !current.agent_id || callConvo) return;
+  if (!current || !current.agent_id) return;
+  if (callConvo) { const c = callConvo; callConvo = null; try { await c.endSession(); } catch {} }
+  const gen = ++callGen;
   const btn = el("callBtn");
-  btn.disabled = true;
+  if (btn) btn.disabled = true;
   callStatus("connecting…");
   setOrb("thinking");
   const applyingVoice = Boolean(selectedVoice && useVoiceOverride);
+  const live = () => gen === callGen; // is this attempt still the current one?
+
+  const fallbackToDefault = () => {
+    if (!live()) return; // already superseded
+    callStatus("selected voice isn't enabled on the agent — using default voice");
+    startCall(false); // bumps callGen → supersedes this attempt, ends any late session
+  };
+
   try {
     const { Conversation } = await loadSdk();
+    if (!live()) return;
     const opts = {
       agentId: current.agent_id,
       connectionType: "webrtc",
       onConnect: () => {
+        if (!live()) return;
         btn.textContent = "End call";
         btn.disabled = false;
         el("muteBtn").hidden = false;
@@ -201,41 +216,36 @@ async function startCall(useVoiceOverride = true) {
         setConn("ready", "in call");
         setOrb("idle");
       },
-      onDisconnect: () => { callConvo = null; resetCallUI(); },
-      onStatusChange: ({ status }) => { if (status && status !== "connected") callStatus(status); },
+      onDisconnect: () => { if (live()) { callConvo = null; resetCallUI(); } },
+      onStatusChange: ({ status }) => { if (live() && status && status !== "connected") callStatus(status); },
       onModeChange: ({ mode }) => {
+        if (!live()) return;
         setOrb(mode === "speaking" ? "speaking" : "idle");
         callStatus(mode === "speaking" ? "agent speaking…" : "listening…");
       },
-      onMessage: ({ message, source }) => renderCallMessage(source, message),
+      onMessage: ({ message, source }) => { if (live()) renderCallMessage(source, message); },
       onError: (m) => {
-        // Agent forbids the voice override → reconnect with the default voice instead of failing.
-        if (applyingVoice && isVoiceOverrideError(m)) {
-          callStatus("selected voice isn't enabled on the agent — using default voice");
-          endCall().then(() => startCall(false));
-        } else {
-          callStatus(`error: ${m}`);
-        }
+        if (applyingVoice && isVoiceOverrideError(m)) { fallbackToDefault(); return; }
+        if (live()) callStatus(`error: ${m}`);
       },
     };
     if (applyingVoice) opts.overrides = { tts: { voiceId: selectedVoice } };
-    callConvo = await Conversation.startSession(opts);
+    const convo = await Conversation.startSession(opts);
+    if (!live()) { try { await convo.endSession(); } catch {} return; } // superseded (e.g. fell back)
+    callConvo = convo;
   } catch (err) {
     const msg = err && err.message ? err.message : String(err);
-    if (applyingVoice && isVoiceOverrideError(msg)) {
-      callStatus("selected voice isn't enabled on the agent — using default voice");
-      callConvo = null;
-      startCall(false); // retry without the override
-      return;
-    }
+    if (applyingVoice && isVoiceOverrideError(msg)) { fallbackToDefault(); return; }
+    if (!live()) return;
     callStatus(`error: ${msg}`);
     setOrb("idle");
-    btn.disabled = false;
+    if (btn) btn.disabled = false;
     callConvo = null;
   }
 }
 
 async function endCall() {
+  callGen++; // invalidate any in-flight attempt
   const c = callConvo;
   callConvo = null;
   if (c) { try { await c.endSession(); } catch {} }
