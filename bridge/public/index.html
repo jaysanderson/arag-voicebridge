@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>ARAG Voice — Control Panel</title>
+    <title>ARAG Voice</title>
     <link rel="stylesheet" href="styles.css" />
   </head>
   <body>
@@ -15,105 +15,78 @@
           <p class="tagline">Grounded · Cited · Governed — voice over Progress Agentic RAG</p>
         </div>
       </div>
-      <div class="controls">
-        <label class="field">
-          <span>Prospect</span>
-          <select id="prospect"></select>
-        </label>
-        <label class="field">
-          <span>Model</span>
-          <select id="model" title="Generative model used for the ARAG ask (brief + text ask)">
-            <option value="">KB default</option>
-          </select>
-        </label>
-        <label class="field">
-          <span>Voice</span>
-          <select id="voice" title="Voice for the Call agent (needs voice_id override enabled on the agent)">
-            <option value="">Agent default</option>
-          </select>
-        </label>
-        <button id="runGolden" class="btn ghost" title="Run this prospect's golden set">
-          Run golden set
-        </button>
+
+      <!-- The two functions of the app -->
+      <div id="modeToggle" class="mode-toggle">
+        <button data-mode="voice" class="seg active">📞&nbsp; Call</button>
+        <button data-mode="listen" class="seg">👂&nbsp; Listen</button>
       </div>
     </header>
 
-    <main class="grid">
-      <!-- LEFT: voice console + ask box -->
-      <section class="panel console">
-        <div class="console-head">
-          <h2 id="consoleTitle">Voice console</h2>
-          <div class="head-right">
-            <!-- Segments are built in app.js from each prospect's capabilities. -->
-            <div id="modeSwitch" class="segmented" hidden></div>
-            <span class="pill" id="connState">offline</span>
+    <main class="stage">
+      <!-- ============ CALL: speak to the agent, hear it back ============ -->
+      <section id="callView" class="mode-view">
+        <div class="panel control">
+          <h2>Voice call</h2>
+          <p class="lead">Speak directly to the assistant and hear grounded answers back.</p>
+          <div class="control-actions">
+            <button id="callBtn" class="btn primary big">📞 Start call</button>
+            <button id="muteBtn" class="btn ghost" hidden>Mute</button>
           </div>
+          <p class="status" id="callStatus">Ready.</p>
+          <label class="field inline">
+            <span>Voice</span>
+            <select id="voice" title="Voice for the agent (needs voice_id override enabled on the agent)">
+              <option value="">Agent default</option>
+            </select>
+          </label>
         </div>
+        <div class="panel content">
+          <div class="content-head">
+            <h2>Call transcript</h2>
+            <button id="clearCall" class="btn ghost small">Clear</button>
+          </div>
+          <div id="callLog" class="log"></div>
+        </div>
+      </section>
 
-        <div id="voiceMount" class="voice-mount">
-          <!-- ElevenLabs ConvAI widget mounts here when an agent_id is configured -->
-          <p class="hint" id="voiceHint">
-            Select a prospect with a configured <code>agent_id</code> to start a live voice call,
-            or use the ask box below to drive the bridge directly (agent-assist view).
+      <!-- ============ LISTEN: silent copilot, evolving brief ============ -->
+      <section id="listenView" class="mode-view" hidden>
+        <div class="panel control">
+          <h2>Listen</h2>
+          <p class="lead">
+            I listen to the conversation and stay silent — the brief on the right keeps evolving
+            with what to talk about and what's relevant.
           </p>
-        </div>
-
-        <!-- LiveAvatar (HeyGen) video pane — shown when avatar mode is selected -->
-        <div id="avatarPane" class="avatar-pane" hidden>
-          <video id="avatarVideo" class="avatar-video" autoplay playsinline></video>
-          <div class="avatar-controls">
-            <button id="avatarBtn" class="btn primary">Start avatar call</button>
-            <span class="hint" id="avatarStatus">Idle.</span>
+          <div class="control-actions">
+            <button id="listenBtn" class="btn primary big">Start listening</button>
           </div>
-        </div>
-
-        <!-- Ambient "Listen" pane — continuous STT (Scribe), silent, live brief -->
-        <div id="listenPane" class="listen-pane" hidden>
-          <div class="listen-controls">
-            <button id="listenBtn" class="btn primary">Start listening</button>
-            <span class="hint" id="listenStatus">Idle.</span>
-          </div>
+          <p class="status" id="listenStatus">Idle.</p>
           <div class="listen-live">
             <span class="listen-label">hearing</span>
             <span id="listenInterim" class="listen-interim">…</span>
           </div>
-          <div id="liveBrief" class="live-brief">
-            <div class="brief-head">
-              <span class="brief-title">Live brief</span>
-              <span id="briefMeta" class="brief-meta"></span>
-            </div>
-            <div id="briefBody" class="brief-body">
-              Start listening — I'll keep this updated, hands-free, with the most relevant
-              knowledge as you talk. I stay silent; nothing is spoken back.
-            </div>
-            <div id="briefSources" class="cites"></div>
+          <label class="field inline">
+            <span>Brief model</span>
+            <select id="model" title="Generative model used to build the brief">
+              <option value="">KB default</option>
+            </select>
+          </label>
+        </div>
+        <div class="panel content">
+          <div class="content-head">
+            <h2>Live brief</h2>
+            <span id="briefMeta" class="brief-meta"></span>
           </div>
+          <div id="briefBody" class="brief-body">
+            Start listening — I'll keep this updated, hands-free, with the most relevant knowledge,
+            who you're speaking to, what they want, and what to say next. I stay silent.
+          </div>
+          <div id="briefSources" class="cites"></div>
         </div>
-
-        <form id="askForm" class="ask">
-          <input
-            id="askInput"
-            type="text"
-            placeholder="Type a caller question to send to ARAG…"
-            autocomplete="off"
-          />
-          <button class="btn primary" type="submit">Ask</button>
-        </form>
-
-        <p class="greeting" id="greeting"></p>
-      </section>
-
-      <!-- RIGHT: transcript with citations + latency -->
-      <section class="panel transcript">
-        <div class="console-head">
-          <h2>Transcript &amp; citations</h2>
-          <button id="clearLog" class="btn ghost small">Clear</button>
-        </div>
-        <div id="log" class="log" aria-live="polite"></div>
       </section>
     </main>
 
-    <!-- BOTTOM: live metrics strip (SPEC §13) -->
     <footer class="metrics" id="metricsStrip">
       <div class="metric"><span class="k">turns</span><span class="v" id="mTurns">—</span></div>
       <div class="metric"><span class="k">p50 total</span><span class="v" id="mP50">—</span></div>
