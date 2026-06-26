@@ -9,6 +9,7 @@
     "handoff_msg": "Let me hand you over to a specialist who can help with that.",
     "reranker": "predict",
     "temperature": 0,
+    "brief_model": "gemini-2.5-flash",
     "golden_questions": [
       { "q": "Tell me about the Desktop Metal PureSinter furnace.", "expect": "answer", "must_include": ["sinter"] },
       { "q": "Which manufacturers make binder jetting metal printers?", "expect": "answer", "must_include": ["Desktop Metal"] },

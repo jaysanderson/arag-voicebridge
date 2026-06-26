@@ -65,6 +65,8 @@ export interface ProspectConfig {
   generative_model?: string;
   /** Generation temperature (inline path). Defaults to 0 for deterministic demos. */
   temperature?: number;
+  /** Fast model used for the live brief (Listen mode) — the brief needs low latency. */
+  brief_model?: string;
   /** Non-secret ElevenAgents identifiers (used by the client, not the bridge). */
   agent_id?: string;
   voice_id?: string;

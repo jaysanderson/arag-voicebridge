@@ -178,11 +178,14 @@ export async function runBrief(
     context: buildContext([], config.maxHistoryTurns),
     prompt: { system: briefSystemPrompt(prospect.display_name, prospect.locale), user },
     reranker: prospect.reranker ?? "predict",
-    maxTokens: 700,
+    maxTokens: 600,
     temperature: prospect.temperature ?? 0,
     answerJsonSchema: req.schema ?? LIVE_BRIEF_SCHEMA,
   };
-  const m = req.model || prospect.generative_model;
+  // The brief MUST be fast: a per-request model wins, else the prospect's fast brief_model,
+  // else its answer model. Slow models (e.g. Claude) don't return answer_json before the
+  // timeout → null briefs that never update, which is exactly what we're avoiding here.
+  const m = req.model || prospect.brief_model || prospect.generative_model;
   if (m) askParams.generativeModel = m;
 
   let result: AskResult;

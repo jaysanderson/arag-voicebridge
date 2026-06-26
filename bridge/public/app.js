@@ -79,6 +79,11 @@ async function loadModels(p) {
       o.textContent = m.label || m.id;
       sel.appendChild(o);
     }
+    // Default the brief to a FAST model so the card updates continuously (slow models like
+    // Claude can't return the structured brief in time and leave it frozen).
+    const fast = ["gemini-2.5-flash", "chatgpt4o-mini", "chatgpt-azure-4o-mini", "gemini-2.5-flash-lite"]
+      .find((id) => (models || []).some((m) => m.id === id));
+    if (fast) { sel.value = fast; selectedModel = fast; }
   } catch {
     /* leave just KB default */
   }
@@ -430,10 +435,13 @@ async function fireBriefQuery(window, norm) {
   lastQueryNorm = norm;
   setOrb("thinking");
   el("briefMeta").textContent = "updating…";
+  const ctrl = new AbortController();
+  const to = setTimeout(() => ctrl.abort(), 9000); // never let a stalled request freeze updates
   try {
     const res = await fetch(`${BRIDGE_URL}/v1/brief`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
+      signal: ctrl.signal,
       body: JSON.stringify({
         prospect: current.key,
         text: window,
@@ -460,6 +468,7 @@ async function fireBriefQuery(window, norm) {
     el("briefMeta").textContent = "listening…";
     setOrb("idle");
   } finally {
+    clearTimeout(to);
     querying = false;
   }
 }
