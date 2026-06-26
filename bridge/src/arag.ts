@@ -49,6 +49,8 @@ export interface AskParams {
    * a structured answer: the result lands in `answer_json` (an object) and `answer` is empty.
    */
   answerJsonSchema?: unknown;
+  /** Per-request timeout override (ms). Defaults to config.aragTimeoutMs. */
+  timeoutMs?: number;
 }
 
 export interface AskResult {
@@ -257,7 +259,7 @@ export async function askArag(params: AskParams, signal?: AbortSignal): Promise<
   // Structured output: forces ARAG to answer as JSON in `answer_json` (SPEC: JSON output).
   if (params.answerJsonSchema) body.answer_json_schema = params.answerJsonSchema;
 
-  const timeout = AbortSignal.timeout(config.aragTimeoutMs);
+  const timeout = AbortSignal.timeout(params.timeoutMs ?? config.aragTimeoutMs);
   // Combine the caller's signal (barge-in) with our timeout.
   const combined = signal ? AbortSignal.any([signal, timeout]) : timeout;
 

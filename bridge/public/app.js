@@ -436,7 +436,7 @@ async function fireBriefQuery(window, norm) {
   setOrb("thinking");
   el("briefMeta").textContent = "updating…";
   const ctrl = new AbortController();
-  const to = setTimeout(() => ctrl.abort(), 9000); // never let a stalled request freeze updates
+  const to = setTimeout(() => ctrl.abort(), 14000); // > bridge brief timeout; just a stall guard
   try {
     const res = await fetch(`${BRIDGE_URL}/v1/brief`, {
       method: "POST",

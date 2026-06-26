@@ -181,6 +181,9 @@ export async function runBrief(
     maxTokens: 600,
     temperature: prospect.temperature ?? 0,
     answerJsonSchema: req.schema ?? LIVE_BRIEF_SCHEMA,
+    // The brief isn't blocking speech, so allow longer than the 6s call timeout — better a
+    // slightly late brief than a null one when generation (or a cold machine) runs long.
+    timeoutMs: 12000,
   };
   // The brief MUST be fast: a per-request model wins, else the prospect's fast brief_model,
   // else its answer model. Slow models (e.g. Claude) don't return answer_json before the
