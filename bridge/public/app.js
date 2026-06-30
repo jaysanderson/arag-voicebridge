@@ -72,18 +72,19 @@ async function loadModels(p) {
     const res = await fetch(`${BRIDGE_URL}/v1/models?prospect=${encodeURIComponent(p.key)}`);
     if (!res.ok) return;
     const { models, current: def } = await res.json();
-    if (def) sel.options[0].textContent = `KB default (${def})`;
+    if (def) sel.options[0].textContent = `Auto — fast default`;
+    const bar = (n, ch) => ch.repeat(Math.max(0, n)) + "·".repeat(Math.max(0, 3 - n));
     for (const m of models || []) {
       const o = document.createElement("option");
       o.value = m.id;
-      o.textContent = m.label || m.id;
+      // self-explanatory: ⚡ speed · ★ quality · $ price
+      o.textContent = `${m.label}   ${bar(m.speed, "⚡")} ${bar(m.quality, "★")} ${"$".repeat(m.price || 1)}`;
       sel.appendChild(o);
     }
-    // Default the brief to a FAST model so the card updates continuously (slow models like
-    // Claude can't return the structured brief in time and leave it frozen).
-    const fast = ["gemini-2.5-flash", "chatgpt4o-mini", "chatgpt-azure-4o-mini", "gemini-2.5-flash-lite"]
+    // Default the brief to the fastest good model (continuously-updating brief needs low latency).
+    const prefer = ["gemini-2.5-flash-lite", "gemini-2.5-flash", "chatgpt4o-mini", "gemini-2.5-flash-lite"]
       .find((id) => (models || []).some((m) => m.id === id));
-    if (fast) { sel.value = fast; selectedModel = fast; }
+    if (prefer) { sel.value = prefer; selectedModel = prefer; }
   } catch {
     /* leave just KB default */
   }

@@ -11,6 +11,34 @@ import type { ProspectConfig } from "./types.ts";
 export interface ModelOption {
   id: string;
   label: string;
+  /** 1–3 tiers for the picker. speed: 3=fastest. quality: 3=best. price: 3=most expensive. */
+  speed: number;
+  quality: number;
+  price: number;
+}
+
+/** Rough speed/quality/price tiers by model family, so the picker is self-explanatory. */
+function classify(id: string): { speed: number; quality: number; price: number } {
+  const s = id.toLowerCase();
+  const has = (...xs: string[]) => xs.some((x) => s.includes(x));
+  // Fast/cheap tier first (these are ideal for the live brief).
+  if (has("flash-lite", "nano")) return { speed: 3, quality: 2, price: 1 };
+  if (has("haiku")) return { speed: 3, quality: 2, price: 1 };
+  if (has("flash")) return { speed: 3, quality: 2, price: 1 };
+  if (has("-mini") || s.endsWith("mini")) return { speed: 3, quality: 2, price: 1 };
+  if (has("lite")) return { speed: 3, quality: 2, price: 1 };
+  // Premium / slow reasoning.
+  if (has("opus")) return { speed: 1, quality: 3, price: 3 };
+  if (/(?:^|-)o[134](?:-|$)/.test(s)) return { speed: 1, quality: 3, price: 3 };
+  if (has("gpt-5", "chatgpt-5", "chatgpt5", "5.5")) return { speed: 2, quality: 3, price: 3 };
+  // Balanced high quality.
+  if (has("sonnet")) return { speed: 2, quality: 3, price: 2 };
+  if (has("4.1") || has("4o")) return { speed: 2, quality: 3, price: 2 };
+  if (has("pro")) return { speed: 2, quality: 3, price: 2 };
+  // Mid.
+  if (has("mistral")) return { speed: 2, quality: 2, price: 2 };
+  if (has("llama")) return { speed: 2, quality: 2, price: 1 };
+  return { speed: 2, quality: 2, price: 2 };
 }
 
 function base(p: ProspectConfig): string {
@@ -34,12 +62,12 @@ function optionsFrom(node: unknown): ModelOption[] {
     [];
   const out: ModelOption[] = [];
   for (const o of raw as unknown[]) {
-    if (typeof o === "string") out.push({ id: o, label: o });
+    if (typeof o === "string") out.push({ id: o, label: o, ...classify(o) });
     else if (o && typeof o === "object") {
       const r = o as Record<string, unknown>;
       const id = (r.value ?? r.id ?? r.model ?? r.name) as string | undefined;
       const label = (r.name ?? r.title ?? r.label ?? id) as string | undefined;
-      if (id) out.push({ id, label: label ?? id });
+      if (id) out.push({ id, label: label ?? id, ...classify(id) });
     }
   }
   return out;
@@ -78,5 +106,7 @@ export async function fetchModels(
   } catch {
     /* ignore */
   }
+  // Fast-first (best for the live brief), then higher quality.
+  models.sort((a, b) => b.speed - a.speed || b.quality - a.quality || a.label.localeCompare(b.label));
   return { models, current };
 }

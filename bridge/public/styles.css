@@ -100,6 +100,8 @@ body {
 
 .field { display: flex; flex-direction: column; gap: 5px; font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.6px; }
 .field.inline { margin-top: auto; } /* push settings to the bottom of the control panel */
+.legend { font-style: normal; text-transform: none; letter-spacing: 0; color: var(--muted); font-size: 10.5px; margin-left: 6px; }
+#model option { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
 select {
   background: var(--panel-2); color: var(--text); border: 1px solid var(--border);
   border-radius: 8px; padding: 9px 10px; font-size: 14px; width: 100%;
