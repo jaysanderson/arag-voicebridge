@@ -139,6 +139,9 @@ select {
 .brief-section-label { font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.7px; color: var(--muted); margin-top: 6px; }
 .brief-section-label.ask { color: var(--accent-2); }
 .brief-section-label.say { color: var(--accent); }
+.brief-section-label.rec { color: var(--ok); }
+.brief-rec { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 4px; }
+.brief-rec li { color: var(--ok); font-weight: 500; }
 .persona-row { display: flex; gap: 6px; flex-wrap: wrap; }
 .persona-chip { font-size: 12px; padding: 4px 10px; border-radius: 999px; border: 1px solid var(--border); }
 .persona-chip.goal { color: var(--accent); border-color: var(--accent); }

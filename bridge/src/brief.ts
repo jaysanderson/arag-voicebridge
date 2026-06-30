@@ -16,7 +16,6 @@ import { config } from "./config.ts";
 import { log } from "./logger.ts";
 import { guardInput } from "./safety.ts";
 import { extractCitations } from "./citations.ts";
-import { buildContext } from "./pipeline.ts";
 
 /** OpenAI-function-style schema ARAG expects in `answer_json_schema`. */
 export const LIVE_BRIEF_SCHEMA = {
@@ -75,6 +74,14 @@ export const LIVE_BRIEF_SCHEMA = {
           "1 to 3 things the handler could SAY, grounded ONLY in the knowledge base, to address " +
           "the other person's need.",
       },
+      recommended_products: {
+        type: "array",
+        items: { type: "string" },
+        description:
+          "0 to 3 SPECIFIC products from the knowledge base to recommend when there is a genuine " +
+          "fit for what the person wants — each as 'Product name — one-line why it fits'. Only " +
+          "include real products named in the knowledge base; empty array if nothing clearly fits.",
+      },
     },
     required: ["summary"],
   },
@@ -90,6 +97,11 @@ function briefSystemPrompt(displayName: string, locale: string): string {
     `invent product facts, prices, model numbers, or policies — if the knowledge base lacks it, ` +
     `leave it out. suggested_questions are questions the handler could ask the other person to ` +
     `qualify them or advance toward their goal. ` +
+    `When the conversation reveals a need that a SPECIFIC product in the knowledge base fits, call ` +
+    `it out in recommended_products (named product + one-line why). Only recommend products that ` +
+    `genuinely fit and are named in the knowledge base — never invent or oversell. ` +
+    `Always use the FULL conversation so far and the chat history provided to keep the brief current ` +
+    `as the discussion moves. ` +
     `Refine and EXTEND your previous brief each time; do not restart from scratch. Keep every ` +
     `field concise and written in ${locale} English.`
   );
@@ -127,6 +139,7 @@ function prevBriefToText(prev: unknown): string {
   arr("Key points", o.key_points);
   arr("Suggested questions", o.suggested_questions);
   arr("Suggested answers", o.suggested_answers);
+  arr("Recommended products", o.recommended_products);
   return lines.join("\n");
 }
 
@@ -175,7 +188,9 @@ export async function runBrief(
     // Retrieval is focused on the latest words (the current topic); the conversation arc lives
     // in the prompt above so the model reasons over the whole call.
     query: req.text.trim(),
-    context: buildContext([], config.maxHistoryTurns),
+    // Feed the recent conversation as chat_history so ARAG rephrases the retrieval query with
+    // conversation awareness (e.g. resolves "what does that cost") — context is always current.
+    context: transcript ? [{ author: "USER", text: transcript.slice(-1500) }] : [],
     prompt: { system: briefSystemPrompt(prospect.display_name, prospect.locale), user },
     reranker: prospect.reranker ?? "predict",
     maxTokens: 600,

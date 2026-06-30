@@ -500,6 +500,8 @@ function updateBrief(b, citations) {
     html += `<div class="brief-section-label ask">Ask them</div>` + briefList(b.suggested_questions, "brief-suggest");
   if (hasItems(b.suggested_answers))
     html += `<div class="brief-section-label say">You could say</div>` + briefList(b.suggested_answers, "brief-suggest");
+  if (hasItems(b.recommended_products))
+    html += `<div class="brief-section-label rec">💡 Recommend</div>` + briefList(b.recommended_products, "brief-rec");
   el("briefBody").innerHTML = html || "<span class='hint'>Listening…</span>";
 
   for (const c of citations) {
