@@ -106,7 +106,13 @@ export async function fetchModels(
   } catch {
     /* ignore */
   }
-  // Fast-first (best for the live brief), then higher quality.
-  models.sort((a, b) => b.speed - a.speed || b.quality - a.quality || a.label.localeCompare(b.label));
+  // Fast-first (best for the live brief), then higher quality; prefer the plain (shortest) id.
+  models.sort(
+    (a, b) =>
+      b.speed - a.speed || b.quality - a.quality || a.label.localeCompare(b.label) || a.id.length - b.id.length,
+  );
+  // Dedupe provider routing variants that share a label (claude-…/gcp-claude-…/aws-claude-…).
+  const seen = new Set<string>();
+  models = models.filter((m) => (seen.has(m.label) ? false : (seen.add(m.label), true)));
   return { models, current };
 }
