@@ -13,7 +13,7 @@ import type { VoiceConfig } from "../config.ts";
 import type { Citation, ProspectConfig } from "../types.ts";
 import { citationsFrom } from "./citations.ts";
 import type { AskCapable } from "./pipeline.ts";
-import { guardInput } from "./safety.ts";
+import { guardInput, screenTranscript } from "./safety.ts";
 
 /** OpenAI-function-style schema ARAG expects in `answer_json_schema`. */
 export const LIVE_BRIEF_SCHEMA: AnswerJsonSchema = {
@@ -148,7 +148,9 @@ export function prevBriefToText(prev: unknown): string {
 export function buildBriefRequest(req: BriefRequest, prospect: ProspectConfig): AskRequest {
   // ARAG's prompt templater only allows {context}/{question}; any other curly braces 400.
   const stripBraces = (s: string) => s.replace(/[{}]/g, "");
-  const transcript = stripBraces((req.transcript ?? "").slice(-MAX_TRANSCRIPT_CHARS));
+  // The transcript is caller-supplied and lands in the prompt: drop injected lines first.
+  const screened = screenTranscript((req.transcript ?? "").slice(-MAX_TRANSCRIPT_CHARS)).text;
+  const transcript = stripBraces(screened);
   const prevText = req.prev ? stripBraces(prevBriefToText(req.prev)).slice(0, MAX_PREV_CHARS) : "";
   const user =
     "Knowledge base context:\n{context}\n\n" +

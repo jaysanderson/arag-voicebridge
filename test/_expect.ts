@@ -45,6 +45,7 @@ export interface Matchers {
   not: Omit<Matchers, "not">;
 }
 
+// biome-ignore lint/suspicious/noExplicitAny: a matcher shim accepts any asserted value.
 export function expect(actual: any): Matchers {
   const make = (negate: boolean): Omit<Matchers, "not"> => ({
     toBe(expected) {

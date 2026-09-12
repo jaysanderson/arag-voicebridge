@@ -154,10 +154,12 @@ export class ProspectRegistry {
 
   /**
    * Seed the store from `config/prospects.example.json` when it is empty (first boot).
-   * `VOICE_DEFAULT_AGENT_ID` replaces the placeholder agent id of the first prospect so the
-   * deployed demo keeps working without committing a real ElevenLabs agent id.
+   *
+   * The shipped example carries placeholders, never real identifiers: `ARAG_KB_ID` and
+   * `VOICE_DEFAULT_AGENT_ID` are substituted into the first prospect at boot, so a deployment
+   * answers from its own Knowledge Box while the repository stays free of live ids.
    */
-  seedFromFile(file: string): number {
+  seedFromFile(file: string, defaults: { kbId?: string } = {}): number {
     if (this.col.size > 0 || !existsSync(file)) return 0;
     let raw: Record<string, unknown>;
     try {
@@ -176,8 +178,11 @@ export class ProspectRegistry {
         continue;
       }
       const cfg = normaliseProspect(value as Record<string, unknown>);
-      if (this.cfg.defaultAgentId && (!cfg.agent_id || /REPLACE_ME/i.test(cfg.agent_id))) {
-        if (seeded === 0) cfg.agent_id = this.cfg.defaultAgentId;
+      if (seeded === 0) {
+        if (this.cfg.defaultAgentId && (!cfg.agent_id || /REPLACE_ME/i.test(cfg.agent_id))) {
+          cfg.agent_id = this.cfg.defaultAgentId;
+        }
+        if (defaults.kbId && /REPLACE_ME/i.test(cfg.kb_id)) cfg.kb_id = defaults.kbId;
       }
       this.col.put({ id: key, createdAt: new Date(base + seeded).toISOString(), ...cfg });
       seeded++;

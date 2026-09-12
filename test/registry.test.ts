@@ -126,6 +126,22 @@ describe("ProspectRegistry", () => {
     expect(reg.seedFromFile(file)).toBe(0);
   });
 
+  it("substitutes the deployment's own Knowledge Box id for the shipped placeholder", () => {
+    const { reg, dir } = registry();
+    const file = join(dir, "seed.json");
+    writeFileSync(
+      file,
+      JSON.stringify({
+        first: { ...valid, kb_id: "REPLACE_ME_KB_ID" },
+        second: { ...valid, kb_id: "REPLACE_ME_KB_ID" },
+      }),
+    );
+    reg.seedFromFile(file, { kbId: "kb-from-env" });
+    expect(reg.require("first").kb_id).toBe("kb-from-env");
+    // Only the deployment's own (first) prospect is rewritten; the rest stay as shipped.
+    expect(reg.require("second").kb_id).toBe("REPLACE_ME_KB_ID");
+  });
+
   it("applies VOICE_DEFAULT_AGENT_ID to the first seeded prospect's placeholder agent id", () => {
     const { reg, dir } = registry(readVoiceEnv({ VOICE_DEFAULT_AGENT_ID: "agent_live_123" }));
     const file = join(dir, "seed.json");

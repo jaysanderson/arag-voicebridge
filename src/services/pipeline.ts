@@ -22,7 +22,7 @@ import type {
 } from "../types.ts";
 import { citationsFrom } from "./citations.ts";
 import { decideHandoff } from "./handoff.ts";
-import { guardInput, guardOutput } from "./safety.ts";
+import { guardInput, guardOutput, screenTurns } from "./safety.ts";
 import { buildVoicePrompt } from "./voicePrompt.ts";
 import { shapeForVoice } from "./voiceShape.ts";
 
@@ -62,10 +62,15 @@ export function isGuardReason(reason: string | undefined): boolean {
 export function buildContext(history: HistoryTurn[] | undefined, maxTurns: number): ChatContext[] {
   if (!history || history.length === 0) return [];
   const maxMessages = Math.max(0, maxTurns) * 2;
-  return history
+  const recent = history
     .slice(-maxMessages)
-    .filter((h) => h && typeof h.text === "string" && h.text.trim().length > 0)
-    .map((h) => ({ author: h.author === "NUCLIA" ? "NUCLIA" : "USER", text: h.text.trim() }) as ChatContext);
+    .filter((h) => h && typeof h.text === "string" && h.text.trim().length > 0);
+  // History is caller-supplied and reaches the model as context, so it is screened exactly like
+  // the question; a poisoned turn is dropped rather than forwarded.
+  const { kept } = screenTurns(recent);
+  return kept.map(
+    (h) => ({ author: h.author === "NUCLIA" ? "NUCLIA" : "USER", text: h.text.trim() }) as ChatContext,
+  );
 }
 
 /** Build the ARAG `/ask` body for a turn (exported for tests and the docs). */

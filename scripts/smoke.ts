@@ -35,6 +35,9 @@ if (existsSync(dataFile)) {
   for (const r of rows) registry[r.id] = r;
 } else {
   registry = JSON.parse(readFileSync(exampleFile, "utf8")) as Registry;
+  // The shipped example carries a placeholder Knowledge Box id; use the deployment's own.
+  const first = Object.values(registry)[0];
+  if (first && /REPLACE_ME/i.test(first.kb_id) && env.arag.kbId) first.kb_id = env.arag.kbId;
 }
 
 const key = keyArg ?? Object.keys(registry)[0];

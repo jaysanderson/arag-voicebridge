@@ -62,7 +62,7 @@ export class AragClientPool {
     if (this.deps.mock) return this.deps.mock.url;
     const region = this.regionFor(p);
     const env = this.deps.env.arag;
-    if (env.baseUrl && (!region || region === env.region)) return env.baseUrl.replace(/\/+$/, "");
+    if (env.baseUrl && region === env.region) return env.baseUrl.replace(/\/+$/, "");
     return DEFAULT_HOST_TEMPLATE.replace("{region}", region);
   }
 

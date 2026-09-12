@@ -4,6 +4,7 @@ import { describe, expect, it } from "./_expect.ts";
 
 interface DecodedJwt {
   header: Record<string, unknown>;
+  // biome-ignore lint/suspicious/noExplicitAny: a decoded JWT payload is arbitrary JSON.
   payload: Record<string, any>;
   signature: string;
   signingInput: string;

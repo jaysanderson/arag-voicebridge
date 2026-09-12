@@ -56,4 +56,11 @@ describe("hasSpeakableViolation", () => {
     expect(hasSpeakableViolation("see [1]")).toBe(true);
     expect(hasSpeakableViolation("clean spoken text.")).toBe(false);
   });
+
+  it("does not flag speakable punctuation (the check must not cause false handoffs)", () => {
+    expect(hasSpeakableViolation("The C# API is supported.")).toBe(false);
+    expect(hasSpeakableViolation("Multiply 5 * 3 for the total.")).toBe(false);
+    expect(hasSpeakableViolation("**bold** survived shaping")).toBe(true);
+    expect(hasSpeakableViolation("an unclosed ``` fence")).toBe(true);
+  });
 });

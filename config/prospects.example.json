@@ -1,7 +1,7 @@
 {
   "progress": {
     "display_name": "Progress",
-    "kb_id": "e5085695-83bc-4a48-9cde-8dc7d568f000",
+    "kb_id": "REPLACE_ME_KB_ID",
     "region": "aws-us-east-2-1",
     "agent_id": "elevenagent_REPLACE_ME",
     "locale": "en-US",
@@ -67,7 +67,7 @@
   },
   "tangerine": {
     "display_name": "Tangerine",
-    "kb_id": "df8b4c24-2807-4888-ad6c-ae97357a638b",
+    "kb_id": "00000000-0000-0000-0000-000000000000",
     "region": "europe-1",
     "ask_config": "tangerine_voice",
     "agent_id": "elevenagent_REPLACE_ME",

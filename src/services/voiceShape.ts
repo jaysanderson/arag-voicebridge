@@ -73,9 +73,19 @@ export function shapeForVoice(raw: string, maxSentences = MAX_SENTENCES): string
   return out;
 }
 
-/** Predicate used by tests and the output guard: does the text still leak a URL/marker? */
+/**
+ * Predicate used by tests and the output guard: does the text still leak a URL, a citation marker
+ * or markdown? Deliberately narrow on punctuation — "the C# API" and "5 * 3" are speakable, an
+ * unclosed code fence or a bold marker is not.
+ */
 export function hasSpeakableViolation(text: string): boolean {
   return (
-    /\bhttps?:\/\//i.test(text) || /\bwww\./i.test(text) || /\[\s*\d+\s*\]/.test(text) || /[#*`]/.test(text)
+    /\bhttps?:\/\//i.test(text) ||
+    /\bwww\./i.test(text) ||
+    /\[\s*\d+\s*\]/.test(text) ||
+    /```|`[^`]*`/.test(text) ||
+    /(\*\*|__)/.test(text) ||
+    /^\s{0,3}#{1,6}\s/m.test(text) ||
+    /^\s*[-*+]\s/m.test(text)
   );
 }

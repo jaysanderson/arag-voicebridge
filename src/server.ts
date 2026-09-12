@@ -84,6 +84,8 @@ export interface CreateOptions {
   persist?: boolean;
   /** Seed the registry from this file when the store is empty. */
   registrySeedFile?: string;
+  /** Injectable fetch for the LiveAvatar client (tests only — never set in production). */
+  liveAvatarFetch?: (input: string, init?: RequestInit) => Promise<Response>;
 }
 
 export async function createProduct(
@@ -123,10 +125,12 @@ export async function createProduct(
   const store = new Store(env.dataDir, { persist: opts.persist ?? true });
   const jobs = new JobManager(store, log);
   const registry = new ProspectRegistry({ store, log, voice });
-  registry.seedFromFile(opts.registrySeedFile ?? resolve(HERE, "config", "prospects.example.json"));
+  registry.seedFromFile(opts.registrySeedFile ?? resolve(HERE, "config", "prospects.example.json"), {
+    kbId: env.arag.kbId,
+  });
   const metrics = new MetricsService({ store, cap: voice.turnLogLimit });
   const evals = new GoldenEvalStore(store);
-  const liveAvatar = new LiveAvatarClient(voice, { log });
+  const liveAvatar = new LiveAvatarClient(voice, { log, fetch: opts.liveAvatarFetch });
 
   const deps: ProductDeps = {
     env,

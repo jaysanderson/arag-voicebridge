@@ -17,7 +17,9 @@ jobs:
       - run: bunx biome ci .
       - run: bunx tsc --noEmit -p tsconfig.json
       - run: node --test --experimental-test-coverage --test-coverage-include='src/**' --test-coverage-lines=80 'test/*.test.ts'
-      - run: bun audit || true
+      # Zero runtime dependencies, so findings can only come from dev tooling; surface them as a
+      # CI warning rather than failing the build on a transitive dev advisory.
+      - run: bun audit || echo "::warning title=bun audit::advisories reported — review before release"
   e2e:
     runs-on: ubuntu-latest
     steps:

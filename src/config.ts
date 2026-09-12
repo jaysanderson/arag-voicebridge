@@ -132,7 +132,8 @@ export function describeVoiceConfig(v: VoiceConfig): Record<string, unknown> {
       configured: Boolean(v.livekitUrl && v.livekitApiKey && v.livekitApiSecret),
       url: v.livekitUrl,
     },
-    defaultAgentId: v.defaultAgentId ? `${v.defaultAgentId.slice(0, 10)}…` : "",
+    // Non-secret: the same value is served to browsers on /api/v1/prospects.
+    defaultAgentId: v.defaultAgentId,
     features: { scribe: scribeEnabled(v), avatar: avatarEnabled(v) },
   };
 }
