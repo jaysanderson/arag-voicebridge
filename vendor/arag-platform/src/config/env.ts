@@ -67,6 +67,10 @@ export function parseDotEnv(raw: string): Record<string, string> {
     let value = trimmed.slice(eq + 1).trim();
     if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
       value = value.slice(1, -1);
+    } else {
+      // Unquoted values may carry a trailing comment: KEY=value   # explanation
+      const hash = value.search(/\s#/);
+      if (hash !== -1) value = value.slice(0, hash).trim();
     }
     if (key) out[key] = value;
   }
