@@ -125,8 +125,7 @@ different product with a different look; that is the whole point of brief item 6
   ?session=<id>                       reattach to a running or ended session
   ?source=mic|webhook|text            preselect a source on the start panel
   #voice                              Voice agent tool drawer open
-/welcome/                           First-run onboarding
-  ?step=1|2|3
+/?onboard=1                         First-run onboarding (an overlay on Live, §3.12)
 /conversations/                     Conversations list
   ?q=&prospect=&status=&from=&to=&sort=&order=&limit=&offset=
   ?...&id=<id>                        conversation detail (filters preserved for Back)
@@ -143,17 +142,25 @@ different product with a different look; that is the whole point of brief item 6
   ?prospect=&outcome=&reason=&source=&limit=&offset=
 /settings/                          Settings
   #connection | #branding | #integrations | #access | #about
-/admin/                             Operator · Overview
-/admin/connection/                  Operator · Connection
-/admin/prospects/     ?key=          Operator · Prospects
-/admin/jobs/          ?status=&id=   Operator · Jobs
-/admin/logs/          ?level=&contains=
-/admin/usage/                        Operator · Usage
-/admin/turns/         ?prospect=&outcome=&reason=&offset=
-/admin/sessions/      ?prospect=&id=  Operator · Listen sessions
-/admin/branding/                     Operator · Branding
-/admin/security/                     Operator · Security
+/admin/                             Operator (one document, hash sub-routes)
+  #overview                           health per prospect, usage, recent jobs and sessions
+  #connection                         full Knowledge Box detail, effective configuration
+  #prospects                          registry table + editor
+  #jobs                               job list and job detail
+  #logs                               log stream with level/contains filters
+  #sessions                           listen sessions + brief history
+  #turns                              full turn log
+  #evals                              golden-eval history
+  #branding                           effective branding, per-prospect overlay matrix
+  #security                           posture report
 ```
+
+The operator area is **one document with hash sub-routes**, not ten documents. It is the one
+place where the multi-document rule is relaxed, for two reasons: every operator view is a single
+table or panel over an admin-gated endpoint, so they share one auth handshake and one token
+lifecycle — re-authenticating on every navigation would be the worst experience in the product —
+and the whole area is roughly the size of one workspace screen. `location.hash` is read on load
+and on `hashchange`; unknown hashes fall back to `#overview`.
 
 Out of the IA entirely, by decision:
 - **"Ask" is no longer a top-level tab.** It becomes the *Test a question* tool inside
@@ -173,23 +180,23 @@ change) is `history.pushState()` plus a re-render, no reload.
 
 ```
 public/
-  index.html            → /                     Live
+  index.html            → /                     Live (and first-run onboarding, §3.12)
   ui-ext.css                                    all new component CSS (never vendor/)
   brand/arag-logo.svg                           Progress wordmark, light surfaces
   brand/arag-logo-alt.svg                       Progress wordmark, dark surfaces
-  app/shell.js                                  <vb-app> shell, nav manifests, branding, theme
-  app/icons.js                                  the inline-SVG icon set (§7.7)
-  app/route.js                                  params() / go() / onRoute() — ~40 lines
-  app/live.js  app/brief.js  app/mic.js  app/call.js
-  app/conversations.js  app/knowledge.js  app/prospects.js
-  app/quality.js  app/settings.js
-  conversations/index.html   knowledge/index.html   prospects/index.html
-  quality/index.html         settings/index.html    welcome/index.html
+  app/shell.js          rail shell, nav manifests, branding, theme, prospect switcher,
+                        drawer, confirm, and the empty / error / skeleton / stat helpers
+  app/icons.js          the inline-SVG icon set (§7.7)
+  app/brief.js          renderBrief() — one renderer, used by Live and Conversations
+  app/live.js           Live controller (session lifecycle, SSE, freshness state machine)
+  app/mic.js            ElevenLabs Scribe v2 Realtime capture (§11.2)
+  app/call.js           ElevenLabs Conversational AI voice tool (§11.3)
+  app/conversations.js  app/knowledge.js  app/prospects.js  app/quality.js  app/settings.js
+  conversations/index.html  knowledge/index.html  prospects/index.html
+  quality/index.html        settings/index.html
 admin/
-  index.html  connection/index.html  prospects/index.html  jobs/index.html
-  logs/index.html  usage/index.html  turns/index.html  sessions/index.html
-  branding/index.html  security/index.html
-  admin.js                                      operator controllers, one per view
+  index.html            one operator document
+  admin.js              VIEWS map keyed by hash; one render function per view
 ```
 
 **Why this and not a hash router over a single page**
@@ -335,7 +342,7 @@ This is the only branding-driven layout change; everything else is token swaps.
 | ≥ 1280 px | Sidebar 248 px, expanded | All columns | Full three-pane |
 | 1100–1280 px | Sidebar collapses to a 64 px icon rail; labels become `title` tooltips and `aria-label`; the prospect switcher becomes an icon button opening a popover | All columns | Three-pane, rails narrow to 240/300 |
 | 700–1100 px | Sidebar becomes off-canvas behind a menu button in the page header; a scrim closes it; focus is trapped while open | Columns marked `data-priority="3"` are hidden | Two columns; the third pane moves below |
-| < 700 px | As above; page header wraps to two rows; page actions collapse into an overflow "More" menu | Table becomes stacked cards: each row a `.arag-datatable.cards` article with label/value pairs | Single column; panes become a `.arag-segmented` switcher, first pane default |
+| < 700 px | As above; page header wraps to two rows; page actions collapse into an overflow "More" menu | Table becomes stacked cards: each row a `.arag-datatable.cards` article with label/value pairs | Single column; panes become a `.vb-segmented` switcher, first pane default |
 
 No horizontal page scroll at any width. Tables, the transcript and snippet blocks each get their
 own `overflow-x:auto` container.
@@ -388,7 +395,7 @@ work.
 | Play sample conversation | Primary action. Creates a session and replays `SAMPLE_CONVERSATION` from `app/live.js` at 1.4 s intervals via `POST /api/v1/listen/sessions/{id}/transcript`. |
 | Recent | `GET /api/v1/listen/sessions?prospect={key}&limit=3&sort=started&order=desc` → `items[].createdAt`, `.prospect`, `.brief.topic`, `.briefVersion`, `.citations.length`. Omitted entirely when `total === 0`. |
 
-**Telephony instructions, expanded** (the `.arag-snippet` component, copy button per block):
+**Telephony instructions, expanded** (the `.vb-snippet` component, copy button per block):
 
 ```
 ┌──────────────────────────────────────────────────────────────────────────────────────┐
@@ -740,7 +747,7 @@ check list from `GoldenCase.checks[]` (`{ok, label}`) as pass/fail lines. Failed
 - Knowledge Box health dot from `GET /api/v1/admin/health → prospects[].ok/ms`.
 - Golden state from `GET /api/v1/golden-evals?limit=100`, latest per prospect.
 - **Unauthenticated** it degrades to the public projection `GET /api/v1/prospects → items[]`
-  (key, display name, locale, golden set size) with the `.arag-authgate` panel above the table and
+  (key, display name, locale, golden set size) with the `.vb-empty.gate` panel above the table and
   no New/Edit/Delete affordances. See §4.8.
 - Sorting and filtering are client-side (a registry is tens of rows, not thousands) — no API change.
 
@@ -804,7 +811,7 @@ check list from `GoldenCase.checks[]` (`{ok, label}`) as pass/fail lines. Failed
   `.vb-brandpreview`: the shell at 1/4 scale with `primaryColor`/`accentColor` applied as inline
   custom properties, the logo loaded, and the band toggled by `poweredBy`. Invalid colours are
   rejected by the same grammar as `isSafeColor()` and the field shows the error inline.
-- Delete requires typing the key (`.arag-confirm` type-to-confirm), per brief item 6.
+- Delete requires typing the key (`confirm()` type-to-confirm), per brief item 6.
 - The left column is an in-page section nav (scroll-spy), not tabs; the form is one document so
   Save is one action.
 
@@ -917,12 +924,12 @@ state, and pretending otherwise would be the single most misleading thing in the
 
 ---
 
-### 3.12 First-run onboarding (`/welcome/`)
+### 3.12 First-run onboarding (`/?onboard=1`)
 
-Shown when `localStorage["vb.onboarded"] !== "1"` **and**
-`GET /api/v1/listen/sessions?limit=1 → total === 0`. `/` redirects to `/welcome/`; every other
-route is reachable directly and shows a dismissible "Take the tour" link in the page header
-instead.
+Onboarding is an overlay on Live rather than a separate page, so the first thing a new user sees
+is already the product. Shown when `localStorage["vb.onboarded"] !== "1"` **and**
+`GET /api/v1/listen/sessions?limit=1 → total === 0`; dismissible at any point, and reachable again
+from a "Take the tour" item in Settings → About.
 
 ```
 ┌────────────────────────────────────────────────────────────────────────────────────────────────────────┐
@@ -982,13 +989,13 @@ Every screen has six states. The rule that governs all of them:
 
 | State | Rendering rule |
 |---|---|
-| **Loading (first)** | `.arag-skeleton` blocks matching the final layout's shape and count. Never a spinner in a full-page overlay, never a centred "Loading…". Tables show 5 skeleton rows at the configured row height. Skeletons appear only after 200 ms, so a fast response never flashes. |
+| **Loading (first)** | `.vb-skeleton` blocks matching the final layout's shape and count. Never a spinner in a full-page overlay, never a centred "Loading…". Tables show 5 skeleton rows at the configured row height. Skeletons appear only after 200 ms, so a fast response never flashes. |
 | **Loading (refresh)** | The existing content stays and dims to 70 % opacity; the refreshing control shows an inline 12 px spinner. No layout change, no scroll change. |
-| **Empty** | `.arag-emptystate`: icon (20 px, `--arag-text-subtle`), title (15 px, `--arag-text`), one sentence of body (13 px, muted), one primary action. Never more than two actions. Never an illustration. |
+| **Empty** | `.vb-empty`: icon (20 px, `--arag-text-subtle`), title (15 px, `--arag-text`), one sentence of body (13 px, muted), one primary action. Never more than two actions. Never an illustration. |
 | **Populated** | As §3. |
 | **Error** | Inline, scoped to the region that failed, using `.arag-alert.error`: what failed, in product terms; the recovery action as a button; the request id in `mono small` when the problem body carries one. Toasts are used only for actions the user just triggered (save, delete, copy), never for background failures. |
 | **Degraded** | `.arag-alert.warn` **above** the content, content still shown. Used when data is present but stale, partial, or produced with a fallback. |
-| **Permission denied** | `.arag-authgate` replaces the panel body only: a lock icon, the reason the panel is gated, a token field, "Sign in". Never a redirect, never a modal, never a blank page. |
+| **Permission denied** | `.vb-empty.gate` replaces the panel body only: a lock icon, the reason the panel is gated, a token field, "Sign in". Never a redirect, never a modal, never a blank page. |
 
 Copy for every one of these is in §5.4–§5.7.
 
@@ -1056,7 +1063,7 @@ Hard rules, restated because this is the promise the product is sold on:
 | Error — session ended | 409 on append | Inline under the composer: "This session has ended. Start a new one to keep listening." + `[ Start a new session ]` |
 | Degraded — rate limited | 429 on append | Inline, amber: "Too many updates. The brief is rate limited to protect the Knowledge Box. Resuming in {n} s." Auto-retries with backoff; the composer stays usable. |
 | Degraded — SSE lost | `onerror` | Amber pill in the header: "Reconnecting…". Falls back to polling `GET /api/v1/listen/sessions/{id}` every 3 s after 2 failed reconnects, and says so: "Reconnected by polling." |
-| Permission — no key | 401 on any listen call | `.arag-authgate` over the start panel: "This deployment requires an API key." + `[ Sign in as operator ]`, plus the note that a same-origin session is normally issued automatically. |
+| Permission — no key | 401 on any listen call | `.vb-empty.gate` over the start panel: "This deployment requires an API key." + `[ Sign in as operator ]`, plus the note that a same-origin session is normally issued automatically. |
 | Degraded — no microphone | `GET /api/v1/integrations → scribe.configured === false`, or `POST /api/v1/scribe-token` 503 | The microphone card stays, greyed, with "Not configured on this deployment" and `[ How to configure ]`. The other two sources are unaffected — the point survives. |
 | Degraded — mic denied | `getUserMedia` NotAllowedError | "Microphone access was refused by the browser. Allow it in the address bar, or paste a transcript instead." |
 
@@ -1096,12 +1103,12 @@ Hard rules, restated because this is the promise the product is sold on:
 | Loading | 3 skeleton rows |
 | Empty | Title "No prospects yet" · Body "A prospect points GroundLine at a Knowledge Box and carries its greeting, handoff line and golden set." · `[ + New prospect ]` |
 | Populated | §3.8 |
-| Permission denied | `.arag-authgate` above a read-only table built from `GET /api/v1/prospects`. Title "Operator sign-in required to edit" · Body "Registry entries contain Knowledge Box ids. Signing in shows and edits them." · token field + `[ Sign in ]`. The read-only list is still shown — a locked door with a window, not a wall. |
-| Editor: unsaved changes | A sticky footer bar: "Unsaved changes" + `[ Discard ]` `[ Save changes ]`; `beforeunload` guard; navigating within the section prompts with `.arag-confirm` |
+| Permission denied | `.vb-empty.gate` above a read-only table built from `GET /api/v1/prospects`. Title "Operator sign-in required to edit" · Body "Registry entries contain Knowledge Box ids. Signing in shows and edits them." · token field + `[ Sign in ]`. The read-only list is still shown — a locked door with a window, not a wall. |
+| Editor: unsaved changes | A sticky footer bar: "Unsaved changes" + `[ Discard ]` `[ Save changes ]`; `beforeunload` guard; navigating within the section prompts with `confirm()` |
 | Editor: validation | Per-field `.arag-field.invalid` with the message under the control, from `FieldError.path`. A summary alert at the top lists the count and links to the first invalid field. |
 | Editor: save error 409 | Inline on the Key field: "That key is already in use." |
 | Editor: provision dry run | `<arag-json>` of the returned `config`, with `[ Apply for real ]` |
-| Editor: delete | `.arag-confirm`: "Delete prospect {key}? This removes its registry entry, its golden set and its branding overlay. Conversations already recorded are kept. Type {key} to confirm." |
+| Editor: delete | `confirm()`: "Delete prospect {key}? This removes its registry entry, its golden set and its branding overlay. Conversations already recorded are kept. Type {key} to confirm." |
 
 ### 4.7 Quality
 
@@ -1122,7 +1129,7 @@ Hard rules, restated because this is the promise the product is sold on:
 | Populated | §3.11 |
 | Degraded — readyz failing | Connection section: `● offline`, and every other section still renders from its own source |
 | Error — branding failed | Falls back to the kit defaults, with an amber line "Branding could not be loaded; showing defaults." The shell never blocks on branding. |
-| Permission | Access and the uptime row show `.arag-authgate` inline; Connection, Branding, Integrations and About are public and always render |
+| Permission | Access and the uptime row show `.vb-empty.gate` inline; Connection, Branding, Integrations and About are public and always render |
 
 ### 4.9 Onboarding
 
@@ -1139,10 +1146,10 @@ Additional to the above:
 
 | State | Copy / rendering |
 |---|---|
-| Signed out | The whole operator area renders the shell with the operator nav and a centred `.arag-authgate` card in the content area, not a bare login page. The nav is visible but every item is `aria-disabled`. |
+| Signed out | The whole operator area renders the shell with the operator nav and a centred `.vb-empty.gate` card in the content area, not a bare login page. The nav is visible but every item is `aria-disabled`. |
 | Token rejected | Inline under the field: "That token was not accepted." The field is not cleared. |
 | Token expired mid-session | The failing panel shows the authgate; other panels keep their last data with an amber "Signed out — sign in to refresh." |
-| Destructive action | `.arag-confirm` with the object named, the consequence spelled out, and type-to-confirm for delete and reset. Cancel is the default focus. |
+| Destructive action | `confirm()` with the object named, the consequence spelled out, and type-to-confirm for delete and reset. Cancel is the default focus. |
 
 ---
 
@@ -1500,7 +1507,7 @@ is rendered in `mono small` beneath when present.
 | `.arag-steps` | Golden-run job timeline |
 | `.arag-alert` + `.ok .warn .error` | Every inline error and degraded banner |
 | `.arag-toast` | Save / delete / copy confirmations only |
-| `.arag-modal`, `.arag-modal-backdrop` | Confirmations (wrapped by `.arag-confirm`) |
+| `.arag-modal`, `.arag-modal-backdrop` | Confirmations (wrapped by `confirm()`) |
 | `.arag-json`, `.arag-log` | Operator: config, usage, provision result, logs |
 | `.arag-chat`, `.arag-bubble` | Voice agent drawer, Test a question |
 | `.arag-cite` | Source chips (extended, see 6.3 #21) |
@@ -1517,19 +1524,22 @@ is rendered in `mono small` beneath when present.
 
 **Not used:** `<arag-shell>` (replaced by the sidebar shell, 6.2 #1 — the kit's shell is a
 top-nav marketing-ish chrome and cannot host a left nav), `.arag-tabs` (replaced by
-`.arag-segmented` where a control is a control, and by real routes where a tab was really
+`.vb-segmented` where a control is a control, and by real routes where a tab was really
 navigation), `.arag-dropzone` (nothing is uploaded).
 
-### 6.2 New components proposed **for the platform kit** (`arag-*`)
+### 6.2 New components — all `vb-*`, all in `public/ui-ext.css`
 
-These are generic, every product in the programme needs them, and the brief explicitly names most
-of them. They are written in `public/ui-ext.css` now under their final `arag-*` names, so the
-platform Head can lift the block verbatim into `arag-ui.css` with no rename. Report them upstream
-in the final summary.
+Every new component ships under a `vb-` prefix in `public/ui-ext.css`. Nothing is written under an
+`arag-` name, because an `arag-` class that is not in `arag-ui.css` is a trap: it reads as kit API,
+collides the moment the kit grows one, and is invisible to a `grep` for local overrides. The
+**Propose upstream** column below is the recommendation to the platform Head — those blocks are
+generic, the brief names most of them, and they should be lifted into `arag-ui.css` (renamed to
+`arag-*` at that point, with `vb-*` kept as an alias for one release). Report the list in the final
+summary.
 
 ---
 
-#### 1. `arag-app` — sidebar application shell
+#### 1. `.vb-app` / `.vb-rail` / `.vb-nav` / `.vb-topbar` — rail application shell
 Custom element `<vb-app>` in `public/app/shell.js` today; proposed upstream as `<arag-app>`.
 
 ```html
@@ -1544,8 +1554,8 @@ Custom element `<vb-app>` in `public/app/shell.js` today; proposed upstream as `
 </vb-app>
 ```
 
-Renders: `.arag-app` grid → `.arag-app-band`, `.arag-app-side`, `.arag-app-head`,
-`.arag-app-main`. Reads `GET /api/v1/branding` once and calls `applyBranding()` (kit function,
+Renders: `.vb-app` grid → `.vb-rail (top strip)`, `.vb-rail`, `.vb-topbar`,
+`.vb-main`. Reads `GET /api/v1/branding` once and calls `applyBranding()` (kit function,
 unchanged), reads `GET /api/v1/prospects` for the scope selector, applies the persisted theme
 before first paint.
 
@@ -1557,9 +1567,9 @@ the first focusable element, focus trap while off-canvas is open.
 
 ---
 
-#### 2. `arag-datatable` — data table with sort, priority columns and density
+#### 2. `.vb-table` / `.vb-table-wrap` / `.vb-pager` — data table with sort, priority columns and density
 ```html
-<table class="arag-datatable" data-density="comfortable|compact">
+<table class="vb-table" data-density="comfortable|compact">
   <thead><tr>
     <th data-sort="started" aria-sort="descending"><button>Started</button></th>
     <th data-priority="3">P50</th>
@@ -1571,20 +1581,20 @@ the first focusable element, focus trap while off-canvas is open.
 ```
 Extends `.arag-table`: sticky `thead`, 40/32 px rows, `data-priority` column hiding at breakpoints,
 `data-label` driving the `<700px` card mode, whole-row links, keyboard row focus.
-**States:** loading (5 `.arag-skeleton` rows), empty (`<tbody>` replaced by a full-width cell
-containing `.arag-emptystate`), sorted asc/desc/unsorted, row hover, row focus, row selected.
+**States:** loading (5 `.vb-skeleton` rows), empty (`<tbody>` replaced by a full-width cell
+containing `.vb-empty`), sorted asc/desc/unsorted, row hover, row focus, row selected.
 **Propose upstream: yes.**
 
 ---
 
-#### 3. `arag-drawer` — right-hand drawer
+#### 3. `.vb-drawer` / `.vb-drawer-backdrop` — right-hand drawer
 ```html
-<aside class="arag-drawer" data-width="480" aria-modal="true" role="dialog" aria-labelledby="…" hidden>
+<aside class="vb-drawer" data-width="480" aria-modal="true" role="dialog" aria-labelledby="…" hidden>
   <header class="head"><h2 id="…">Voice agent</h2><button class="close" aria-label="Close">…</button></header>
   <div class="body">…</div>
   <footer class="foot">…</footer>
 </aside>
-<div class="arag-drawer-scrim" hidden></div>
+<div class="vb-drawer-backdrop" hidden></div>
 ```
 Widths 400 / 480 / 640 via `data-width`. Slides from the right, 160 ms `ease-out`, no slide under
 `prefers-reduced-motion`. Focus trap, `Esc`, scrim click, focus restore.
@@ -1593,9 +1603,9 @@ Widths 400 / 480 / 640 via `data-width`. Slides from the right, 160 ms `ease-out
 
 ---
 
-#### 4. `arag-breadcrumb`
+#### 4. `.vb-page-head` breadcrumb
 ```html
-<nav class="arag-breadcrumb" aria-label="Breadcrumb">
+<nav class="vb-breadcrumb" aria-label="Breadcrumb">
   <a href="/conversations/?status=ended">Conversations</a><span aria-hidden="true">·</span>
   <span aria-current="page">Progress · Today 14:32</span>
 </nav>
@@ -1605,12 +1615,12 @@ segment first. **Propose upstream: yes.**
 
 ---
 
-#### 5. `arag-filterbar`
+#### 5. `.vb-filters` — filter bar
 ```html
-<div class="arag-filterbar">
-  <label class="search"><svg class="arag-icon">…</svg><input type="search" …></label>
+<div class="vb-filters">
+  <label class="search"><svg class="vb-icon">…</svg><input type="search" …></label>
   <select class="arag-select">…</select>
-  <div class="arag-segmented">…</div>
+  <div class="vb-segmented">…</div>
   <button class="arag-btn ghost sm" data-clear>Clear</button>
 </div>
 ```
@@ -1621,10 +1631,10 @@ disabled (while the first load is in flight). **Propose upstream: yes.**
 
 ---
 
-#### 6. `arag-emptystate`
+#### 6. `.vb-empty` — empty, error and permission states
 ```html
-<div class="arag-emptystate">
-  <svg class="arag-icon lg">…</svg>
+<div class="vb-empty">
+  <svg class="vb-icon lg">…</svg>
   <h3>No conversations yet</h3>
   <p>Sessions appear here once a listen session has run. Start one on Live.</p>
   <a class="arag-btn secondary">Go to Live</a>
@@ -1636,9 +1646,9 @@ padding, icon 20 px `--arag-text-subtle`. One action, two at most. No illustrati
 
 ---
 
-#### 7. `arag-statstrip`
+#### 7. `.vb-stats` / `.vb-stat` — stat strip
 ```html
-<div class="arag-statstrip">
+<div class="vb-stats">
   <div class="stat"><span class="k">Turns</span><span class="v">214</span><span class="s">in the window</span></div>
   …
 </div>
@@ -1651,9 +1661,9 @@ explaining why). **Propose upstream: yes.**
 
 ---
 
-#### 8. `arag-segmented`
+#### 8. `.vb-segmented` — segmented control
 ```html
-<div class="arag-segmented" role="group" aria-label="Status">
+<div class="vb-segmented" role="group" aria-label="Status">
   <button aria-pressed="true">All</button><button>Live</button><button>Ended</button>
 </div>
 ```
@@ -1664,28 +1674,28 @@ misuse of `.arag-tabs` for things that are not navigation.
 
 ---
 
-#### 9. `arag-toolbar`
+#### 9. `.vb-filters > .toolbar` — result count and table controls
 ```html
-<div class="arag-toolbar"><span class="count">38 conversations</span><span class="spacer"></span>…</div>
+<div class="vb-filters toolbar"><span class="count">38 conversations</span><span class="spacer"></span>…</div>
 ```
 The row between the filter bar and a table: result count on the left, sort/density/actions on the
 right. 36 px, no border, `--arag-text-muted`. **Propose upstream: yes.**
 
 ---
 
-#### 10. `arag-skeleton`
+#### 10. `.vb-skeleton` — loading placeholder
 ```html
-<span class="arag-skeleton" style="--w:60%"></span>
-<tr class="arag-skeleton-row"><td colspan="9"></td></tr>
+<span class="vb-skeleton" style="--w:60%"></span>
+<tr class="vb-skeleton-row"><td colspan="9"></td></tr>
 ```
 A 1.4 s shimmer between `--arag-brand-50` and `--arag-surface`; a static block under
 `prefers-reduced-motion`. Appears only after 200 ms. **Propose upstream: yes.**
 
 ---
 
-#### 11. `arag-snippet` — code block with a copy button
+#### 11. `.vb-snippet` — code block with a copy button
 ```html
-<figure class="arag-snippet">
+<figure class="vb-snippet">
   <figcaption>Open a session when the call connects.<button class="arag-btn ghost sm" data-copy>Copy</button></figcaption>
   <pre><code>POST https://…</code></pre>
 </figure>
@@ -1697,9 +1707,9 @@ selecting the text when the clipboard API is unavailable (non-secure origin).
 
 ---
 
-#### 12. `arag-pagination`
+#### 12. `.vb-pager` — offset pagination
 ```html
-<nav class="arag-pagination" aria-label="Pages">
+<nav class="vb-pager" aria-label="Pages">
   <span class="range">Showing 1–25 of 38</span>
   <button data-prev disabled>Previous</button><button data-next>Next</button>
 </nav>
@@ -1709,9 +1719,9 @@ Offset-based, matching every list endpoint's `limit`/`offset`. No page-number li
 
 ---
 
-#### 13. `arag-confirm` — confirmation dialog, with type-to-confirm
+#### 13. `confirm()` in `shell.js` — confirmation dialog, with type-to-confirm
 ```html
-<div class="arag-confirm" role="alertdialog" aria-modal="true">
+<div class="vb-confirm" role="alertdialog" aria-modal="true">
   <h2>Delete prospect progress?</h2>
   <p>This removes its registry entry, its golden set and its branding overlay. …</p>
   <label>Type <code>progress</code> to confirm<input …></label>
@@ -1723,9 +1733,9 @@ exactly. Required on every destructive action (brief item 6). **Propose upstream
 
 ---
 
-#### 14. `arag-icon` — the inline-SVG icon convention
+#### 14. `icons.js` + `.vb-icon` — the inline-SVG icon convention
 ```html
-<svg class="arag-icon" width="16" height="16" aria-hidden="true">…</svg>
+<svg class="vb-icon" width="16" height="16" aria-hidden="true">…</svg>
 ```
 `.arag-icon { width:1em; height:1em; stroke:currentColor; fill:none; stroke-width:1.5;
 stroke-linecap:round; stroke-linejoin:round; flex:none }`, sizes `.sm` 14, default 16, `.lg` 20.
@@ -1735,9 +1745,9 @@ keeps its own icon set).
 
 ---
 
-#### 15. `arag-timeline` — vertical event timeline
+#### 15. `.vb-timeline` — vertical event timeline
 ```html
-<ol class="arag-timeline">
+<ol class="vb-timeline">
   <li aria-current="true"><span class="dot"></span><span class="label">v6</span><span class="meta">14:43 · 2.4 s</span></li>
 </ol>
 ```
@@ -1747,9 +1757,9 @@ RTL. **States:** past, current, future/pending, failed. **Propose upstream: yes.
 
 ---
 
-#### 16. `arag-splitpane`
+#### 16. `.vb-split` — split pane
 ```html
-<div class="arag-splitpane" data-cols="264,1fr,320" data-key="vb.live.rail">…</div>
+<div class="vb-split" data-cols="264,1fr,320" data-key="vb.live.rail">…</div>
 ```
 CSS-grid columns from `data-cols`, with collapse toggles on the outer panes and the state
 persisted under `data-key`. No drag handle in v1 — the sizes are designed, not user-tuned, and a
@@ -1757,10 +1767,10 @@ drag handle would be the first thing to break on touch. **Propose upstream: yes.
 
 ---
 
-#### 17. `arag-authgate`
+#### 17. `.vb-empty.gate` — permission gate
 ```html
-<div class="arag-authgate">
-  <svg class="arag-icon lg">lock</svg>
+<div class="vb-empty gate">
+  <svg class="vb-icon lg">lock</svg>
   <h3>Operator sign-in required</h3>
   <p>Registry entries contain Knowledge Box ids. Signing in shows and edits them.</p>
   <form><input type="password" autocomplete="current-password" …><button class="arag-btn">Sign in</button></form>
@@ -1774,11 +1784,11 @@ body only — never the page.
 
 ---
 
-### 6.3 New components local to this product (`vb-*`, `public/ui-ext.css`)
+### 6.3 Components that stay local
 
 These encode GroundLine's domain and should not go upstream.
 
-#### 18. `.vb-brief` — the brief pane
+#### 18. `.vb-brief-card` / `.vb-brief` / `.vb-brief-body` — the brief pane
 ```html
 <article class="vb-brief" data-version="4" aria-live="polite">
   <h2 class="topic">Metal 3D printing for a machine shop</h2>
@@ -1803,9 +1813,9 @@ is provably what the agent saw.
 **States:** `data-state="waiting|fresh|refreshing|stale|failing|ended"` on the wrapping card,
 driving the rail colour; `data-changed` on a section for the 400 ms wash.
 
-#### 19. `.vb-freshness` — the staleness indicator
+#### 19. `.vb-stale` — the staleness indicator
 ```html
-<span class="vb-freshness" data-state="stale"><span class="dot"></span><span class="txt">Last good brief · updated 34 s ago</span><button class="arag-btn ghost sm" data-retry hidden>Retry now</button></span>
+<span class="vb-stale" data-state="stale"><span class="dot"></span><span class="txt">Last good brief · updated 34 s ago</span><button class="arag-btn ghost sm" data-retry hidden>Retry now</button></span>
 ```
 States exactly as §4.2. Colours: `--vb-live` (fresh/listening), `--arag-brand-500` pulsing
 (refreshing), `--arag-warn-fg` (stale/failing/reconnecting), `--arag-text-subtle` (waiting/ended).
@@ -1822,10 +1832,10 @@ Speaker column 56 px, capitalised by CSS; `.interim` italic at 60 % opacity, rep
 Auto-scrolls to the bottom **only when already within 40 px of the bottom**, so reading history is
 never yanked. Timestamps hidden on Live (noise), shown in Conversation detail.
 
-#### 21. `.vb-source` — citation chip and source list
+#### 21. `.vb-sources` — citation chips and source list
 ```html
 <a class="vb-source arag-cite" href="…" target="_blank" rel="noreferrer">
-  <span class="t">Shop System datasheet</span><span class="s">0.91</span><svg class="arag-icon sm">…</svg>
+  <span class="t">Shop System datasheet</span><span class="s">0.91</span><svg class="vb-icon sm">…</svg>
 </a>
 ```
 Extends `.arag-cite`. Score right-aligned, tabular, with a 2 px under-bar whose width is the score.
@@ -1833,12 +1843,12 @@ No `url` → renders as a `<span>` with no arrow and `title="This source has no 
 `.vb-sourcelist` collapses to 3 with "Show all {n}"; the heading always shows the count, including
 0.
 
-#### 22. `.vb-sourcepicker` — the three source cards on Live empty
+#### 22. `.vb-starter` / `.vb-sources-picker` / `.vb-source-option` — the three source cards on Live empty
 Three equal cards, `data-source="mic|webhook|text"`, `data-available="true|false"`. An unavailable
 card keeps its full text and gains a muted reason line — never hidden, because the three-way choice
 is the product's transport-independence claim.
 
-#### 23. `.vb-level` — microphone level meter
+#### 23. `.vb-scribe .level` — microphone level meter
 Ten 3 px bars, `--vb-live` fill, driven from the Web Audio analyser at ~20 fps, `aria-hidden`
 (the interim transcript line is the accessible signal). Frozen grey when paused.
 
@@ -1869,7 +1879,7 @@ rail.
 Label, `.arag-progress` bar at row width, count. Guard reasons carry the warning icon and an amber
 bar; handoff reasons use `--arag-brand-400`. The whole row is a link setting `?reason=`.
 
-#### 28. `.vb-composer` — the "type a turn" input
+#### 28. `.vb-composer` (inside `.vb-transcript`) — the "type a turn" input
 Single-line input with a send button, `caller:`/`agent:` prefix parsing, `Enter` to send,
 `Shift+Enter` for a multi-line paste that is split into one chunk per line. Shows the throttle
 outcome from the append response inline and briefly: "Queued", "Refreshing", "Waiting for new
@@ -1877,36 +1887,39 @@ conversation".
 
 ### 6.4 Summary table
 
-| # | Class / element | Home | Upstream? |
+| # | Shipped class / helper | Home | Propose upstream |
 |---|---|---|---|
-| 1 | `arag-app` / `<vb-app>` | ui-ext.css + app/shell.js | yes |
-| 2 | `arag-datatable` | ui-ext.css | yes |
-| 3 | `arag-drawer` | ui-ext.css | yes |
-| 4 | `arag-breadcrumb` | ui-ext.css | yes |
-| 5 | `arag-filterbar` | ui-ext.css | yes |
-| 6 | `arag-emptystate` | ui-ext.css | yes |
-| 7 | `arag-statstrip` | ui-ext.css | yes |
-| 8 | `arag-segmented` | ui-ext.css | yes |
-| 9 | `arag-toolbar` | ui-ext.css | yes |
-| 10 | `arag-skeleton` | ui-ext.css | yes |
-| 11 | `arag-snippet` | ui-ext.css | yes |
-| 12 | `arag-pagination` | ui-ext.css | yes |
-| 13 | `arag-confirm` | ui-ext.css | yes |
-| 14 | `arag-icon` | ui-ext.css + app/icons.js | yes (class only) |
-| 15 | `arag-timeline` | ui-ext.css | yes |
-| 16 | `arag-splitpane` | ui-ext.css | yes |
-| 17 | `arag-authgate` | ui-ext.css | yes |
-| 18 | `vb-brief` | ui-ext.css + app/brief.js | no |
-| 19 | `vb-freshness` | ui-ext.css | no |
-| 20 | `vb-transcript` | ui-ext.css | no |
-| 21 | `vb-source` / `vb-sourcelist` | ui-ext.css | no |
-| 22 | `vb-sourcepicker` | ui-ext.css | no |
-| 23 | `vb-level` | ui-ext.css | no |
-| 24 | `vb-pipeline` | ui-ext.css | no |
-| 25 | `vb-brandpreview` | ui-ext.css | no |
-| 26 | `vb-goldencase` | ui-ext.css | no |
-| 27 | `vb-reasonbar` | ui-ext.css | no |
-| 28 | `vb-composer` | ui-ext.css | no |
+| 1 | `.vb-app` `.vb-rail` `.vb-nav` `.vb-topbar` `.vb-main` `.vb-content` `.vb-page-head` `.vb-menu-btn` `.vb-rail-foot` | ui-ext.css + app/shell.js | **yes** — as `arag-app`; the kit's `<arag-shell>` is top-nav only and cannot host a left rail |
+| 2 | `.vb-table` `.vb-table-wrap` `.vb-pager` | ui-ext.css | **yes** — as `arag-datatable` / `arag-pagination` |
+| 3 | `.vb-drawer` `.vb-drawer-backdrop` | ui-ext.css + app/shell.js | **yes** |
+| 4 | `.vb-page-head` breadcrumb | ui-ext.css | **yes** |
+| 5 | `.vb-filters` (+ `.toolbar`) | ui-ext.css | **yes** |
+| 6 | `.vb-empty` (+ `.gate` variant) | ui-ext.css | **yes** — supersedes the kit's bare `.arag-empty` |
+| 7 | `.vb-stats` `.vb-stat` | ui-ext.css | **yes** |
+| 8 | `.vb-segmented` | ui-ext.css | **yes** — replaces most misuse of `.arag-tabs` for non-navigation |
+| 9 | `.vb-skeleton` | ui-ext.css | **yes** |
+| 10 | `.vb-snippet` | ui-ext.css | **yes** |
+| 11 | `.vb-timeline` | ui-ext.css | **yes** |
+| 12 | `.vb-split` | ui-ext.css | **yes** |
+| 13 | `confirm()` helper → `.vb-confirm` | app/shell.js + ui-ext.css | **yes** — type-to-confirm is required by the brief for every product |
+| 14 | `.vb-icon` + `app/icons.js` | ui-ext.css + app/icons.js | **yes** (the class and the stroke rule only; each product keeps its own set) |
+| 15 | `.vb-card` `.vb-grid` `.vb-kv` `.vb-mono` `.vb-truncate` | ui-ext.css | no — thin local conveniences over kit primitives |
+| 16 | `.vb-brief-card` `.vb-brief` `.vb-brief-body` | ui-ext.css + app/brief.js | no |
+| 17 | `.vb-stale` | ui-ext.css | no |
+| 18 | `.vb-live` `.vb-live-dot` `.vb-chip-live` | ui-ext.css | no |
+| 19 | `.vb-transcript` (+ composer) | ui-ext.css | no |
+| 20 | `.vb-sources` | ui-ext.css | no |
+| 21 | `.vb-starter` `.vb-starter-head` `.vb-sources-picker` `.vb-source-option` `.vb-source-title` `.vb-source-desc` | ui-ext.css | no |
+| 22 | `.vb-scribe` `.vb-scribe-head` (ElevenLabs capture panel, §11.2) | ui-ext.css | no |
+| 23 | `.vb-onboard` | ui-ext.css | no |
+| 24 | `.vb-powered` (integration attribution line, §11.6) | ui-ext.css | no |
+| 25 | `.vb-pipeline` | ui-ext.css | no |
+| 26 | `.vb-brandpreview` | ui-ext.css | no |
+| 27 | `.vb-goldencase` | ui-ext.css | no |
+| 28 | `.vb-reasonbar` | ui-ext.css | no |
+
+Fourteen of the twenty-eight are generic and recommended for the platform kit; the other fourteen
+encode GroundLine's domain and belong here.
 
 ---
 
@@ -2117,7 +2130,7 @@ No icon appears without a text label except in the collapsed sidebar rail, where
 ### 7.8 Density and tables
 
 - Two densities, tables only: **comfortable** (40 px rows, 10 px cell padding) and **compact**
-  (32 px rows, 6 px cell padding, 12 px type). Toggle lives in `.arag-toolbar`; persisted in
+  (32 px rows, 6 px cell padding, 12 px type). Toggle lives in `.vb-filters > .toolbar`; persisted in
   `localStorage["vb.density"]`; applies to every table in the app at once, because a per-table
   setting is a setting nobody finds twice.
 - Header row 32 px, `--vb-fs-micro`, uppercase by CSS, sticky within the table's scroll container.
@@ -2165,3 +2178,399 @@ The kit's `[data-theme="dark"]` block is the base. `ui-ext.css` adds only:
 Nothing moves position on the Live screen while a session is running except the transcript's own
 scroll. Content is replaced in place. This is a deliberate constraint: the reader is holding a
 conversation.
+
+---
+
+## 8. The guided demo path
+
+"Try it with sample data" is a path through the real product, not a separate demo. The showcase
+recording (`showcase/record.spec.ts`) follows these steps exactly; `SCRIPT.md` and `STORYBOARD.md`
+are written from this section. Total 2 min 40 s at the timings noted. Viewport 1440 × 900.
+
+| # | Action | URL | What is on screen | Hold |
+|---|---|---|---|---|
+| 1 | Land on a fresh deployment | `/?onboard=1` | Onboarding step 1. Progress wordmark on the dark hero, "Set up GroundLine", three prospect cards, Progress selected, each showing its locale, golden-set size and Knowledge Box state. | 6 s |
+| 2 | Click **Continue** | `/?onboard=1&step=2` | Step 2, the connection check filling in row by row: Knowledge Box, region, resources, search config, answer model, brief model — each with a green dot as it lands. | 7 s |
+| 3 | Click **Continue** | `/?onboard=1&step=3` | Step 3, three ways to start. **Play sample conversation** is the primary. | 4 s |
+| 4 | Click **Play sample conversation** | `/` | Live, session created. The brief pane shows "Listening. The brief appears once there is enough conversation." The transcript begins filling from the left rail's replay, one turn every 1.4 s. Header shows `● listening`. | 5 s |
+| 5 | Wait for the first brief | `/` | Freshness goes `Refreshing` → `Updated just now`; the brief card's left rail flashes green; `v1` appears; topic, the three meta chips and a short summary render. Session stats show `Chunks 4 · Refreshes 1 · p50 2.6 s`. | 8 s |
+| 6 | Keep watching to `v3` | `/` | The brief **rewrites in place** — the summary and key points change, the topic sharpens, nothing jumps, the version counter climbs. Two skipped refreshes appear in `Throttled`, demonstrating the server-side throttle. | 14 s |
+| 7 | Point at the sources | `/` | `SOURCES 8` under the brief; chips with titles and scores; hover shows the score under-bar. Click one → the source opens in a new tab, then return. | 8 s |
+| 8 | **Show the honest failure** — the recording toggles the mock into failing one refresh | `/` | The indicator becomes `Last good brief · updated 12 s ago` in amber, a 2 px amber rail appears at the top of the brief card, **and the brief stays exactly where it was**. `Failures 1` ticks up in the session panel. No red, no toast, no blank. Then the next refresh succeeds and it returns to green. | 12 s |
+| 9 | Type a turn into the composer | `/` | "caller: and what about titanium?" → the transcript gains the turn, the brief refreshes, `recommended_products` gains a second chip. Demonstrates that typed input and replay are the same path. | 9 s |
+| 10 | Click **End session** | `/` | Confirm dialog: "End this session? The brief, its sources and the transcript are kept." Confirm. Header becomes `Session ended · v6`, the brief gains a `final` chip. | 5 s |
+| 11 | Click **Conversations** | `/conversations/` | The list, newest row is the session just ended: topic, `v6`, 12 sources, 24 turns, p50. Type "sinter" into the search — the list filters to two rows, showing that search reaches into what was said. | 11 s |
+| 12 | Open the row | `/conversations/?q=sinter&id=…` | Detail. Stat strip, the brief-version rail on the left with six versions and their latencies, the brief at `v6` in the centre, the transcript with timestamps on the right. | 8 s |
+| 13 | Click `v2` in the rail, then **Compare with v1** | `…&id=…&v=2` | The brief at version 2, with changed fields railed and washed — the evolution is visible, not asserted. | 9 s |
+| 14 | Click **Export → Markdown** | — | A handover note downloads: brief, sources, transcript. Shown briefly in the file bar. | 4 s |
+| 15 | Click **Knowledge** | `/knowledge/?prospect=progress` | The Knowledge Box card (masked id, region, 1,284 resources, models, reranker, last checked), the golden set of 10, run history. | 7 s |
+| 16 | Type into **Test a question**: "What is the capital of France?" | `/knowledge/…#ask` | The answer area shows the handoff line, a `handoff` chip and `0 sources`; the pipeline stepper marks **Deterministic handoff check** amber with reason `sentinel`. The refusal is the demo — the system declines rather than inventing. | 10 s |
+| 17 | Click **Run golden set** | `/knowledge/?prospect=progress&run=…` | The job timeline streams: question 1 of 10 … 10 of 10; then `10 / 10 passed`, p50 2.8 s. A new row appears at the top of Run history. | 14 s |
+| 18 | Click **Quality** | `/quality/` | The stat strip (turns, p50, p95, first token, handoff rate, citation coverage, guard trips), the reason bars, the turn log, including one `⊘ not stored` row for a guard trip. | 9 s |
+| 19 | Click **Prospects → progress** | `/prospects/?key=progress` | The editor: identity, Knowledge Box, retrieval and model, conversation, golden set, and the **branding overlay** with its live preview. Change the primary colour — the preview recolours instantly. Do not save. | 12 s |
+| 20 | Click **Settings** | `/settings/` | Connection, the branding table with every `BRAND_*` variable and the live shell preview, integrations, access. This is the white-label story in one screen. | 9 s |
+| 21 | Click **Operator** | `/admin/` | The same shell, the operator nav, the overview: health per prospect, usage, recent jobs, recent sessions. The visual continuity is the point — one product, two audiences. | 8 s |
+| 22 | Close on Live with a session running | `/` | Back to Live, a second sample running, brief at `v4`, sources accumulating. | 6 s |
+
+Notes for the recorder:
+- Steps 5–9 are the money shots; they are the only steps that must be recorded at full frame rate.
+- Step 8 requires the mock to fail one brief refresh on demand. Implement as a query flag the
+  showcase sets (`?demo_fail_once=1` handled only when `ARAG_MOCK=1`), never a production path.
+- Screenshots required at 1440 px into `docs/screenshots/`: steps 1, 4, 6, 8, 11, 12, 15, 17, 18,
+  19, 20, 21.
+
+---
+
+## 9. API gaps
+
+The endpoints below are what the IA needs and the API does not yet have. Everything else the
+wireframes reference already exists. Specify them in `src/openapi.ts` first, then implement, per
+the API-first rule.
+
+### 9.1 Brief version history for one session
+
+```
+GET /api/v1/listen/sessions/{id}/briefs
+```
+| | |
+|---|---|
+| Query | `limit` integer 1–50, default 20; `offset` integer ≥ 0, default 0; `order` `asc`\|`desc`, default `desc` |
+| 200 | `{ "items": BriefSnapshot[], "total": integer, "limit": integer, "offset": integer }` |
+| `BriefSnapshot` | `{ version: integer, at: date-time, latencyMs: integer, brief: object\|null }` — the schema already exists in `openapi.ts` |
+| Errors | 404 when the session is unknown |
+| Security | `publicSecurity` |
+| Consumed by | **Conversations → detail**, the brief-version rail and the version comparison (§3.6) |
+
+Rationale: `briefHistory` exists on the stored session and is returned by
+`GET /api/v1/admin/listen-sessions` and by the export, but the workspace detail view must not
+require `ADMIN_TOKEN`, and must not download the whole export (which carries the full transcript)
+just to draw a rail of six versions.
+
+### 9.2 Force a brief refresh
+
+```
+POST /api/v1/listen/sessions/{id}/refresh
+```
+| | |
+|---|---|
+| Body | none |
+| 202 | `{ "session": ListenSession, "refresh": "started"\|"skipped", "reason": "ok"\|"too-few-words"\|"too-soon"\|"unchanged"\|"too-similar"\|"in-flight" }` |
+| Errors | 404 unknown session; 409 session ended; 429 rate limited (same bucket as `/brief`) |
+| Security | `publicSecurity` |
+| Consumed by | **Live → freshness indicator → `Retry now`** (§4.2, state *stale + retry*) |
+
+Rationale: the only current way to provoke a refresh is to append transcript, which fabricates
+conversation that was never said. The staleness recovery affordance in the core promise needs a
+refresh that does not lie about the transcript. `ListenService.refresh(id)` already exists and is
+idempotent-safe via `inFlight`; this exposes it.
+
+### 9.3 Metrics window
+
+```
+GET /api/v1/metrics?prospect=&window=
+```
+| | |
+|---|---|
+| New query param | `window`: `1h` \| `24h` \| `7d` \| `all`, default `all` (the current ring) |
+| 200 (added fields) | `window: string`, `from: date-time`, `to: date-time`, `sample: integer` (turns considered) |
+| Consumed by | **Quality → window selector and the stat-strip caption** (§3.10) |
+
+Rationale: the strip currently describes "the recent window" without saying what that is, which is
+exactly the kind of unstated number a compliance reviewer rejects. `TurnRecord.createdAt` is
+already stored, so the filter is a predicate over the same ring.
+
+### 9.4 Defined shape for operator usage
+
+```
+GET /api/v1/admin/usage
+```
+| | |
+|---|---|
+| 200 | Replace `{type:"object", additionalProperties:true}` with a named `Usage` schema: `{ since: date-time, requests: { total: integer, byRoute: { [pattern]: integer }, byStatus: { [code]: integer } }, arag: { calls: integer, errors: integer, ms: { p50: integer, p95: integer } }, jobs: { total: integer, byStatus: { [status]: integer } }, turns: { total: integer, handoffs: integer, guardTrips: integer }, sessions: { total: integer, live: integer, briefRefreshes: integer, briefFailures: integer } }` |
+| Security | `adminSecurity` |
+| Consumed by | **Operator → Usage** (§10.7) |
+
+Rationale: an untyped blob can only be rendered as `<arag-json>`. The Usage screen in the brief is
+a real screen with stat tiles and tables, and it needs a contract the contract tests can hold.
+
+### 9.5 Delete a listen session
+
+```
+DELETE /api/v1/admin/listen-sessions/{id}
+```
+| | |
+|---|---|
+| 204 | Deleted |
+| Errors | 404 unknown session; 409 when the session is still `live` (end it first) |
+| Security | `adminSecurity` |
+| Consumed by | **Conversations → detail → ⋯ → Delete conversation** (operator only) and **Operator → Listen sessions** |
+
+Rationale: `DELETE /api/v1/listen/sessions/{id}` *ends* a session and keeps it — correct, and it
+must stay that way. Purging a recorded conversation is a distinct, operator-level, destructive act
+and needs its own path with its own auth and its own confirmation.
+
+### 9.6 Paged and bounded logs
+
+```
+GET /api/v1/admin/logs?level=&contains=&since=&limit=&offset=
+```
+| | |
+|---|---|
+| New query params | `since` date-time; `offset` integer ≥ 0, default 0 |
+| 200 | `{ "items": LogRecord[], "total": integer, "limit": integer, "offset": integer }` (currently `{items}` only) |
+| Security | `adminSecurity` |
+| Consumed by | **Operator → Logs** (§10.6), for pagination and the "n records" count |
+
+### 9.7 Align the operator session list with the workspace list
+
+```
+GET /api/v1/admin/listen-sessions?prospect=&status=&q=&from=&to=&sort=&order=&limit=&offset=
+```
+| | |
+|---|---|
+| Change | Accept the same filter set as `GET /api/v1/listen/sessions`, and return `{items, total, limit, offset}` where each item is `ListenSession & {briefHistory}` |
+| Security | `adminSecurity` |
+| Consumed by | **Operator → Listen sessions** (§10.8) |
+
+Rationale: the operator table is the same table with one more column; it should not be the only
+list in the product that cannot be filtered or paged.
+
+### 9.8 Not gaps — recorded so they are not re-raised
+
+| Need | Resolution |
+|---|---|
+| Full transcript paging | Not needed: the service caps a session at 400 entries, so `?transcript_tail=400` returns everything. The UI shows the trim notice when `transcriptTotal >= 400`. |
+| Prospect list search / sort | Client-side. A registry is tens of rows. |
+| CSV export of a list | Client-side from the loaded page, labelled as the current filter. |
+| Deployment base URL for the webhook snippet | `location.origin`. |
+| API-key management | Out of scope. `API_KEYS` is environment configuration; Settings → Access says so rather than implying a UI that does not exist. |
+| Branding editing | Out of scope by design. `BRAND_*` is environment configuration; Settings → Branding is read-only and says a restart is needed. |
+| Session-scoped `security.groups` (entitlements) | Roadmap item in `voicebridge.json`; no UI is designed for it, and none should be invented before the parameter is first-class. |
+
+---
+
+## 10. Admin / operator IA
+
+Same shell, same components, same type, same tables. The only differences are the nav manifest,
+an `Operator` label beside the product name in the sidebar, and the fact that every view is gated
+on `ADMIN_TOKEN`.
+
+### 10.0 Shell and gating
+
+```
+┌──────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ ▐PROGRESS AGENTIC RAG▌                                       mock  ·  service online  ·  API docs  ·  Help    │
+├──────────────────────┬───────────────────────────────────────────────────────────────────────────────────────┤
+│  GroundLine          │  Overview                                                      [ ⟳ Refresh all ]       │
+│  Operator            ├───────────────────────────────────────────────────────────────────────────────────────┤
+│                      │                                                                                        │
+│  ▸ Overview          │                                                                                        │
+│    Connection        │                                                                                        │
+│    Prospects         │                                                                                        │
+│    Jobs              │                                                                                        │
+│    Logs              │                                                                                        │
+│    Usage             │                                                                                        │
+│    Turn log          │                                                                                        │
+│    Listen sessions   │                                                                                        │
+│    Branding          │                                                                                        │
+│    Security          │                                                                                        │
+│                      │                                                                                        │
+│  ──────────────────  │                                                                                        │
+│    ‹ Back to         │                                                                                        │
+│      workspace       │                                                                                        │
+└──────────────────────┴───────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+Signed out, the shell still renders with the operator nav (items `aria-disabled`), and the content
+area holds a single centred `.vb-empty.gate` card carrying the `arag-logo` wordmark at 20 px, the
+title "Operator sign-in required", the body `gate.operator`, the token field and **Sign in**.
+`POST /api/v1/admin/login` sets the HttpOnly cookie; the page then loads its own data. Sign out
+deletes the cookie client-side and reloads.
+
+### 10.1 Overview (`/admin/`)
+
+```
+┌────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ ┌─────────┬─────────┬─────────┬─────────┬─────────┬─────────┐                                          │
+│ │ SERVICE │ UPTIME  │PROSPECTS│ SESSIONS│  TURNS  │  JOBS   │                                          │
+│ │ ● online│ 4 h 12 m│ 3 · 2 ok│ 38 · 1  │ 214     │ 12      │                                          │
+│ └─────────┴─────────┴─────────┴─────────┴─────────┴─────────┘                                          │
+├──────────────────────────────────────────────────────────┬─────────────────────────────────────────────┤
+│ KNOWLEDGE BOX HEALTH                  [ Test connections ]│ RECENT JOBS                                 │
+│ PROSPECT    KB          STATUS        RESOURCES   MS      │ WHEN     KIND         STATUS    DURATION    │
+│ progress    …3f7a21     ● connected   1,284       210     │ 12:04    golden-eval  succeeded 28 s        │
+│ tangerine   …000000     ● connected   412         180     │ 09:31    golden-eval  failed    11 s        │
+│ northwind   …9b2c04     ✗ unreachable —           —       │                                             │
+│                                                           │ RECENT LISTEN SESSIONS                      │
+│ ERROR: northwind — 404 Knowledge Box not found            │ 14:32  progress  ● live   v4  24 turns      │
+│                                                           │ 11:04  progress  ended    v6  41 turns      │
+└──────────────────────────────────────────────────────────┴─────────────────────────────────────────────┘
+```
+
+Sources: `GET /api/v1/admin/health` (`ok`, `version`, `uptimeSec`, `mock`, `prospects[]` with
+`key`, `display_name`, `ok`, `kbId`, `resources`, `ms`, `error`); `GET /api/v1/jobs?limit=5`;
+`GET /api/v1/admin/listen-sessions?limit=5`; `GET /api/v1/metrics` for the turn count.
+Every tile and every row links to the view that owns it.
+
+### 10.2 Connection (`/admin/connection/`)
+
+`<arag-health>` for the service, then the per-prospect table with the **full** `kbId`, the region,
+the resolved base URL, the generative model and the round-trip time, plus `[ Test ]` per row.
+Below it, `GET /api/v1/admin/config` rendered as a two-column table (not raw JSON) with a
+"Show raw" disclosure holding `<arag-json>`. Secrets are already redacted server-side; the UI adds
+a `Redacted` chip wherever a value is `null`/`"***"` so the absence is explicit.
+
+### 10.3 Prospects (`/admin/prospects/`)
+
+The same table and the same editor as §3.8/§3.9 — literally the same modules, mounted in the
+operator shell. The operator view differs only in showing the unmasked `kb_id` column by default
+and adding a `Provision` bulk action bar when rows are selected (`POST …/provision` per selected
+row, sequentially, with a progress toolbar and per-row result chips). Destructive actions use
+`confirm()` with type-to-confirm.
+
+### 10.4 Jobs (`/admin/jobs/`)
+
+```
+┌────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ ⌕ filter…      [ All │ Queued │ Running │ Succeeded │ Failed │ Cancelled ]                             │
+│ WHEN      ID        KIND         PROSPECT   STATUS      PROGRESS      DURATION                          │
+│ 12:04:11  8f3a…     golden-eval  progress   succeeded   ██████ 100%   28 s          [ Open ]           │
+│ 11:58:02  71bd…     golden-eval  tangerine  running     ███ 40%       12 s          [ Cancel ]         │
+└────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+```
+`GET /api/v1/jobs?status=&limit=`. Row → drawer (`?id=`) containing `<arag-job-timeline
+src="/api/v1/jobs/{id}" events-src="/api/v1/jobs/{id}/events">`, the input object, and the result
+(for `golden-eval`, the `.vb-goldencase` list). Cancel → `DELETE /api/v1/jobs/{id}` behind
+`confirm.cancelJob`. A running job's row streams its progress bar live from the same SSE stream.
+
+### 10.5 Logs (`/admin/logs/`)
+
+Filter bar: level segmented control (`all / debug / info / warn / error`), a `contains` search, a
+`since` preset. `<arag-log src="/api/v1/admin/logs" refresh="5000">` for the stream, with the new
+`total` and pagination from §9.6 in the toolbar, and a `Pause` toggle that stops the 5 s refresh so
+a line can be read. Each line's structured fields are expandable into `<arag-json>` on click.
+
+### 10.6 Usage (`/admin/usage/`)
+
+Stat strip from the `Usage` schema in §9.4 (requests, ARAG calls, ARAG errors, p50/p95, jobs,
+turns, sessions, brief refreshes, brief failures), then three tables: requests by route, requests
+by status, jobs by status. `since` is shown in the page header so every number has a period
+attached to it.
+
+### 10.7 Turn log (`/admin/turns/`)
+
+The Quality turn log (§3.10) without prospect scoping and with the full 500-entry ring:
+`GET /api/v1/admin/turns?prospect=&limit=`. Columns: time, prospect, conversation id, question (or
+`⊘ not stored`), result, reason, total, first token, retrieve, citations, source. Row → drawer with
+the full record as `<arag-json>`. The redaction note sits above the table, not in a footnote.
+
+### 10.8 Listen sessions (`/admin/sessions/`)
+
+```
+┌──────────────────────────────────────────────────────────┬─────────────────────────────────────────────┐
+│ ⌕ search…  [ All │ Live │ Ended ]  [ progress ▾ ]         │ BRIEF HISTORY — 14:32 progress              │
+│ STARTED   PROSPECT  STATUS  VER  SRC  TURNS  SKIP  FAIL   │ v6  14:43  2.4 s   [ topic, 4 key points ]  │
+│ 14:32     progress  ● live  4    12   24     7     0      │ v5  14:41  3.1 s   [ … ]                    │
+│ 11:04     progress  ended   6    8    41     11    1      │ v4  14:39  2.8 s   [ … ]                    │
+│ 09:17     tangerine ended   2    4    11     3     0      │ …                                           │
+│                                                           │ [ ↓ Export ]  [ Delete conversation ]       │
+└──────────────────────────────────────────────────────────┴─────────────────────────────────────────────┘
+```
+`GET /api/v1/admin/listen-sessions` (§9.7). The right pane is the brief-history detail: every
+version with its timestamp and latency, expandable to the full brief object. Skip and failure
+counts are first-class columns here because this is where throttle behaviour is diagnosed.
+Delete → §9.5 behind `confirm.deleteSession` with type-to-confirm.
+
+### 10.9 Branding (`/admin/branding/`)
+
+The operator-side counterpart of Settings → Branding, and the view D-25 asks for:
+
+- The **effective branding** table: every field, its `BRAND_*` variable, the value in the
+  environment, and whether it is a default or an override.
+- The `.vb-brandpreview` at full size (640 × 360) rather than the miniature.
+- A **per-prospect overlay matrix**: rows are prospects, columns are the seven `ProspectBrand`
+  fields, cells show the overriding value or `—`, so one deployment serving several branded
+  targets is auditable at a glance. Source: `GET /api/v1/admin/prospects → items[].brand`.
+- The **assets** note: files in `DATA_DIR/branding/` are served from `/branding/`; the view lists
+  what `logoUrl` resolves to and whether it loads, with a red `not found` chip when it 404s.
+- A `Copy environment block` snippet producing the `BRAND_*` lines for the current effective
+  branding, for pasting into a partner's deployment configuration.
+
+Read-only, with the reason stated once: "Branding is environment configuration. Changing it needs
+a restart."
+
+### 10.10 Security (`/admin/security/`)
+
+Not a settings page — a posture report, assembled from what the service already exposes:
+
+| Row | Source | Rendering |
+|---|---|---|
+| Admin authentication | `GET /api/v1/admin/config` | `ADMIN_TOKEN` set / not set; production requires it |
+| Public API auth | `apiKeysEnforced` | `open, rate limited per IP` or `X-API-Key required` |
+| Rate limits | `rateLimits.brief`, `rateLimits.scribeToken` | rps / burst per bucket |
+| Timeouts | `turnTimeoutMs`, `agentToolTimeoutMs`, `briefTimeoutMs` | with the invariant `turn < agentTool` shown as satisfied or violated |
+| Input guards | static + `GET /api/v1/turns → reasons[]` | The guard reasons that have fired, with counts |
+| Retention | static | Sessions capped at 200, transcript 400 entries, turn log 500, brief history 20, citations 12 — the real constants, named |
+| Redaction | static | "Question text is not retained for turns that tripped a safety guard." PII redaction on ingest is **not** implemented — stated plainly, matching the FAQ. |
+| Secrets | `GET /api/v1/admin/config` | Which credentials are configured, never their values |
+| Transport | `location.protocol` | `https` / `http` with a warning chip on plain http outside localhost |
+
+Every row is a fact the service can prove. No row is a promise.
+
+### 10.11 Operator interaction rules
+
+1. Every destructive action uses `confirm()`; delete and reset additionally require
+   type-to-confirm. Cancel holds initial focus.
+2. Every table sorts and filters through the URL, like the workspace.
+3. Every detail opens in an `.vb-drawer` (operator) rather than a new page, except Prospects,
+   whose editor is a full page because it is a long form.
+4. Bulk actions appear only when rows are selected, in a toolbar that replaces the count line, and
+   always name the count: "Provision 2 prospects".
+5. Nothing in the operator area writes to a prospect or a session without a confirmation, and
+   nothing writes silently on navigation.
+6. Auth failures degrade panel-by-panel (§4.10); a token expiring never discards data already on
+   screen.
+
+---
+
+## Appendix A — implementation checklist
+
+- [ ] `public/ui-ext.css` contains all 28 components from §6, tokens from §7.1–7.3, dark-mode
+      additions from §7.9. `vendor/` untouched.
+- [ ] `public/app/shell.js` renders `<vb-app>`, owns both nav manifests, applies theme before
+      first paint, calls `applyBranding()` from the kit, and degrades for `poweredBy:false`.
+- [ ] `public/app/brief.js` exports one `renderBrief()` used by Live, Conversation detail and the
+      export preview.
+- [ ] `public/app/route.js` — `params/go/onRoute/href`, ≤ 60 lines, no dependencies.
+- [ ] `public/app/icons.js` — the 30 icons from §7.7 as SVG-string functions. No emoji anywhere in
+      the repository's front-end.
+- [ ] Brand SVGs copied to `public/brand/`; usage matches §7.4 exactly.
+- [ ] Every screen implements all six states from §4 with the strings from §5.
+- [ ] The freshness state machine (§4.2) is implemented exactly, including the rule that the brief
+      pane is never emptied by a failure. Covered by an e2e test that fails a refresh and asserts
+      the brief text is unchanged.
+- [ ] Six API additions from §9 specified in `src/openapi.ts` before implementation; contract tests
+      green.
+- [ ] e2e journeys for: onboarding → sample → end → conversations → detail → export; knowledge →
+      ask handoff → golden run; prospects edit → validation error → save; operator sign-in →
+      each view renders.
+- [ ] `showcase/record.spec.ts` follows §8 step for step; screenshots at 1440 px for the twelve
+      listed steps.
+- [ ] Accessibility: axe clean on every screen; keyboard-only pass through the §8 path; focus
+      visible everywhere; `prefers-reduced-motion` honoured.
+- [ ] Responsive: no horizontal page scroll at 1440, 1200, 1024, 768 and 390 px on every screen.
+
+## Appendix B — decisions this document makes
+
+| # | Decision | Why |
+|---|---|---|
+| B-1 | Multi-document sections, query-string view state, no client-side router framework | §2.3 — free URLs, no build step, per-screen payload; the session lives on the server so reloads are survivable |
+| B-2 | "Ask" becomes *Test a question* inside Knowledge, not Live | §2.4 — it is a verification job; a query box on Live would contradict the product's own argument |
+| B-3 | "Call" becomes the *Voice agent* drawer inside Live, and feeds the open session | §3.4 — the deflection path drives the same brief, which unifies the two capabilities instead of tabbing between them |
+| B-4 | Green `#5ce500` is the liveness colour only, bound to `--arag-accent-400` so partner accents inherit the role | §7.3 — keeps contrast legal, keeps white-label graceful, gives the colour one unambiguous meaning |
+| B-5 | The Progress wordmark lives in the utility band; partner logos live in the sidebar identity slot; they never contend | §7.4 — `poweredBy:false` then removes exactly one thing |
+| B-6 | Branding is read-only in the product | §3.11 — it is environment configuration; an editable-looking form would be the most misleading surface in the product |
+| B-7 | A failed refresh is an amber staleness qualifier, never an error, and never blanks the brief | §4.2 — this is the promise the product is sold on |
+| B-8 | Quality's turn log is public (`GET /api/v1/turns`); the full ring stays operator-gated | §3.10 — the reviewer persona needs reasons without holding the admin token |
+| B-9 | Prospects degrades to a read-only public list when signed out rather than blocking the page | §4.6 — a locked door with a window |
+| B-10 | Two table densities, one global setting; no drag-resizable panes | §7.8, §6.2 #16 — designed sizes, fewer things to break on touch |
