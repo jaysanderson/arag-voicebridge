@@ -16,7 +16,7 @@
 // (`DEFAULT_THROTTLE`, `minGapMs: 1500`) allows at most one refresh per 1.5s, so the two are paced
 // against each other by design — this spec waits for a genuinely later `#vbBriefMeta .version`
 // rather than a fixed sleep, so it captures real evolution and not a lucky timing coincidence.
-import { existsSync, mkdirSync } from "node:fs";
+import { existsSync, mkdirSync, statSync } from "node:fs";
 import { expect, type Page, test } from "@playwright/test";
 
 const OUT = "showcase/out";
@@ -78,7 +78,9 @@ async function shootClear(page: Page, locator: ReturnType<Page["locator"]>, path
   try {
     await locator.screenshot({ path });
   } finally {
-    await unstick.evaluate((el) => el.remove());
+    // `addStyleTag` is typed as returning an ElementHandle<Node>, so narrow to the element the
+    // handle actually points at before removing it.
+    await unstick.evaluate((el: Element) => el.remove());
   }
 }
 
@@ -86,6 +88,7 @@ test.describe("VoiceBridge showcase", () => {
   test("showcase walkthrough", async ({ page, request }) => {
     test.setTimeout(420_000);
     mkdirSync(OUT, { recursive: true });
+    const startedAt = Date.now();
 
     // ── 00:00–00:15 — the problem ────────────────────────────────────────────────
     // Live is the default screen. A fresh browser sees the first-run banner rather than an empty
@@ -294,5 +297,21 @@ test.describe("VoiceBridge showcase", () => {
     await page.close();
     if (video) await video.saveAs(`${OUT}/showcase.webm`);
     expect(existsSync(`${OUT}/showcase.webm`), "the walkthrough video was not recorded").toBe(true);
+
+    // …and that it covers the whole take, not just the start of it.
+    //
+    // The screencast is starved rather than stopped when this machine is contended: one run
+    // produced a valid 40-second file for a 164-second walkthrough. An existence check alone would
+    // have shipped it. Measuring bytes against elapsed time separates the two clearly — a complete
+    // take runs about 65 KB/s at this resolution, a truncated one about 16 KB/s — so the threshold
+    // sits well below the good case and well above the bad one, and the run fails loudly rather
+    // than quietly shipping half a video.
+    const elapsedSec = (Date.now() - startedAt) / 1000;
+    const kbPerSec = statSync(`${OUT}/showcase.webm`).size / 1024 / elapsedSec;
+    expect(
+      kbPerSec,
+      `the video looks truncated: ${Math.round(kbPerSec)} KB/s over ${Math.round(elapsedSec)}s — ` +
+        "re-run when the machine is quieter",
+    ).toBeGreaterThan(35);
   });
 });
