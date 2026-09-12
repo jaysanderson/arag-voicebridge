@@ -8,7 +8,13 @@ import {
   readVoiceEnv,
   scribeEnabled,
 } from "../src/config.ts";
-import { buildBriefRequest, LIVE_BRIEF_SCHEMA, prevBriefToText } from "../src/services/brief.ts";
+import {
+  buildBriefRequest,
+  LIVE_BRIEF_SCHEMA,
+  prevBriefToText,
+  resetRejectedModels,
+  runBrief,
+} from "../src/services/brief.ts";
 import { AragClientPool } from "../src/services/clientPool.ts";
 import { checkTurn, countSentences } from "../src/services/goldenEval.ts";
 import { MetricsService } from "../src/services/metrics.ts";
@@ -298,6 +304,55 @@ describe("brief", () => {
     expect(text).toContain("Topic: Metal printing");
     expect(text).toContain("Key points: a; b");
     expect(prevBriefToText(null)).toBe("");
+  });
+
+  it("keeps the brief when the Knowledge Box rejects the requested model", async () => {
+    resetRejectedModels();
+    const seen: Array<string | undefined> = [];
+    const client = {
+      async ask(body: { generative_model?: string }) {
+        seen.push(body.generative_model);
+        if (body.generative_model) throw Object.assign(new Error("HTTP 403"), { name: "AragError" });
+        return {
+          answerText: "",
+          answerJson: { summary: "grounded summary" },
+          retrieval: {},
+          citations: {},
+          sourceTitles: [],
+          status: "success",
+          errorDetail: undefined,
+          metadata: undefined,
+          timings: { firstTokenMs: 1, retrieveMs: 1, totalMs: 2 },
+          items: [],
+        };
+      },
+    };
+    const deps = { client, voice: readVoiceEnv({}), log };
+    const withModel = { ...prospect, brief_model: "gemini-2.5-flash-lite" };
+    const first = await runBrief({ text: "we need sintering for titanium" }, withModel, deps);
+    expect((first.brief as { summary: string }).summary).toBe("grounded summary");
+    expect(seen).toEqual(["gemini-2.5-flash-lite", undefined]);
+
+    // And it stops paying for the rejected model on the next refresh.
+    const second = await runBrief({ text: "what does the furnace cost" }, withModel, deps);
+    expect((second.brief as { summary: string }).summary).toBe("grounded summary");
+    expect(seen).toEqual(["gemini-2.5-flash-lite", undefined, undefined]);
+    resetRejectedModels();
+  });
+
+  it("returns a null brief (never throws) when the call fails outright", async () => {
+    const client = {
+      async ask() {
+        throw Object.assign(new Error("upstream down"), { name: "AragError", kind: "network" });
+      },
+    };
+    const out = await runBrief({ text: "anything at all here" }, prospect, {
+      client,
+      voice: readVoiceEnv({}),
+      log,
+    });
+    expect(out.brief).toBe(null);
+    expect(out.citations).toEqual([]);
   });
 
   it("prefers the per-request model, then the prospect's fast brief model", () => {

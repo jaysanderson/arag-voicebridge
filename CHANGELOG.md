@@ -22,6 +22,10 @@ now ingests a live conversation and streams back an evolving, grounded, cited br
   (ElevenLabs Scribe) now feeds the same session API.
 - Admin panel gains a **Listen sessions** tab.
 
+### Fixed
+- A Knowledge Box that rejects a per-request `generative_model` (403/530) no longer loses the
+  brief: the refresh retries once on the Knowledge Box default and remembers the rejection.
+
 ### Changed
 - `POST /api/v1/brief` is now documented as the stateless primitive behind sessions; it is
   unchanged for callers that want to own the loop.

@@ -8,7 +8,12 @@
  * answers to give. Product facts stay grounded in the Knowledge Box; the persona/intent
  * reasoning is over the conversation.
  */
-import type { AnswerJsonSchema, AskRequest, Logger } from "../../vendor/arag-platform/src/index.ts";
+import type {
+  AnswerJsonSchema,
+  AskRequest,
+  AskResult,
+  Logger,
+} from "../../vendor/arag-platform/src/index.ts";
 import type { VoiceConfig } from "../config.ts";
 import type { Citation, ProspectConfig } from "../types.ts";
 import { citationsFrom } from "./citations.ts";
@@ -144,6 +149,18 @@ export function prevBriefToText(prev: unknown): string {
   return lines.join("\n");
 }
 
+/**
+ * Knowledge Boxes that reject a per-request model, remembered per prospect+model for the life of
+ * the process. Some deployments do not enable model routing at all: the first refresh discovers
+ * that, and the rest of the call stops paying for the failed attempt.
+ */
+const rejectedModels = new Set<string>();
+
+/** Test helper: forget what we learned about rejected models. */
+export function resetRejectedModels(): void {
+  rejectedModels.clear();
+}
+
 /** Build the ARAG request for one brief refresh (exported for tests). */
 export function buildBriefRequest(req: BriefRequest, prospect: ProspectConfig): AskRequest {
   // ARAG's prompt templater only allows {context}/{question}; any other curly braces 400.
@@ -175,7 +192,7 @@ export function buildBriefRequest(req: BriefRequest, prospect: ProspectConfig): 
   // The brief MUST be fast: a per-request model wins, else the prospect's fast brief_model, else
   // its answer model. Slow models don't return answer_json before the timeout → null briefs.
   const model = req.model || prospect.brief_model || prospect.generative_model;
-  if (model) body.generative_model = model;
+  if (model && !rejectedModels.has(`${prospect.display_name}|${model}`)) body.generative_model = model;
   return body;
 }
 
@@ -198,11 +215,27 @@ export async function runBrief(
 
   if (!guardInput(req.text).ok) return { brief: null, citations: [], latency_ms: latency() };
 
+  const body = buildBriefRequest(req, prospect);
+  const askOpts = { signal: opts.signal, timeoutMs: deps.voice.briefTimeoutMs };
   try {
-    const result = await deps.client.ask(buildBriefRequest(req, prospect), {
-      signal: opts.signal,
-      timeoutMs: deps.voice.briefTimeoutMs,
-    });
+    let result: AskResult;
+    try {
+      result = await deps.client.ask(body, askOpts);
+    } catch (err) {
+      // A Knowledge Box that does not allow the requested model must not cost us the brief: drop
+      // the override, retry once, and stop asking for that model on this prospect.
+      if (!body.generative_model) throw err;
+      const model = body.generative_model;
+      deps.log.warn("brief.model.rejected", {
+        prospect: prospect.display_name,
+        model,
+        message: (err as Error).message,
+      });
+      rejectedModels.add(`${prospect.display_name}|${model}`);
+      const retry: AskRequest = { ...body };
+      delete retry.generative_model;
+      result = await deps.client.ask(retry, askOpts);
+    }
     let brief: unknown | null = result.answerJson ?? null;
     if (!brief && result.answerText) {
       try {
