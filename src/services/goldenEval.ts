@@ -12,7 +12,7 @@ import { randomUUID } from "node:crypto";
 import type { Collection, Store } from "../../vendor/arag-platform/src/index.ts";
 import type { GoldenQuestion, ProspectRecord } from "../types.ts";
 import type { MetricsService } from "./metrics.ts";
-import { runTurn, type TurnDeps } from "./pipeline.ts";
+import { isGuardReason, runTurn, type TurnDeps } from "./pipeline.ts";
 
 export interface GoldenCheck {
   ok: boolean;
@@ -136,7 +136,7 @@ export async function runGoldenEval(
       retrieve: response.latency_ms.retrieve,
       citations: response.citations.length,
       handoff: response.handoff,
-      guard_trip: false,
+      guard_trip: isGuardReason(response.handoff_reason),
       reason: response.handoff_reason,
       source: "golden-eval",
     });
