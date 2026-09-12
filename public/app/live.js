@@ -95,9 +95,12 @@ function view() {
           <h2>Brief</h2>
           <span id="vbBriefState" class="arag-chip neutral">no session</span>
           <span class="spacer"></span>
-          <span id="vbBriefMeta" class="muted small"></span>
+          <!-- Polite, and on the freshness line rather than the brief itself: a screen reader
+               should hear "updated live, v4" or "showing the last good brief", not the whole
+               brief re-read every few seconds. -->
+          <span id="vbBriefMeta" class="muted small" role="status" aria-live="polite"></span>
         </header>
-        <div class="vb-brief-body" id="vbBrief"></div>
+        <div class="vb-brief-body" id="vbBrief" aria-busy="false"></div>
         <div class="vb-sources" id="vbSources" hidden>
           <span class="vb-sources-label">Sources used so far</span>
         </div>
@@ -391,6 +394,8 @@ function setBriefMeta(note = "") {
   const meta = $("#vbBriefMeta");
   if (!meta) return;
   const v = live.version ? `<span class="version">v${live.version}</span>` : "";
+  const pane = $("#vbBrief");
+  if (pane) pane.setAttribute("aria-busy", note === "refreshing…" ? "true" : "false");
   if (live.stale) {
     meta.innerHTML =
       `<span class="vb-stale">${icon("clock", 12)} showing the last good brief</span>` +
