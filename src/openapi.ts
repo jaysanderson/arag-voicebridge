@@ -246,7 +246,10 @@ const KnowledgeStatus = {
         resources: { type: ["integer", "null"], description: "Resources in the Knowledge Box" },
         generative_model: { type: "string" },
         reranker: { type: "string" },
-        ask_config: { type: "string", description: "Stored ask search configuration, if provisioned" },
+        provisioned: {
+          type: "boolean",
+          description: "True when a stored ask search configuration is in force (its name is admin-only)",
+        },
         brief_model: { type: "string" },
         ms: { type: "integer" },
         mock: { type: "boolean", description: "True when the deployment runs against the mock ARAG" },

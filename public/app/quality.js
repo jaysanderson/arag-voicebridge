@@ -2,6 +2,7 @@
 // often it hands off rather than guessing, whether answers are cited, and which guard trips and
 // handoff reasons are actually firing.
 import {
+  activatableRows,
   ago,
   api,
   boot,
@@ -30,8 +31,7 @@ function chrome() {
       ${Array.from({ length: 6 }, () => '<div class="vb-stat"><span class="vb-skeleton" style="width:70%"></span></div>').join("")}
     </div>
 
-    <div class="vb-split">
-      <section class="vb-card">
+    <section class="vb-card">
         <header>
           <h2>Turn log</h2>
           <span class="spacer"></span>
@@ -66,7 +66,7 @@ function chrome() {
         </div>
       </section>
 
-      <div class="vb-grid">
+      <div class="vb-grid cols-2" style="margin-top:20px">
         <section class="vb-card">
           <header><h2>Why turns did not answer</h2></header>
           <div class="vb-card-body" id="qReasons"><div class="vb-skeleton" style="height:90px"></div></div>
@@ -100,8 +100,7 @@ function chrome() {
             </dl>
           </div>
         </section>
-      </div>
-    </div>`;
+      </div>`;
 }
 
 function pct(x) {
@@ -267,9 +266,6 @@ $("#qNext").addEventListener("click", () => {
   filters.offset += PAGE;
   loadTurns();
 });
-document.addEventListener("click", (e) => {
-  const tr = e.target.closest("#qTable tbody tr[data-turn]");
-  if (tr) turnDetail(tr.dataset.turn);
-});
+activatableRows("#qTable tbody tr[data-turn]", (tr) => turnDetail(tr.dataset.turn));
 
 await Promise.all([loadMetrics(), loadTurns()]);

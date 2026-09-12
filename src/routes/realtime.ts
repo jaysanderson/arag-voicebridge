@@ -138,6 +138,9 @@ export function registerRealtimeRoutes(app: App, deps: ProductDeps): void {
       auth: "api",
       validate: operationSchemas(openapi, "/api/v1/avatar/sessions", "post"),
       operationId: "createAvatarSession",
+      // Mints two LiveKit tokens and starts a billed upstream session — the same reasoning that
+      // gives the Scribe token its own budget applies here, and more so.
+      rateLimit: { rps: deps.voice.avatarRps, burst: deps.voice.avatarBurst },
     },
   );
 }

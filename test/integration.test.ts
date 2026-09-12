@@ -470,6 +470,12 @@ describe("the workspace surfaces", () => {
     }
     const json = await client.get(`/api/v1/listen/sessions/${id}/export`);
     expect(json.status).toBe(200);
+    // The Knowledge view reports whether a stored search configuration is in force, never its name.
+    const k = (await client.get("/api/v1/knowledge?prospect=progress")).json as {
+      kb: Record<string, unknown>;
+    };
+    expect(k.kb.provisioned).toBe(false);
+    expect(JSON.stringify(k)).not.toContain("ask_config");
     const record = json.json as { briefHistory: unknown[]; transcript: unknown[]; durationSec: number };
     expect(record.briefHistory.length).toBeGreaterThan(0);
     expect(record.transcript.length).toBe(1);
@@ -592,6 +598,9 @@ describe("the workspace surfaces", () => {
   });
 
   it("hands out the ElevenLabs agent configuration a partner has to paste in", async () => {
+    // Non-secret by construction — an agent id, a URL, a JSON schema and a prompt — so unlike the
+    // credential-minting routes it is readable by the same callers that can read a prospect.
+    expect((await client.get("/api/v1/voice-agent?prospect=progress")).status).toBe(200);
     const r = await client.get("/api/v1/voice-agent?prospect=progress");
     expect(r.status).toBe(200);
     const cfg = r.json as {

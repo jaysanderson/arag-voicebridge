@@ -5,6 +5,7 @@
 // turn runs, so it belongs next to the knowledge it is drawing on, not as a destination of its own.
 import { sse } from "/ui/arag-ui.js";
 import {
+  activatableRows,
   ago,
   api,
   boot,
@@ -386,9 +387,6 @@ if (!state.current) {
   $("#kbQuestion").addEventListener("keydown", (e) => e.key === "Enter" && ask());
   $("#kbRunGolden").addEventListener("click", runGolden);
   $("#kbReloadRuns").addEventListener("click", loadRuns);
-  document.addEventListener("click", (e) => {
-    const tr = e.target.closest("#kbRuns tbody tr[data-eval]");
-    if (tr) showEval(tr.dataset.eval);
-  });
+  activatableRows("#kbRuns tbody tr[data-eval]", (tr) => showEval(tr.dataset.eval));
   await loadKnowledge();
 }

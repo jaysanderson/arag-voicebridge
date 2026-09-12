@@ -2,6 +2,7 @@
 // here needs the deployment's admin token, exchanged once for an HttpOnly cookie.
 import { renderBrief } from "/app/brief.js";
 import {
+  activatableRows,
   ago,
   api,
   applyBrand,
@@ -222,10 +223,7 @@ async function renderSessions(el) {
   };
   $("#seProspect").addEventListener("change", load);
   $("#seStatus").addEventListener("change", load);
-  el.addEventListener("click", (e) => {
-    const tr = e.target.closest("tr[data-session]");
-    if (tr) sessionDrawer(tr.dataset.session);
-  });
+  activatableRows("#seTable tbody tr[data-session]", (tr) => sessionDrawer(tr.dataset.session));
   await load();
 }
 
@@ -365,9 +363,7 @@ async function renderEvals(el) {
   } catch (e) {
     $("#evTable tbody").innerHTML = `<tr><td colspan="4">${errorState(e.message)}</td></tr>`;
   }
-  el.addEventListener("click", async (e) => {
-    const tr = e.target.closest("tr[data-eval]");
-    if (!tr) return;
+  activatableRows("#evTable tbody tr[data-eval]", async (tr) => {
     $("#evDetail").innerHTML = '<div class="vb-skeleton" style="height:180px"></div>';
     try {
       const r = await api(`/api/v1/golden-evals/${encodeURIComponent(tr.dataset.eval)}`);

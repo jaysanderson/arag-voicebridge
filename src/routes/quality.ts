@@ -28,10 +28,15 @@ function requireIdentified(ctx: Ctx): void {
   }
 }
 
-/** Show enough of an identifier to recognise it, not enough to reuse it. */
+/**
+ * Show enough of an identifier to recognise it, not enough to reuse it. A short id is masked
+ * completely rather than passed through — the point of the function is redaction, so the one case
+ * where it cannot redact partially must not become the case where it redacts nothing.
+ */
 export function maskId(id: string): string {
-  const s = String(id ?? "");
-  return s.length <= 8 ? s : `${s.slice(0, 4)}…${s.slice(-4)}`;
+  const s = String(id ?? "").trim();
+  if (!s) return "";
+  return s.length <= 8 ? "••••" : `${s.slice(0, 4)}…${s.slice(-4)}`;
 }
 
 export function registerQualityRoutes(app: App, deps: ProductDeps): void {
@@ -84,7 +89,9 @@ export function registerQualityRoutes(app: App, deps: ProductDeps): void {
           resources: typeof health.resources === "number" ? health.resources : null,
           generative_model: prospect.generative_model || health.generativeModel || undefined,
           reranker: prospect.reranker ?? "noop",
-          ask_config: prospect.ask_config,
+          // Whether a stored search configuration is in force, not its name: the registry's public
+          // projection deliberately keeps `ask_config` off the browser surface.
+          provisioned: Boolean(prospect.ask_config),
           brief_model: prospect.brief_model,
           ms: Math.round(health.ms ?? 0),
           mock: deps.env.arag.mock,

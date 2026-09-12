@@ -4,6 +4,7 @@
 import { renderBrief } from "./brief.js";
 import { go, onRoute, params } from "./route.js";
 import {
+  activatableRows,
   ago,
   api,
   boot,
@@ -318,18 +319,9 @@ function wire() {
       load();
     });
   }
-  const open = (id) => {
-    writeUrl({ id });
-    void openDetail(id);
-  };
-  document.addEventListener("click", (e) => {
-    const tr = e.target.closest("#cvTable tbody tr[data-id]");
-    if (tr) open(tr.dataset.id);
-  });
-  document.addEventListener("keydown", (e) => {
-    if (e.key !== "Enter") return;
-    const tr = e.target.closest?.("#cvTable tbody tr[data-id]");
-    if (tr) open(tr.dataset.id);
+  activatableRows("#cvTable tbody tr[data-id]", (tr) => {
+    writeUrl({ id: tr.dataset.id });
+    void openDetail(tr.dataset.id);
   });
 }
 

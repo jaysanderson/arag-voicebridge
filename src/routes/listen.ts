@@ -16,20 +16,39 @@ import {
   type TranscriptChunk,
 } from "../services/listen.ts";
 
+/**
+ * Neutralise text that came from a conversation or a Knowledge Box before it goes into a
+ * Markdown file.
+ *
+ * The transcript is attacker-reachable by design — anything that can POST JSON can put words in
+ * it — and citation titles come from content. A handover note is pasted into wikis, tickets and
+ * chat tools, many of which render raw HTML inside Markdown, so an unescaped `<img onerror=…>`
+ * spoken into a call would execute wherever the note was later opened. Angle brackets and
+ * backticks are the only characters that can change how the note is interpreted; escaping them
+ * keeps the note readable while making it inert.
+ */
+export function mdSafe(text: unknown): string {
+  return String(text ?? "")
+    .replace(/[<>]/g, (c) => (c === "<" ? "&lt;" : "&gt;"))
+    .replace(/`/g, "\u2018")
+    .replace(/\r?\n/g, " ")
+    .trim();
+}
+
 /** The Markdown handover note: the final brief, how it got there, the sources and the transcript. */
 export function exportMarkdown(s: ListenSessionExport, displayName: string): string {
   const b = (s.brief ?? {}) as Record<string, unknown>;
-  const str = (k: string) => (typeof b[k] === "string" ? (b[k] as string).trim() : "");
+  const str = (k: string) => mdSafe(typeof b[k] === "string" ? b[k] : "");
   const bullets = (k: string) =>
     (Array.isArray(b[k]) ? (b[k] as unknown[]) : [])
-      .map((x) => String(x ?? "").trim())
+      .map((x) => mdSafe(x))
       .filter(Boolean)
       .map((x) => `- ${x}`)
       .join("\n");
   const section = (heading: string, body: string) => (body ? `\n## ${heading}\n\n${body}\n` : "");
 
   const header =
-    `# Conversation ${s.id.slice(0, 8)} — ${displayName}\n\n` +
+    `# Conversation ${mdSafe(s.id.slice(0, 8))} — ${mdSafe(displayName)}\n\n` +
     `- Started: ${s.createdAt}\n` +
     `- ${s.status === "ended" ? `Ended: ${s.endedAt ?? s.updatedAt}` : "Status: live"}\n` +
     `- Duration: ${s.durationSec}s\n` +
@@ -50,7 +69,13 @@ export function exportMarkdown(s: ListenSessionExport, displayName: string): str
 
   const sources = section(
     "Sources",
-    s.citations.map((c) => `- ${c.title}${c.url ? ` — ${c.url}` : ""}`).join("\n"),
+    s.citations
+      .map((c) => {
+        // Only an http(s) source becomes a link; anything else is shown as plain text.
+        const url = /^https?:\/\//i.test(String(c.url ?? "")) ? mdSafe(c.url) : "";
+        return `- ${mdSafe(c.title)}${url ? ` — ${url}` : ""}`;
+      })
+      .join("\n"),
   );
   const history = section(
     "How the brief evolved",
@@ -58,7 +83,7 @@ export function exportMarkdown(s: ListenSessionExport, displayName: string): str
   );
   const transcript = section(
     "Transcript",
-    s.transcript.map((t) => `**${t.speaker}:** ${t.text}`).join("\n\n"),
+    s.transcript.map((t) => `**${mdSafe(t.speaker)}:** ${mdSafe(t.text)}`).join("\n\n"),
   );
   return `${header}${brief}${sources}${history}${transcript}`;
 }

@@ -42,6 +42,11 @@ export const state = {
 };
 
 const PROSPECT_KEY = "vb.prospect";
+let railCloser = null;
+/** At most one drawer is open at a time, whichever section opened it. */
+let openPanel = null;
+const registeredRows = new Set();
+const rowHandlers = new Map();
 
 /** Mount the shell into <body> and return the content host to render into. */
 export function mountShell(opts) {
@@ -112,11 +117,16 @@ export function mountShell(opts) {
   document.getElementById("vbMenu")?.addEventListener("click", () => {
     app.dataset.rail = app.dataset.rail === "open" ? "closed" : "open";
   });
-  document.addEventListener("click", (e) => {
-    if (app.dataset.rail === "open" && !e.target.closest(".vb-rail") && !e.target.closest("#vbMenu")) {
-      app.dataset.rail = "closed";
-    }
-  });
+  // The operator area re-mounts the shell on every hash change, so this listener is installed
+  // once and looks the element up each time rather than closing over a detached node.
+  if (!railCloser) {
+    railCloser = (e) => {
+      const current = document.querySelector(".vb-app");
+      if (!current || current.dataset.rail !== "open") return;
+      if (!e.target.closest(".vb-rail") && !e.target.closest("#vbMenu")) current.dataset.rail = "closed";
+    };
+    document.addEventListener("click", railCloser);
+  }
   return document.getElementById("vbView");
 }
 
@@ -279,10 +289,16 @@ export function chip(text, kind = "neutral") {
   return `<span class="arag-chip ${kind}">${esc(text)}</span>`;
 }
 
+/**
+ * A source chip. Only http(s) becomes a link: citation URLs come from Knowledge Box content, and
+ * content is not trusted to choose a URL scheme — a `javascript:` "source" would be a click away
+ * from running in the workspace.
+ */
 export function citeChip(c) {
-  const href = c.url ? ` href="${esc(c.url)}" target="_blank" rel="noreferrer noopener"` : "";
-  const tag = c.url ? "a" : "span";
-  return `<${tag} class="arag-cite"${href} title="relevance ${Number(c.score ?? 0).toFixed(2)}">${esc(c.title)}</${tag}>`;
+  const safe = /^https?:\/\//i.test(String(c.url ?? "")) ? String(c.url) : "";
+  const attrs = safe ? ` href="${esc(safe)}" target="_blank" rel="noreferrer noopener"` : "";
+  const tag = safe ? "a" : "span";
+  return `<${tag} class="arag-cite"${attrs} title="relevance ${Number(c.score ?? 0).toFixed(2)}">${esc(c.title)}</${tag}>`;
 }
 
 /** Relative time for list rows ("4 min ago"), absolute on hover. */
@@ -308,8 +324,51 @@ export function duration(sec) {
   return m ? `${m}m ${s}s` : `${s}s`;
 }
 
+const FOCUSABLE =
+  'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
+
+/** Keep Tab inside an open panel — behind a blocking backdrop there is nowhere else to go. */
+function trapTab(e, host) {
+  const items = [...host.querySelectorAll(FOCUSABLE)].filter((el) => el.offsetParent !== null);
+  if (items.length === 0) return;
+  const first = items[0];
+  const last = items[items.length - 1];
+  if (e.shiftKey && document.activeElement === first) {
+    e.preventDefault();
+    last.focus();
+  } else if (!e.shiftKey && document.activeElement === last) {
+    e.preventDefault();
+    first.focus();
+  }
+}
+
+/**
+ * Make table rows behave like the controls they look like: a row marked `tabindex="0"` is
+ * announced as focusable, so Enter and Space must open it, not only a mouse click.
+ */
+export function activatableRows(selector, open) {
+  // The operator area re-renders a view on every hash change, so the handler is registered once
+  // per selector and the latest callback replaces the previous one.
+  rowHandlers.set(selector, open);
+  if (registeredRows.has(selector)) return;
+  registeredRows.add(selector);
+  document.addEventListener("click", (e) => {
+    const row = e.target.closest(selector);
+    if (row) rowHandlers.get(selector)?.(row);
+  });
+  document.addEventListener("keydown", (e) => {
+    if (e.key !== "Enter" && e.key !== " ") return;
+    const row = e.target.closest?.(selector);
+    if (!row) return;
+    e.preventDefault();
+    rowHandlers.get(selector)?.(row);
+  });
+}
+
 /** A right-hand drawer. Returns a close() function. */
 export function openDrawer({ title, sub = "", actions = "", body, onClose }) {
+  openPanel?.();
+  const returnFocus = document.activeElement;
   const host = document.createElement("div");
   host.className = "vb-drawer-backdrop";
   host.innerHTML = `<section class="vb-drawer" role="dialog" aria-modal="true" aria-label="${esc(title)}">
@@ -328,14 +387,21 @@ export function openDrawer({ title, sub = "", actions = "", body, onClose }) {
     closed = true;
     host.remove();
     document.removeEventListener("keydown", onKey);
+    if (openPanel === close) openPanel = null;
+    // Put the keyboard back where it was, not at the top of the document.
+    if (returnFocus?.isConnected) returnFocus.focus();
     onClose?.();
   };
-  const onKey = (e) => e.key === "Escape" && close();
+  const onKey = (e) => {
+    if (e.key === "Escape") return close();
+    if (e.key === "Tab") trapTab(e, host);
+  };
   host.addEventListener("click", (e) => {
     if (e.target === host || e.target.closest("[data-close]")) close();
   });
   document.addEventListener("keydown", onKey);
   document.body.appendChild(host);
+  openPanel = close;
   host.querySelector("[data-close]")?.focus();
   return close;
 }
@@ -343,6 +409,7 @@ export function openDrawer({ title, sub = "", actions = "", body, onClose }) {
 /** Confirm before something destructive. Resolves true when confirmed. */
 export function confirmAction({ title, body, confirmLabel = "Delete", danger = true }) {
   return new Promise((resolve) => {
+    const returnFocus = document.activeElement;
     const host = document.createElement("div");
     host.className = "arag-modal-backdrop";
     host.innerHTML = `<div class="arag-modal" role="dialog" aria-modal="true">
@@ -357,8 +424,15 @@ export function confirmAction({ title, body, confirmLabel = "Delete", danger = t
       </div>`;
     const done = (v) => {
       host.remove();
+      document.removeEventListener("keydown", onKey);
+      if (returnFocus?.isConnected) returnFocus.focus();
       resolve(v);
     };
+    const onKey = (e) => {
+      if (e.key === "Escape") return done(false);
+      if (e.key === "Tab") trapTab(e, host);
+    };
+    document.addEventListener("keydown", onKey);
     host.addEventListener("click", (e) => {
       if (e.target.closest("[data-yes]")) done(true);
       else if (e.target.closest("[data-no]") || e.target === host) done(false);

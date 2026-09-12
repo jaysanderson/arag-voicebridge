@@ -556,6 +556,9 @@ function resetToIdle() {
   live.version = 0;
   live.stale = false;
   live.session = null;
+  // The model picker is rebuilt from the new prospect's catalogue; carrying the old prospect's
+  // choice would silently send a model its Knowledge Box may not allow.
+  live.model = "";
   setSessionChip("not started", "neutral");
   $("#vbSessionBody").innerHTML = idlePanel();
   $("#vbBrief").innerHTML = starter();

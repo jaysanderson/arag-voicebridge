@@ -9,6 +9,7 @@ import {
   readVoiceEnv,
   scribeEnabled,
 } from "../src/config.ts";
+import { maskId } from "../src/routes/quality.ts";
 import {
   buildBriefRequest,
   LIVE_BRIEF_SCHEMA,
@@ -434,5 +435,24 @@ describe("brief", () => {
     expect(buildBriefRequest({ text: "x" }, { ...prospect, brief_model: "m-fast" }).generative_model).toBe(
       "m-fast",
     );
+  });
+});
+
+describe("maskId", () => {
+  it("shows enough of a long id to recognise it, and no more", () => {
+    expect(maskId("11111111-2222-3333-4444-555555555555")).toBe("1111…5555");
+    expect(maskId("REPLACE_ME_KB_ID")).toBe("REPL…B_ID");
+  });
+
+  it("redacts a short id completely rather than passing it through", () => {
+    // The function exists to redact; the one case where it cannot redact partially must not
+    // become the case where it redacts nothing.
+    expect(maskId("12345678")).toBe("••••");
+    expect(maskId("abc")).toBe("••••");
+  });
+
+  it("has nothing to say about an absent id", () => {
+    expect(maskId("")).toBe("");
+    expect(maskId("   ")).toBe("");
   });
 });

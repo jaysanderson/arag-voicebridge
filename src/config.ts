@@ -56,6 +56,9 @@ export interface VoiceConfig {
   briefBurst: number;
   scribeRps: number;
   scribeBurst: number;
+  /** Per-IP budget for starting an avatar session (mints LiveKit tokens and a billed upstream session). */
+  avatarRps: number;
+  avatarBurst: number;
   elevenLabsApiKey: string;
   elevenLabsApiBase: string;
   /** Scribe realtime model used for microphone transcription in Live. */
@@ -94,6 +97,8 @@ export function readVoiceEnv(src: Src = process.env): VoiceConfig {
     briefBurst: num(src, "VOICE_BRIEF_RATE_BURST", 5),
     scribeRps: num(src, "VOICE_SCRIBE_RATE_RPS", 0.2),
     scribeBurst: num(src, "VOICE_SCRIBE_RATE_BURST", 3),
+    avatarRps: num(src, "VOICE_AVATAR_RATE_RPS", 0.2),
+    avatarBurst: num(src, "VOICE_AVATAR_RATE_BURST", 3),
     elevenLabsApiKey: str(src, "ELEVENLABS_API_KEY"),
     elevenLabsApiBase: str(src, "ELEVENLABS_API_BASE", "https://api.elevenlabs.io"),
     scribeModel: str(src, "ELEVENLABS_SCRIBE_MODEL", "scribe_v2_realtime"),
@@ -158,6 +163,7 @@ export function describeVoiceConfig(v: VoiceConfig): Record<string, unknown> {
       brief: { rps: v.briefRps, burst: v.briefBurst },
       scribeToken: { rps: v.scribeRps, burst: v.scribeBurst },
       speech: { rps: v.ttsRps, burst: v.ttsBurst },
+      avatarSession: { rps: v.avatarRps, burst: v.avatarBurst },
     },
     elevenLabs: {
       configured: Boolean(v.elevenLabsApiKey),

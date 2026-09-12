@@ -6,7 +6,7 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { readVoiceEnv } from "../src/config.ts";
-import { exportMarkdown } from "../src/routes/listen.ts";
+import { exportMarkdown, mdSafe } from "../src/routes/listen.ts";
 import type { BriefResult } from "../src/services/brief.ts";
 import {
   DEFAULT_THROTTLE,
@@ -545,5 +545,45 @@ describe("export as a handover note", () => {
     expect(md).not.toContain("## Key points");
     expect(md).not.toContain("## Sources");
     expect(md).toContain("Status: live");
+  });
+});
+
+describe("the export is inert wherever it is pasted", () => {
+  it("neutralises markup that arrived in the conversation or in a source title", () => {
+    const { service, setBrief } = harness();
+    setBrief(async () => ({
+      brief: {
+        topic: "<img src=x onerror=alert(1)>",
+        summary: "They asked about `rm -rf /` and <script>alert(2)</script>.",
+        suggested_answers: ["<b>bold</b> claim"],
+      },
+      citations: [
+        { title: "<script>alert(3)</script>", url: "javascript:alert(4)", score: 0.9 },
+        { title: "A real source", url: "https://example.test/doc", score: 0.8 },
+      ],
+      latency_ms: { retrieve: 1, first_token: 2, total: 3 },
+    }));
+    const s = service.create({ prospect: "acme" });
+    service.append(s.id, [{ speaker: "<b>caller</b>", text: "we print brackets <script>alert(5)</script>" }]);
+    return flush().then(() => {
+      const md = exportMarkdown(service.exportSession(s.id), "Acme <script>x</script>");
+      expect(md).not.toContain("<script>");
+      expect(md).not.toContain("<img");
+      expect(md).not.toContain("<b>");
+      // A javascript: "source" is never rendered as a link, however it reached the brief.
+      expect(md).not.toContain("javascript:");
+      // Real content survives: this has to stay a readable handover note.
+      expect(md).toContain("we print brackets");
+      expect(md).toContain("https://example.test/doc");
+      expect(md).toContain("A real source");
+    });
+  });
+
+  it("escapes only what can change how the note is read", () => {
+    expect(mdSafe("plain text")).toBe("plain text");
+    expect(mdSafe("<b>")).toBe("&lt;b&gt;");
+    expect(mdSafe("a `code` span")).toBe("a \u2018code\u2018 span");
+    expect(mdSafe("two\nlines")).toBe("two lines");
+    expect(mdSafe(null)).toBe("");
   });
 });
