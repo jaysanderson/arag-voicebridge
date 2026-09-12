@@ -2,12 +2,13 @@
  * Unit tests for the third-party integrations (ElevenLabs Scribe + voices, LiveAvatar).
  * `fetch` is injected, so these never touch the network and need no credentials.
  */
-import { describe, expect, it } from "./_expect.ts";
-import { Logger } from "../vendor/arag-platform/src/index.ts";
+
 import { readVoiceEnv } from "../src/config.ts";
 import { LiveAvatarClient, LiveAvatarError } from "../src/services/liveavatar.ts";
 import { mintScribeToken, ScribeError } from "../src/services/scribe.ts";
 import { fetchVoices, VoicesError } from "../src/services/voices.ts";
+import { Logger } from "../vendor/arag-platform/src/index.ts";
+import { describe, expect, it } from "./_expect.ts";
 
 const log = new Logger({ level: "error", ringSize: 0, write: () => {} });
 const configured = readVoiceEnv({ ELEVENLABS_API_KEY: "xi-test", LIVEAVATAR_API_KEY: "la-test" });
@@ -22,7 +23,9 @@ function reply(status: number, body: unknown, capture?: (url: string, init?: Req
   };
 }
 
-async function expectError<T>(fn: () => Promise<T>): Promise<{ name: string; status?: number; message: string }> {
+async function expectError<T>(
+  fn: () => Promise<T>,
+): Promise<{ name: string; status?: number; message: string }> {
   try {
     await fn();
   } catch (err) {

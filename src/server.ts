@@ -217,10 +217,21 @@ export async function createProduct(
     return null;
   };
 
+  // Readiness probes the default prospect's Knowledge Box, but the console polls /readyz every
+  // 15 s per open tab — cache the upstream check so a demo audience cannot hammer ARAG.
+  let readyCache: { at: number; arag: Record<string, unknown> } | null = null;
+  const READY_TTL_MS = 30_000;
   healthRoutes(app, async () => {
-    const first = registry.list()[0];
-    const arag = first ? await clients.for(first).health() : { ok: env.arag.mock };
-    return { version: VERSION, prospects: registry.size, arag: { ...arag, mock: env.arag.mock } };
+    if (!readyCache || Date.now() - readyCache.at > READY_TTL_MS) {
+      const first = registry.list()[0];
+      const arag = first ? await clients.for(first).health() : { ok: env.arag.mock };
+      readyCache = { at: Date.now(), arag: arag as Record<string, unknown> };
+    }
+    return {
+      version: VERSION,
+      prospects: registry.size,
+      arag: { ...readyCache.arag, mock: env.arag.mock },
+    };
   });
   app.docs("/api/v1", openapi, { title: "VoiceBridge API" });
 
