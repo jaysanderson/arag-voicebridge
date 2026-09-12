@@ -50,6 +50,16 @@ test.describe("voice console", () => {
     await expect(page.locator("#mTurns")).not.toHaveText("—");
   });
 
+  test("switching tabs actually hides the other panels", async ({ page }) => {
+    await page.goto("/");
+    await expect(page.locator('[data-panel="ask"]')).toBeVisible();
+    await expect(page.locator('[data-panel="call"]')).toBeHidden();
+    await page.click('[data-tab="call"]');
+    await expect(page.locator('[data-panel="call"]')).toBeVisible();
+    await expect(page.locator('[data-panel="ask"]')).toBeHidden();
+    await expect(page.locator('[data-panel="golden"]')).toBeHidden();
+  });
+
   test("call and listen tabs degrade politely without ElevenLabs credentials", async ({ page }) => {
     await page.goto("/");
     await page.click('[data-tab="call"]');

@@ -1,0 +1,22 @@
+{
+  "key": "atlas",
+  "config": {
+    "display_name": "Atlas Additive",
+    "kb_id": "00000000-0000-4000-8000-000000000001",
+    "region": "aws-us-east-2-1",
+    "locale": "en-US",
+    "greeting": "Hi, thanks for calling Atlas Additive. What can I help you with?",
+    "handoff_msg": "Let me get an Atlas specialist for that.",
+    "golden_questions": [
+      {
+        "q": "What is binder jetting?",
+        "expect": "answer",
+        "must_include": ["binder"]
+      },
+      {
+        "q": "What is the capital of France?",
+        "expect": "handoff"
+      }
+    ]
+  }
+}

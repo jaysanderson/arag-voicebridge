@@ -1,0 +1,190 @@
+# Developer track — knowledge check
+
+15 questions. Try answering before you look — several are judgement calls, not recall, and the
+"why" matters more than the label.
+
+---
+
+**1. Recall.** Name the nine conceptual steps of a turn, in order, as documented at the top of
+`src/services/pipeline.ts`.
+
+> Resolve prospect, input safety guard, build the ARAG request, call ARAG, shape the answer for
+> voice, extract citations, deterministic handoff decision, output safety guard, return + record
+> metrics. (The *actual* code computes citations right after the ARAG call, before the handoff
+> check — see Q2 for why.)
+
+---
+
+**2. Judgement.** The comment header lists "shape the answer" (step 5) before "extract citations"
+(step 6) before "handoff decision" (step 7). But in `runTurn`, citations are computed immediately
+after the ARAG call — before the handoff check runs, and shaping only happens afterwards. Why?
+
+> `decideHandoff` needs the retrieval **count**, not just the answer text — an answer with zero
+> retrieved items is treated as ungrounded and forced to hand off regardless of how confident the
+> model sounds (`no-retrieval` reason in `src/services/handoff.ts`). That count comes from the
+> same retrieval object citations are flattened from, so it's read once, early. Shaping is skipped
+> entirely on a handoff, because the spoken line is the prospect's own fixed `handoff_msg`, not
+> anything ARAG produced — there is nothing to shape.
+
+---
+
+**3. Judgement.** A turn comes back from ARAG with a fluent, confident-sounding paragraph, but the
+retrieval object is empty (nothing was actually found in the Knowledge Box). What does VoiceBridge
+do, and why is that not left to the model to decide?
+
+> It hands off (`reason: "no-retrieval"`), regardless of how the answer reads. `decideHandoff` in
+> `src/services/handoff.ts` treats zero retrieved items as proof the answer is ungrounded, full
+> stop — the model's own confidence is not evidence of correctness, and a fluent hallucination is
+> exactly the failure mode a voice product cannot afford to gamble on, since the caller only hears
+> the words, never the retrieval panel. This is belt-and-braces on top of the prompt's own
+> `HANDOFF:` sentinel, specifically so a prompt that fails to produce the sentinel (a stored
+> configuration that omits it, a model that ignores instructions) still degrades safely.
+
+---
+
+**4. Recall.** What is the `HANDOFF:` sentinel, and where does the contract for it live?
+
+> A fixed string prefix the voice prompt is instructed to begin its reply with when the retrieved
+> context cannot answer the question. `src/services/handoff.ts`'s `decideHandoff` checks for it as
+> a case-insensitive prefix. It is a **contract** between the prompt and the bridge
+> (`DECISIONS.md` V-04) — deliberately a deterministic string check rather than a judgement call,
+> so the pipeline never has to decide whether an answer is "good enough" and the behaviour is
+> reproducible in the golden set.
+
+---
+
+**5. Judgement.** Why is the handoff decision a string-prefix check rather than, say, a second LLM
+call asking "was this answer actually grounded"?
+
+> Determinism and debuggability. A second model call would itself be fallible, slower, and would
+> reintroduce exactly the judgement-call problem the sentinel exists to avoid — now you'd need to
+> trust a model to correctly judge another model's groundedness. A string check is instant, free,
+> and its behaviour on a given input is always the same, which is what makes the golden set a
+> meaningful, repeatable gate rather than a probabilistic sample.
+
+---
+
+**6. Recall.** Citations are returned in every successful response, but the voice-answer prompt
+explicitly tells the model never to include citation markers in the spoken text. Why return them
+at all?
+
+> They are UI data, never spoken — shown as chips in the console and available to the agent
+> platform for on-screen display, but stripped from anything text-to-speech will read
+> (`src/services/voiceShape.ts`'s `stripCitationMarkers`, and `guardOutput`'s
+> `hasSpeakableViolation` as a backstop). A citation marker like `[1]` read aloud mid-sentence is
+> nonsensical to a caller; the same citation shown as a chip on a screen is useful provenance.
+
+---
+
+**7. Judgement.** You trip the input guard with a prompt-injection attempt and then check the turn
+log. The record has no `question` field at all — not an empty string, the key is absent. A normal
+successful turn's record does carry `question`. What decided this, and where?
+
+> `src/routes/voice.ts`'s `handleTurn`: `question: guardTrip ? undefined : body.question.slice(0,
+> 500)`. `undefined` fields are dropped at serialisation, so the text is never written to the
+> store at all — not stored-then-hidden, never stored. This is `DECISIONS.md` V-08: an unsafe
+> input is exactly the text you don't want retained and re-displayed in an admin panel later. The
+> decision is made once, in the route, at write time, rather than left to whichever admin screen
+> is built later to remember to redact it.
+
+---
+
+**8. Recall.** What does `ARAG_MOCK=1` actually start, and what does it seed?
+
+> `startMockArag` boots a second, private in-process HTTP server that behaves like a real ARAG
+> Knowledge Box, seeded with the 8 documents in `src/services/seed.ts` (short, original notes
+> about metal additive manufacturing — binder jetting, sintering furnaces, Formlabs, 3D Systems).
+> Every prospect's `AragClient`, regardless of its own configured `kb_id`, is routed to this same
+> mock instance by `AragClientPool` (`src/services/clientPool.ts`) while the flag is set.
+
+---
+
+**9. Judgement.** The shipped `tangerine` and `northwind` prospects' own golden sets **fail** when
+run against `ARAG_MOCK=1` (try `BASE_URL=... node scripts/eval.ts tangerine`). Is this a bug? What
+does it mean for a prospect you create yourself for practice?
+
+> Not a bug. Those golden sets are written for their real, telco/health Knowledge Boxes; the mock
+> always serves the same additive-manufacturing corpus to every prospect regardless of `kb_id`
+> (Q8). Only `progress`'s golden set is written to match the mock's actual content. Any prospect
+> you create for hands-on practice under the mock must ask questions the *mock's* corpus can
+> answer, not questions about whatever the prospect notionally sells — otherwise every "answer"
+> question fails for a reason that has nothing to do with your configuration.
+
+---
+
+**10. Recall.** What is the difference between the "inline" and "stored configuration" paths when
+`buildAskRequest` constructs an ARAG request?
+
+> If the prospect has an `ask_config` set, the request carries only `search_configuration: <name>`
+> — the stored configuration in the Knowledge Box owns the prompt, filters, reranker and models,
+> and nothing else is sent inline. Otherwise, the bridge builds the voice prompt inline
+> (`buildVoicePrompt`) and sends `reranker`, `max_tokens`, `temperature` and (optionally)
+> `generative_model` directly on the request. `src/services/provision.ts`'s
+> `buildSearchConfiguration` is what writes the stored-configuration version of the same prompt
+> into the Knowledge Box for prospects that use that path.
+
+---
+
+**11. Judgement.** `guardInput`'s `OUT_OF_SCOPE_PATTERNS` and `INJECTION_PATTERNS` are a blocklist
+of specific, narrow regular expressions, not a whitelist of "approved" question shapes. Why is
+that the right trade-off here?
+
+> A whitelist would have to anticipate every legitimate way a caller might phrase every legitimate
+> support question across every locale before the product could ship a new prospect, and would
+> still wrongly block real questions on day one. A narrow blocklist catches specific, known-bad
+> shapes cheaply and deterministically and lets everything else through to ARAG, where
+> `decideHandoff` is the real arbiter of whether a given question can actually be answered. The
+> guard's job is triage, not judgement.
+
+---
+
+**12. Recall.** What happens, end to end, when the ARAG client call itself throws — a timeout, a
+network error, a protocol error?
+
+> `runTurn`'s `try/catch` around the `ask()` call logs `arag.fail` (with `kind` and `message` from
+> the error, never the caller's question) and returns the prospect's `handoff_msg` with
+> `handoff_reason: "upstream-error"` — the same shape of response as a content-driven handoff, so
+> the caller hears a natural line, not silence or a raw error. This is the mechanism behind "never
+> dead air."
+
+---
+
+**13. Judgement.** `make check` runs `make lint` (biome, whole repo) then `make typecheck` then
+`make coverage`. On a shared checkout with other work in flight, `make lint` can fail for a file
+you never touched. Why doesn't that mean your own change is wrong, and what should you check
+instead?
+
+> Biome's `check` scans every file in the repository by default, not just your diff, so a
+> formatting issue anywhere else in an actively-developed repo shows up as a `make check` failure
+> regardless of what you changed. Run `make lint`/`make typecheck` narrowly, if your editor
+> doesn't already flag it, and specifically check your own file's diff is clean; don't treat an
+> unrelated pre-existing failure elsewhere as evidence your change broke something.
+
+---
+
+**14. Recall.** Why does `checkTurn` (the per-question golden-set assertion) apply several checks
+to an `"expect": "answer"` question but only one to an `"expect": "handoff"` question?
+
+> An "answer" question asserts something rich and specific — this claim, grounded (≥1 citation),
+> spoken correctly (≤3 sentences, no URLs, no citation markers), optionally containing named terms
+> — because there is real content to verify. A "handoff" question only needs to verify the single
+> safety property that matters: the pipeline correctly refused to guess. There is no further
+> content to check, because a handoff's spoken text is always the prospect's own fixed
+> `handoff_msg`, never anything ARAG produced.
+
+---
+
+**15. Judgement.** `AragClientPool` keeps one `AragClient` per `kb_id|baseUrl` pair rather than one
+global client for the whole process. What would break if VoiceBridge used a single global client
+instead, and why does per-prospect pooling (rather than, say, a brand-new client per request) make
+sense?
+
+> A single global client can only point at one Knowledge Box and one zone at a time — the moment a
+> second prospect in a different Knowledge Box (or a different region) is added, every turn for
+> one of the two prospects would be routed to the wrong KB. VoiceBridge is multi-tenant by design
+> (`DECISIONS.md` V-03), so "which Knowledge Box" has to be a per-request routing decision, not a
+> process-wide constant. Pooling by `kb_id|baseUrl` rather than building a fresh client per request
+> avoids repeatedly reconstructing an identical, stateless client on every single turn, and gives
+> the admin health check one object per Knowledge Box to query; the pool is cleared whenever the
+> registry changes, so a `kb_id` edit takes effect on the next turn rather than being cached
+> forever.

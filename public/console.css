@@ -1,4 +1,11 @@
 /* VoiceBridge console — a thin layer on top of the shared ARAG UI kit. */
+
+/* The UI kit's layout rules (.arag-grid { display: grid } and friends) are author styles, so they
+   outrank the user-agent default for [hidden] and a hidden tab panel stays on screen. Both this
+   page and the admin panel switch tabs with the hidden attribute, so restore it globally. */
+[hidden] {
+  display: none !important;
+}
 .vb-bar {
   margin-bottom: 14px;
 }

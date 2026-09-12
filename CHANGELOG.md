@@ -45,3 +45,7 @@ API-first product with an admin panel, a demo console, documentation and an enab
   strictly than the rest of the API.
 - The ElevenLabs browser client is vendored and pinned instead of imported from a CDN at runtime.
 - The turn log never stores the text of an input that tripped a safety guard.
+- Conversation history and Listen-mode transcripts are screened for injection with the same
+  patterns as the question; poisoned turns are dropped rather than forwarded as model context.
+- `config/prospects.example.json` ships placeholders only; the deployment's own `ARAG_KB_ID` and
+  `VOICE_DEFAULT_AGENT_ID` are substituted into the first prospect at first boot.
