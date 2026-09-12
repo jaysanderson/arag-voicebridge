@@ -42,10 +42,14 @@ ARAG_REGION=aws-us-east-2-1   # or set ARAG_BASE_URL to override the host entire
 ```
 
 Then `make dev` again (or just restart it) — leaving `ARAG_API_KEY` set is what tips `make dev`
-into starting without `ARAG_MOCK=1`. The seeded `progress` prospect's `kb_id`/`region` in
-`config/prospects.example.json` point at a placeholder; either edit that prospect through the
-admin panel (see [`../business/walkthrough-admin.md`](../business/walkthrough-admin.md)) or add a
-new one to point at your own KB.
+into starting without `ARAG_MOCK=1`.
+
+The shipped `config/prospects.example.json` carries placeholders rather than anybody's real
+identifiers (`DECISIONS.md` V-12). On the **first** boot with an empty `DATA_DIR`, the seeder
+substitutes your `ARAG_KB_ID` — and `VOICE_DEFAULT_AGENT_ID`, if you set one — into the first
+prospect, so it answers from your own Knowledge Box with no file edits. If the registry has
+already been seeded, change it through the admin panel instead (see
+[`../business/walkthrough-admin.md`](../business/walkthrough-admin.md)) or add a new prospect.
 
 To light up **Call** (real voice) and **Listen** (ambient Scribe + evolving brief), add:
 
