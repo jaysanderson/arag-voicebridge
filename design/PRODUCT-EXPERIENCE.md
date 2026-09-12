@@ -853,7 +853,7 @@ check list from `GoldenCase.checks[]` (`{ok, label}`) as pass/fail lines. Failed
 | Region | Source |
 |---|---|
 | Stat strip | `GET /api/v1/metrics?prospect=` → `turns`, `latency_total_ms.p50/p95`, `latency_first_token_ms.p50`, `handoff_rate`, `citation_coverage`, `guard_trip_rate`. Rates rendered as percentages with the denominator named in the caption line underneath — "of answered turns" for citation coverage, because that is what `MetricsService` actually computes. |
-| Window | `GET /api/v1/metrics?window=` (API gap §9.3). Until that lands, the control is absent and the strip caption reads "over the recent window (last 500 turns)" — the honest description of the ring buffer. |
+| Window | `GET /api/v1/metrics?window=` (API gap §9.1.3). Until that lands, the control is absent and the strip caption reads "over the recent window (last 500 turns)" — the honest description of the ring buffer. |
 | Reasons | `GET /api/v1/turns?prospect= → reasons[]` (`reason`, `count`, `guard`). Bars are `.arag-progress` at row width; guard reasons carry the warning icon and an amber bar. Clicking a bar sets `?reason=`. |
 | By prospect | `GET /api/v1/metrics → by_prospect{}`. Clicking sets `?prospect=`. |
 | Turn log | `GET /api/v1/turns?prospect=&outcome=&reason=&source=&limit=&offset=` → `{items, total}`. |
@@ -2230,11 +2230,28 @@ Notes for the recorder:
 
 ## 9. API gaps
 
-The endpoints below are what the IA needs and the API does not yet have. Everything else the
-wireframes reference already exists. Specify them in `src/openapi.ts` first, then implement, per
-the API-first rule.
+### 9.0 Specified and landed during this pass
 
-### 9.1 Brief version history for one session
+These were gaps when the IA was drawn and are now in `src/openapi.ts` and implemented. Recorded
+here as the contract of record, because the screens in §3 depend on their exact shapes.
+
+| Endpoint | Signature | Consumed by |
+|---|---|---|
+| `GET /api/v1/listen/sessions` | `?prospect&status&q&from&to&sort=started\|updated\|refreshes\|duration&order&limit&offset` → `{items, total, limit, offset}` | Conversations list (§3.5), Live "Recent" |
+| `GET /api/v1/listen/sessions/{id}/export` | `?format=json\|markdown` → `ListenSessionExport` / `text/markdown` | Conversation detail (§3.6) |
+| `GET /api/v1/turns` | `?prospect&outcome=answered\|handoff\|guard&source&reason&limit&offset` → `{items, total, reasons[]}` | Quality (§3.10) |
+| `GET /api/v1/knowledge` | `?prospect` → `KnowledgeStatus` (masked kb id, region, resources, configs, models, reranker, golden set, last run) | Knowledge (§3.7), onboarding step 2 |
+| `GET /api/v1/golden-evals` | `?prospect&limit&offset` → `{items, total}` | Knowledge run history (§3.7) |
+| `GET /api/v1/integrations` | → `{items: IntegrationStatus[]}` | Settings → Integrations (§3.11, §11.5) |
+| `POST /api/v1/speech` | `{text, voice_id?, prospect?}` → `audio/mpeg`, 503 when unconfigured | Live → Read aloud (§11.4) |
+| `GET /api/v1/voice-agent` | `?prospect` → `VoiceAgentConfig` (tool definition + router prompt) | Settings → Integrations, Live → voice tool (§11.3) |
+
+### 9.1 Still outstanding
+
+The endpoints below are what the IA needs and the API does not yet have. Specify them in
+`src/openapi.ts` first, then implement, per the API-first rule.
+
+#### 9.1.1 Brief version history for one session
 
 ```
 GET /api/v1/listen/sessions/{id}/briefs
@@ -2253,7 +2270,7 @@ Rationale: `briefHistory` exists on the stored session and is returned by
 require `ADMIN_TOKEN`, and must not download the whole export (which carries the full transcript)
 just to draw a rail of six versions.
 
-### 9.2 Force a brief refresh
+#### 9.1.2 Force a brief refresh
 
 ```
 POST /api/v1/listen/sessions/{id}/refresh
@@ -2271,7 +2288,7 @@ conversation that was never said. The staleness recovery affordance in the core 
 refresh that does not lie about the transcript. `ListenService.refresh(id)` already exists and is
 idempotent-safe via `inFlight`; this exposes it.
 
-### 9.3 Metrics window
+#### 9.1.3 Metrics window
 
 ```
 GET /api/v1/metrics?prospect=&window=
@@ -2286,7 +2303,7 @@ Rationale: the strip currently describes "the recent window" without saying what
 exactly the kind of unstated number a compliance reviewer rejects. `TurnRecord.createdAt` is
 already stored, so the filter is a predicate over the same ring.
 
-### 9.4 Defined shape for operator usage
+#### 9.1.4 Defined shape for operator usage
 
 ```
 GET /api/v1/admin/usage
@@ -2300,7 +2317,7 @@ GET /api/v1/admin/usage
 Rationale: an untyped blob can only be rendered as `<arag-json>`. The Usage screen in the brief is
 a real screen with stat tiles and tables, and it needs a contract the contract tests can hold.
 
-### 9.5 Delete a listen session
+#### 9.1.5 Delete a listen session
 
 ```
 DELETE /api/v1/admin/listen-sessions/{id}
@@ -2316,7 +2333,7 @@ Rationale: `DELETE /api/v1/listen/sessions/{id}` *ends* a session and keeps it �
 must stay that way. Purging a recorded conversation is a distinct, operator-level, destructive act
 and needs its own path with its own auth and its own confirmation.
 
-### 9.6 Paged and bounded logs
+#### 9.1.6 Paged and bounded logs
 
 ```
 GET /api/v1/admin/logs?level=&contains=&since=&limit=&offset=
@@ -2328,7 +2345,7 @@ GET /api/v1/admin/logs?level=&contains=&since=&limit=&offset=
 | Security | `adminSecurity` |
 | Consumed by | **Operator → Logs** (§10.6), for pagination and the "n records" count |
 
-### 9.7 Align the operator session list with the workspace list
+#### 9.1.7 Align the operator session list with the workspace list
 
 ```
 GET /api/v1/admin/listen-sessions?prospect=&status=&q=&from=&to=&sort=&order=&limit=&offset=
@@ -2342,7 +2359,7 @@ GET /api/v1/admin/listen-sessions?prospect=&status=&q=&from=&to=&sort=&order=&li
 Rationale: the operator table is the same table with one more column; it should not be the only
 list in the product that cannot be filtered or paged.
 
-### 9.8 Not gaps — recorded so they are not re-raised
+### 9.2 Not gaps — recorded so they are not re-raised
 
 | Need | Resolution |
 |---|---|
@@ -2365,12 +2382,12 @@ on `ADMIN_TOKEN`.
 ### 10.0 Shell and gating
 
 ```
-┌──────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
-│ ▐PROGRESS AGENTIC RAG▌                                       mock  ·  service online  ·  API docs  ·  Help    │
-├──────────────────────┬───────────────────────────────────────────────────────────────────────────────────────┤
-│  GroundLine          │  Overview                                                      [ ⟳ Refresh all ]       │
-│  Operator            ├───────────────────────────────────────────────────────────────────────────────────────┤
-│                      │                                                                                        │
+┌──────────────────────┬───────────────────────────────────────────────────────────────────────────────────────┐
+│▓ ▐PROGRESS AGENTIC ▌ │  Overview                              mock   ● service online   [ ⟳ Refresh all ]     │
+│▓   ▐RAG▌             │───────────────────────────────────────────────────────────────────────────────────────│
+│▓                     │                                                                                        │
+│▓ GroundLine          │                                                                                        │
+│▓ Operator            │                                                                                        │
 │  ▸ Overview          │                                                                                        │
 │    Connection        │                                                                                        │
 │    Prospects         │                                                                                        │
@@ -2389,12 +2406,11 @@ on `ADMIN_TOKEN`.
 ```
 
 Signed out, the shell still renders with the operator nav (items `aria-disabled`), and the content
-area holds a single centred `.vb-empty.gate` card carrying the `arag-logo` wordmark at 20 px, the
-title "Operator sign-in required", the body `gate.operator`, the token field and **Sign in**.
+area holds a single centred `.vb-empty.gate` card carrying the title "Operator sign-in required", the body `gate.operator`, the token field and **Sign in**.
 `POST /api/v1/admin/login` sets the HttpOnly cookie; the page then loads its own data. Sign out
 deletes the cookie client-side and reloads.
 
-### 10.1 Overview (`/admin/`)
+### 10.1 Overview (`#overview`)
 
 ```
 ┌────────────────────────────────────────────────────────────────────────────────────────────────────────┐
@@ -2419,7 +2435,7 @@ Sources: `GET /api/v1/admin/health` (`ok`, `version`, `uptimeSec`, `mock`, `pros
 `GET /api/v1/admin/listen-sessions?limit=5`; `GET /api/v1/metrics` for the turn count.
 Every tile and every row links to the view that owns it.
 
-### 10.2 Connection (`/admin/connection/`)
+### 10.2 Connection (`#connection`)
 
 `<arag-health>` for the service, then the per-prospect table with the **full** `kbId`, the region,
 the resolved base URL, the generative model and the round-trip time, plus `[ Test ]` per row.
@@ -2427,7 +2443,7 @@ Below it, `GET /api/v1/admin/config` rendered as a two-column table (not raw JSO
 "Show raw" disclosure holding `<arag-json>`. Secrets are already redacted server-side; the UI adds
 a `Redacted` chip wherever a value is `null`/`"***"` so the absence is explicit.
 
-### 10.3 Prospects (`/admin/prospects/`)
+### 10.3 Prospects (`#prospects`)
 
 The same table and the same editor as §3.8/§3.9 — literally the same modules, mounted in the
 operator shell. The operator view differs only in showing the unmasked `kb_id` column by default
@@ -2435,7 +2451,7 @@ and adding a `Provision` bulk action bar when rows are selected (`POST …/provi
 row, sequentially, with a progress toolbar and per-row result chips). Destructive actions use
 `confirm()` with type-to-confirm.
 
-### 10.4 Jobs (`/admin/jobs/`)
+### 10.4 Jobs (`#jobs`)
 
 ```
 ┌────────────────────────────────────────────────────────────────────────────────────────────────────────┐
@@ -2450,28 +2466,32 @@ src="/api/v1/jobs/{id}" events-src="/api/v1/jobs/{id}/events">`, the input objec
 (for `golden-eval`, the `.vb-goldencase` list). Cancel → `DELETE /api/v1/jobs/{id}` behind
 `confirm.cancelJob`. A running job's row streams its progress bar live from the same SSE stream.
 
-### 10.5 Logs (`/admin/logs/`)
+### 10.5 Logs (`#logs`)
 
 Filter bar: level segmented control (`all / debug / info / warn / error`), a `contains` search, a
 `since` preset. `<arag-log src="/api/v1/admin/logs" refresh="5000">` for the stream, with the new
-`total` and pagination from §9.6 in the toolbar, and a `Pause` toggle that stops the 5 s refresh so
+`total` and pagination from §9.1.6 in the toolbar, and a `Pause` toggle that stops the 5 s refresh so
 a line can be read. Each line's structured fields are expandable into `<arag-json>` on click.
 
-### 10.6 Usage (`/admin/usage/`)
+### 10.6 Usage (`#usage`)
 
-Stat strip from the `Usage` schema in §9.4 (requests, ARAG calls, ARAG errors, p50/p95, jobs,
+Stat strip from the `Usage` schema in §9.1.4 (requests, ARAG calls, ARAG errors, p50/p95, jobs,
 turns, sessions, brief refreshes, brief failures), then three tables: requests by route, requests
 by status, jobs by status. `since` is shown in the page header so every number has a period
 attached to it.
 
-### 10.7 Turn log (`/admin/turns/`)
+### 10.7 Turn log (`#turns`) and golden evals (`#evals`)
 
 The Quality turn log (§3.10) without prospect scoping and with the full 500-entry ring:
 `GET /api/v1/admin/turns?prospect=&limit=`. Columns: time, prospect, conversation id, question (or
 `⊘ not stored`), result, reason, total, first token, retrieve, citations, source. Row → drawer with
 the full record as `<arag-json>`. The redaction note sits above the table, not in a footnote.
 
-### 10.8 Listen sessions (`/admin/sessions/`)
+`#evals` is the golden-eval history at deployment scope: `GET /api/v1/admin/golden-evals` in a
+`.vb-table` (when, prospect, result, p50, p95), row → drawer with the `.vb-goldencase` list. It is
+the operator's view of the same data Knowledge shows per prospect.
+
+### 10.8 Listen sessions (`#sessions`)
 
 ```
 ┌──────────────────────────────────────────────────────────┬─────────────────────────────────────────────┐
@@ -2483,12 +2503,12 @@ the full record as `<arag-json>`. The redaction note sits above the table, not i
 │                                                           │ [ ↓ Export ]  [ Delete conversation ]       │
 └──────────────────────────────────────────────────────────┴─────────────────────────────────────────────┘
 ```
-`GET /api/v1/admin/listen-sessions` (§9.7). The right pane is the brief-history detail: every
+`GET /api/v1/admin/listen-sessions` (§9.1.7). The right pane is the brief-history detail: every
 version with its timestamp and latency, expandable to the full brief object. Skip and failure
 counts are first-class columns here because this is where throttle behaviour is diagnosed.
-Delete → §9.5 behind `confirm.deleteSession` with type-to-confirm.
+Delete → §9.1.5 behind `confirm.deleteSession` with type-to-confirm.
 
-### 10.9 Branding (`/admin/branding/`)
+### 10.9 Branding (`#branding`)
 
 The operator-side counterpart of Settings → Branding, and the view D-25 asks for:
 
@@ -2506,7 +2526,7 @@ The operator-side counterpart of Settings → Branding, and the view D-25 asks f
 Read-only, with the reason stated once: "Branding is environment configuration. Changing it needs
 a restart."
 
-### 10.10 Security (`/admin/security/`)
+### 10.10 Security (`#security`)
 
 Not a settings page — a posture report, assembled from what the service already exposes:
 
@@ -2529,8 +2549,9 @@ Every row is a fact the service can prove. No row is a promise.
 1. Every destructive action uses `confirm()`; delete and reset additionally require
    type-to-confirm. Cancel holds initial focus.
 2. Every table sorts and filters through the URL, like the workspace.
-3. Every detail opens in an `.vb-drawer` (operator) rather than a new page, except Prospects,
-   whose editor is a full page because it is a long form.
+3. Every detail opens in a `.vb-drawer` rather than a new view, including Prospects — the operator
+   area is one document, so a drawer is the only detail surface it has, and the editor is a
+   full-height drawer at 640 px.
 4. Bulk actions appear only when rows are selected, in a toolbar that replaces the count line, and
    always name the count: "Provision 2 prospects".
 5. Nothing in the operator area writes to a prospect or a session without a confirmation, and
@@ -2556,7 +2577,7 @@ Every row is a fact the service can prove. No row is a promise.
 - [ ] The freshness state machine (§4.2) is implemented exactly, including the rule that the brief
       pane is never emptied by a failure. Covered by an e2e test that fails a refresh and asserts
       the brief text is unchanged.
-- [ ] Six API additions from §9 specified in `src/openapi.ts` before implementation; contract tests
+- [ ] The seven outstanding API additions from §9.1 specified in `src/openapi.ts` before implementation; contract tests
       green.
 - [ ] e2e journeys for: onboarding → sample → end → conversations → detail → export; knowledge →
       ask handoff → golden run; prospects edit → validation error → save; operator sign-in →

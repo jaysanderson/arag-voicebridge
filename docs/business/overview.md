@@ -17,19 +17,28 @@ happens, from any source — a realtime speech-to-text stream, a telephony webho
 someone typing — and the evolving brief is read back over Server-Sent Events or by polling. Nothing
 about the session API assumes a particular voice platform or transcription vendor.
 
-Alongside the listening path, VoiceBridge ships:
+Alongside the listening path, VoiceBridge ships a workspace, not a single page: a Progress-branded
+left rail with **Live** (the hero — press **Play sample conversation** to watch a scripted discovery
+call build a live brief with no credentials at all, paste or type your own conversation, or listen to
+a real microphone feed), **Conversations** (every past session, searchable by what was said in it,
+with how each brief evolved), **Knowledge** (what a prospect is grounded in, its golden set, and an
+"ask it something" tester), **Prospects** (the registry), **Quality** (latency, handoff rate, citation
+coverage and the turn log) and **Settings** (connection, branding and integrations) — plus
+**Operator**, the same shell with the deployment's own views (health, configuration, logs, branding,
+security). See [`walkthrough-demo.md`](walkthrough-demo.md) and
+[`walkthrough-admin.md`](walkthrough-admin.md) for a full tour of each.
 
-- A **demo console** that opens on the Listen tab: press **Play sample conversation** to watch a
-  scripted discovery call build a live brief with no credentials at all, paste or type your own
-  conversation, or (with an ElevenLabs key configured) listen to a real microphone feed. The same
-  console also has an Ask tab for the deflection pipeline as a text turn, a Call tab for a real voice
-  round-trip, and a Golden set tab for the deflection quality gate.
-- An **admin panel** for managing the prospects (customers/demo targets) a deployment serves,
-  reviewing recent listen sessions and how their briefs evolved, testing each prospect's Knowledge
-  Box connection, and reviewing the turn log and golden-set history for the deflection path.
-- A **golden-set gate** for the deflection follow-on: a per-prospect set of test questions that runs
-  through the exact same pipeline the live agent uses, so "this prospect is ready to answer on its
-  own" is a pass/fail fact rather than a feeling.
+With `ELEVENLABS_API_KEY` set, the shipped experience is ElevenLabs-powered rather than merely
+compatible with it: ElevenLabs Scribe v2 Realtime is the default microphone transcription in Live,
+ElevenLabs Conversational AI is the default voice channel for the follow-on voice-agent call, and an
+opt-in toggle reads the brief's next suggested line aloud via ElevenLabs text-to-speech, into the
+handler's own ear and never into the call. With no key set, the product still works end to end —
+the sample conversation, typed text and the telephony webhook all feed the same vendor-neutral
+session API.
+
+A **golden-set gate** underpins the deflection follow-on: a per-prospect set of test questions that
+runs through the exact same pipeline the live agent uses, so "this prospect is ready to answer on its
+own" is a pass/fail fact rather than a feeling.
 
 ## What makes a brief — or an answer — trustworthy
 
@@ -42,7 +51,8 @@ Three things, all visible rather than asserted:
    content doesn't cover the question.
 2. **Citations.** Every brief and every substantive deflection answer carries the sources it drew
    on. They are never spoken — you cannot usefully say a URL out loud — but they are always
-   available as data: chips in the console, and the full accumulated list in the admin panel.
+   available as data: chips in Live and Conversations, and the full accumulated list behind each
+   session.
 3. **A clean handoff, or an honest "not yet".** When a refresh finds nothing usable, the brief simply
    stays as it was rather than flashing something invented. When the deflection pipeline can't
    answer, the caller hears the prospect's own configured handoff line rather than a guess, an
@@ -61,8 +71,8 @@ ritual.
 ## Where to go next
 
 - [`when-to-use.md`](when-to-use.md) — the shape of problem this fits, and where it doesn't.
-- [`walkthrough-demo.md`](walkthrough-demo.md) — a click-by-click tour of the console.
-- [`walkthrough-admin.md`](walkthrough-admin.md) — a click-by-click tour of the admin panel,
+- [`walkthrough-demo.md`](walkthrough-demo.md) — a click-by-click tour of the workspace.
+- [`walkthrough-admin.md`](walkthrough-admin.md) — a click-by-click tour of the Operator views,
   including reviewing listen sessions and onboarding a new prospect.
 - [`faq.md`](faq.md) — the questions this document doesn't already answer.
 - [`../architecture/architecture.md`](../architecture/architecture.md) — how it actually works,

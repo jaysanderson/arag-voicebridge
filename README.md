@@ -33,20 +33,29 @@ make dev             # starts on :8080 with the in-process mock ARAG + a small d
 open http://localhost:8080
 ```
 
-The console opens on the **Listen** tab. Press **Play sample conversation** and watch the brief
-build and then change as a scripted discovery call unfolds — caller profile, their goal, the key
-points from the knowledge base, what to ask next, and the sources underneath. Or paste a
-conversation of your own into the box. The **Ask** tab shows the same grounding answering a
-question directly, and **Run golden set** puts all ten golden questions through the pipeline.
+The workspace opens on **Live**. Press **Play sample conversation** and watch the brief build and
+then change as a scripted discovery call unfolds — caller profile, their goal, the key points from
+the knowledge base, what to ask next, and the sources gathering underneath. Or paste a conversation
+of your own, or point your telephony platform at the session API. End the session and it is kept:
+**Conversations** has the brief it finished with, every version it passed through, the transcript
+and the sources. **Knowledge** says what the prospect is grounded in and runs the golden set.
 
 With real credentials, copy `.env.example` to `.env`, fill in `ARAG_KB_ID`, `ARAG_API_KEY` and
-`ARAG_REGION`, then `make dev` again. Add `ELEVENLABS_API_KEY` and an agent id to enable the Call
-and Listen tabs.
+`ARAG_REGION`, then `make dev` again. Add `ELEVENLABS_API_KEY` to switch on the ElevenLabs stack:
+Scribe v2 Realtime transcribes the Live microphone, Conversational AI becomes the voice channel
+(Settings shows the tool definition and prompt to paste into the dashboard), and the brief can read
+the next suggested line aloud. Without it the sample, typed and webhook paths carry the whole
+product.
 
 | Surface | URL | Notes |
 |---|---|---|
-| Demo console | `/` | Listen · Ask · Call · Golden set; consumes only `/api/v1` |
-| Admin panel | `/admin/` | Sign in with `ADMIN_TOKEN` |
+| Live | `/` | The hero: a session in, an evolving cited brief out |
+| Conversations | `/conversations/` | Past sessions, searchable by what was said in them |
+| Knowledge | `/knowledge/` | The Knowledge Box, the golden set, the text tester |
+| Prospects | `/prospects/` | The registry; editing needs the admin token |
+| Quality | `/quality/` | Latency, handoff rate, citation coverage, the turn log |
+| Settings | `/settings/` | Connection, branding, integrations |
+| Operator | `/admin/` | The same shell, operator navigation; sign in with `ADMIN_TOKEN` |
 | API reference | `/api/v1/docs` · `/api/v1/swagger` | Generated from `src/openapi.ts` |
 | OpenAPI document | `/api/v1/openapi.json` | Source of truth for validation and contract tests |
 | Health | `/healthz` · `/readyz` | Readiness includes an ARAG connection check |
@@ -90,7 +99,7 @@ voice agent ──POST /api/v1/voice-answer──▶ input guard ─▶ ARAG /as
 
 ```bash
 make check                     # biome + tsc + tests with the 80% coverage gate
-make e2e                       # Playwright: console + admin against the mock
+make e2e                       # Playwright: the workspace + operator views against the mock
 make eval P=progress           # run a prospect's golden set against a running server
 make provision P=progress      # write the prospect's stored ARAG search configuration
 make smoke                     # OPT-IN live check: 3 golden questions against the real KB
