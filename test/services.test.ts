@@ -14,7 +14,6 @@ import { checkTurn, countSentences } from "../src/services/goldenEval.ts";
 import { MetricsService } from "../src/services/metrics.ts";
 import { classify, optionsFrom, rankModels } from "../src/services/models.ts";
 import { buildSearchConfiguration, configName } from "../src/services/provision.ts";
-import { RateLimiter } from "../src/services/ratelimit.ts";
 import type { ProspectRecord } from "../src/types.ts";
 import { Logger, readEnv, Store } from "../vendor/arag-platform/src/index.ts";
 import { describe, expect, it } from "./_expect.ts";
@@ -187,34 +186,6 @@ describe("MetricsService", () => {
     const s = new MetricsService({ store: store() }).snapshot();
     expect(s.turns).toBe(0);
     expect(s.citation_coverage).toBe(1);
-  });
-});
-
-describe("RateLimiter", () => {
-  it("allows a burst then refuses with a Retry-After", () => {
-    const rl = new RateLimiter(1, 3);
-    const now = Date.now();
-    expect(rl.take("ip", now).ok).toBe(true);
-    expect(rl.take("ip", now).ok).toBe(true);
-    expect(rl.take("ip", now).ok).toBe(true);
-    const denied = rl.take("ip", now);
-    expect(denied.ok).toBe(false);
-    expect(denied.retryAfter).toBeGreaterThanOrEqual(1);
-  });
-
-  it("refills over time and isolates keys", () => {
-    const rl = new RateLimiter(1, 1);
-    const now = Date.now();
-    expect(rl.take("a", now).ok).toBe(true);
-    expect(rl.take("a", now).ok).toBe(false);
-    expect(rl.take("b", now).ok).toBe(true);
-    expect(rl.take("a", now + 1100).ok).toBe(true);
-  });
-
-  it("is disabled when rps <= 0", () => {
-    const rl = new RateLimiter(0, 1);
-    expect(rl.take("x").ok).toBe(true);
-    expect(rl.take("x").ok).toBe(true);
   });
 });
 

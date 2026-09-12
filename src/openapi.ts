@@ -11,7 +11,7 @@ import {
   standardResponses,
 } from "../vendor/arag-platform/src/index.ts";
 
-export const VERSION = "0.1.0";
+export const VERSION = "0.2.0";
 
 const prospectKeyPattern = "^[a-z0-9][a-z0-9_-]{1,40}$";
 
@@ -125,6 +125,70 @@ const BriefResponse = {
     },
     citations: { type: "array", items: { $ref: "#/components/schemas/Citation" } },
     latency_ms: { $ref: "#/components/schemas/LatencyMs" },
+  },
+};
+
+const TranscriptEntry = {
+  type: "object",
+  required: ["speaker", "text", "ts", "final"],
+  properties: {
+    speaker: { type: "string", description: "Free-form label: caller, agent, a diarisation id…" },
+    text: { type: "string" },
+    ts: { type: "string", format: "date-time" },
+    final: { type: "boolean", description: "False for interim STT hypotheses" },
+  },
+};
+
+const TranscriptChunk = {
+  type: "object",
+  required: ["text"],
+  properties: {
+    speaker: { type: "string", maxLength: 40, default: "caller" },
+    text: { type: "string", minLength: 1, maxLength: 4000 },
+    ts: { type: "string", format: "date-time" },
+    final: { type: "boolean", default: true, description: "Set false for an interim hypothesis" },
+  },
+  additionalProperties: false,
+};
+
+const ListenStats = {
+  type: "object",
+  required: ["chunks", "words", "refreshes", "skipped", "failures"],
+  properties: {
+    chunks: { type: "integer" },
+    words: { type: "integer" },
+    refreshes: { type: "integer", description: "Brief refreshes that produced something usable" },
+    skipped: { type: "integer", description: "Refreshes the throttle deliberately skipped" },
+    failures: { type: "integer" },
+    lastLatencyMs: { type: "integer" },
+    p50LatencyMs: { type: "integer" },
+    p95LatencyMs: { type: "integer" },
+  },
+};
+
+const ListenSession = {
+  type: "object",
+  required: ["id", "prospect", "status", "brief", "briefVersion", "citations", "stats"],
+  properties: {
+    id: { type: "string" },
+    createdAt: { type: "string", format: "date-time" },
+    updatedAt: { type: "string", format: "date-time" },
+    prospect: { type: "string" },
+    locale: { type: "string" },
+    generative_model: { type: "string" },
+    metadata: { type: "object", additionalProperties: true },
+    status: { type: "string", enum: ["live", "ended"] },
+    endedAt: { type: "string", format: "date-time" },
+    brief: {
+      type: ["object", "null"],
+      additionalProperties: true,
+      description: "The evolving brief — same shape as POST /api/v1/brief returns",
+    },
+    briefVersion: { type: "integer", description: "Increments on every usable refresh" },
+    citations: { type: "array", items: { $ref: "#/components/schemas/Citation" } },
+    stats: { $ref: "#/components/schemas/ListenStats" },
+    transcript: { type: "array", items: { $ref: "#/components/schemas/TranscriptEntry" } },
+    transcriptTotal: { type: "integer" },
   },
 };
 
@@ -349,6 +413,12 @@ export const openapi = buildOpenApi({
       "`ADMIN_TOKEN`.",
   },
   tags: [
+    {
+      name: "listen",
+      description:
+        "Real-time listening: ingest a conversation from any source and stream back an evolving, " +
+        "grounded brief",
+    },
     { name: "voice", description: "Voice turns and the live brief" },
     { name: "prospects", description: "The prospect registry (non-secret projection)" },
     { name: "realtime", description: "ElevenLabs Scribe and LiveAvatar session bootstrap" },
@@ -359,6 +429,10 @@ export const openapi = buildOpenApi({
   ],
   schemas: {
     Citation,
+    TranscriptEntry,
+    TranscriptChunk,
+    ListenStats,
+    ListenSession,
     LatencyMs,
     HistoryTurn,
     VoiceAnswerRequest,
@@ -377,6 +451,155 @@ export const openapi = buildOpenApi({
     GoldenEval,
   },
   paths: {
+    "/api/v1/listen/sessions": {
+      post: {
+        operationId: "createListenSession",
+        tags: ["listen"],
+        summary: "Start a listen session",
+        description:
+          "Opens a session for a prospect. Feed it conversation with " +
+          "`POST /api/v1/listen/sessions/{id}/transcript` from any source — a realtime STT stream, " +
+          "a telephony webhook, a meeting bot, or someone typing — and read the evolving brief " +
+          "from the SSE stream or by polling the session.",
+        requestBody: jsonBody({
+          type: "object",
+          required: ["prospect"],
+          properties: {
+            prospect: { type: "string", pattern: prospectKeyPattern },
+            locale: { type: "string", maxLength: 20 },
+            generative_model: { type: "string", maxLength: 120 },
+            metadata: {
+              type: "object",
+              additionalProperties: true,
+              description: "Opaque caller context (agent id, queue, call id…) kept with the session",
+            },
+          },
+          additionalProperties: false,
+        }),
+        responses: {
+          201: jsonResponse({ $ref: "#/components/schemas/ListenSession" }, "Session started"),
+          ...standardResponses,
+        },
+        security: publicSecurity,
+      },
+      get: {
+        operationId: "listListenSessions",
+        tags: ["listen"],
+        summary: "Recent listen sessions",
+        parameters: [
+          { name: "prospect", in: "query", schema: { type: "string", pattern: prospectKeyPattern } },
+          { name: "limit", in: "query", schema: { type: "integer", minimum: 1, maximum: 100, default: 25 } },
+        ],
+        responses: {
+          200: jsonResponse({
+            type: "object",
+            required: ["items"],
+            properties: { items: { type: "array", items: { $ref: "#/components/schemas/ListenSession" } } },
+          }),
+          ...standardResponses,
+        },
+        security: publicSecurity,
+      },
+    },
+    "/api/v1/listen/sessions/{id}": {
+      parameters: [pathId],
+      get: {
+        operationId: "getListenSession",
+        tags: ["listen"],
+        summary: "Session state: brief, citations, stats and a transcript tail",
+        parameters: [
+          {
+            name: "transcript_tail",
+            in: "query",
+            schema: { type: "integer", minimum: 0, maximum: 400, default: 50 },
+          },
+        ],
+        responses: {
+          200: jsonResponse({ $ref: "#/components/schemas/ListenSession" }),
+          ...standardResponses,
+        },
+        security: publicSecurity,
+      },
+      delete: {
+        operationId: "endListenSession",
+        tags: ["listen"],
+        summary: "End a session (the brief, citations and stats are kept)",
+        responses: {
+          200: jsonResponse({ $ref: "#/components/schemas/ListenSession" }, "Session ended"),
+          ...standardResponses,
+        },
+        security: publicSecurity,
+      },
+    },
+    "/api/v1/listen/sessions/{id}/transcript": {
+      parameters: [pathId],
+      post: {
+        operationId: "appendListenTranscript",
+        tags: ["listen"],
+        summary: "Append conversation to a session",
+        description:
+          "Accepts final or interim chunks from any transcription source. The server throttles and " +
+          "de-duplicates refreshes (a rolling window of the last words, a minimum gap, and a " +
+          "similarity check), so a chatty client cannot turn every word into an LLM call. The " +
+          "response says what the throttle decided.",
+        requestBody: jsonBody({
+          type: "object",
+          required: ["chunks"],
+          properties: {
+            chunks: {
+              type: "array",
+              minItems: 1,
+              maxItems: 50,
+              items: { $ref: "#/components/schemas/TranscriptChunk" },
+            },
+          },
+          additionalProperties: false,
+        }),
+        responses: {
+          202: jsonResponse(
+            {
+              type: "object",
+              required: ["session", "refresh"],
+              properties: {
+                session: { $ref: "#/components/schemas/ListenSession" },
+                refresh: {
+                  type: "string",
+                  enum: ["started", "scheduled", "skipped"],
+                  description: "What the throttle did with this append",
+                },
+                reason: {
+                  type: "string",
+                  enum: ["ok", "too-few-words", "too-soon", "unchanged", "too-similar"],
+                },
+              },
+            },
+            "Accepted",
+          ),
+          409: {
+            description: "The session has ended",
+            content: { "application/problem+json": { schema: { $ref: "#/components/schemas/Problem" } } },
+          },
+          ...standardResponses,
+        },
+        security: publicSecurity,
+      },
+    },
+    "/api/v1/listen/sessions/{id}/events": {
+      parameters: [pathId],
+      get: {
+        operationId: "listenSessionEvents",
+        tags: ["listen"],
+        summary: "Server-sent events for a session (event: brief | transcript | status)",
+        responses: {
+          200: {
+            description: "text/event-stream",
+            content: { "text/event-stream": { schema: { type: "string" } } },
+          },
+          ...standardResponses,
+        },
+        security: publicSecurity,
+      },
+    },
     "/api/v1/voice-answer": {
       post: voiceAnswerOp(
         "voiceAnswer",
@@ -899,6 +1122,52 @@ export const openapi = buildOpenApi({
             type: "object",
             required: ["items"],
             properties: { items: { type: "array", items: { $ref: "#/components/schemas/TurnRecord" } } },
+          }),
+          ...standardResponses,
+        },
+        security: adminSecurity,
+      },
+    },
+    "/api/v1/admin/listen-sessions": {
+      get: {
+        operationId: "adminListenSessions",
+        tags: ["admin"],
+        summary: "Recent listen sessions with brief history and latency",
+        parameters: [
+          { name: "prospect", in: "query", schema: { type: "string", pattern: prospectKeyPattern } },
+          { name: "limit", in: "query", schema: { type: "integer", minimum: 1, maximum: 100, default: 25 } },
+        ],
+        responses: {
+          200: jsonResponse({
+            type: "object",
+            required: ["items"],
+            properties: {
+              items: {
+                type: "array",
+                items: {
+                  allOf: [
+                    { $ref: "#/components/schemas/ListenSession" },
+                    {
+                      type: "object",
+                      properties: {
+                        briefHistory: {
+                          type: "array",
+                          items: {
+                            type: "object",
+                            properties: {
+                              version: { type: "integer" },
+                              at: { type: "string", format: "date-time" },
+                              latencyMs: { type: "integer" },
+                              brief: { type: "object", additionalProperties: true },
+                            },
+                          },
+                        },
+                      },
+                    },
+                  ],
+                },
+              },
+            },
           }),
           ...standardResponses,
         },

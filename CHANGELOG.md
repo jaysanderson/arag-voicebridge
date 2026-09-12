@@ -2,6 +2,33 @@
 
 All notable changes to this project are documented here. Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning: SemVer.
 
+## [0.2.0] - 2026-09-12
+
+Real-time listening becomes the product's hero capability (workspace decision D-20): VoiceBridge
+now ingests a live conversation and streams back an evolving, grounded, cited brief.
+
+### Added
+- **Listening sessions** (`src/services/listen.ts`): rolling transcript (final and interim chunks),
+  server-side throttling and de-duplication of brief refreshes, one evolving brief per session,
+  citations accumulated across the call, and per-session latency statistics. Sessions are persisted
+  in `DATA_DIR/listen-sessions.json` (capped at 200).
+- **Listening API**: `POST /api/v1/listen/sessions`, `POST /api/v1/listen/sessions/{id}/transcript`
+  (chunks from any transcription source — realtime STT, a telephony webhook, a meeting bot, typed
+  text), `GET /api/v1/listen/sessions/{id}`, `GET /api/v1/listen/sessions/{id}/events` (SSE:
+  `brief`, `transcript`, `status`), `DELETE /api/v1/listen/sessions/{id}`,
+  `GET /api/v1/listen/sessions`, and `GET /api/v1/admin/listen-sessions` (brief history + latency).
+- Demo console opens on **Listen**: a scripted sample conversation, a paste-or-type box, the
+  evolving brief with citations, the transcript and live session statistics. Microphone capture
+  (ElevenLabs Scribe) now feeds the same session API.
+- Admin panel gains a **Listen sessions** tab.
+
+### Changed
+- `POST /api/v1/brief` is now documented as the stateless primitive behind sessions; it is
+  unchanged for callers that want to own the loop.
+- Per-route rate limits come from the platform (`rateLimit: { rps, burst }`); the product-local
+  limiter is gone. Listening sessions share the brief budget.
+- The console's tab order leads with Listen; Ask, Call and Golden set follow.
+
 ## [0.1.0] - 2026-09-12
 
 First open-source MVP. The prototype's ask-bridge is rebuilt on the shared ARAG platform as an

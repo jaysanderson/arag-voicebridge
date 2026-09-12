@@ -8,7 +8,6 @@ import {
   type Ctx,
   operationSchemas,
   serviceUnavailable,
-  tooManyRequests,
   unauthorized,
 } from "../../vendor/arag-platform/src/index.ts";
 import { avatarEnabled } from "../config.ts";
@@ -31,13 +30,17 @@ export function registerRealtimeRoutes(app: App, deps: ProductDeps): void {
     "/api/v1/scribe-token",
     async (ctx) => {
       requireIdentified(ctx);
-      const limit = deps.scribeLimiter.take(ctx.auth.apiKey ? `k:${ctx.auth.apiKey}` : `ip:${ctx.ip}`);
-      if (!limit.ok) throw tooManyRequests(limit.retryAfter);
       const token = await mintScribeToken(deps.voice);
       // 15 minutes, single use — ElevenLabs consumes it when the WebSocket opens.
       return { token, expiresInSec: 900 };
     },
-    { auth: "api", operationId: "createScribeToken", body: "none" },
+    {
+      auth: "api",
+      operationId: "createScribeToken",
+      body: "none",
+      // Minting third-party credentials gets its own, much tighter budget.
+      rateLimit: { rps: deps.voice.scribeRps, burst: deps.voice.scribeBurst },
+    },
   );
 
   app.post(

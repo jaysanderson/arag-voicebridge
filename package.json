@@ -1,6 +1,6 @@
 {
   "name": "arag-voice-bridge",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "VoiceBridge — grounded, cited, governed voice answers over Progress Agentic RAG (ARAG). API-first, zero runtime dependencies.",
   "license": "Apache-2.0",
   "type": "module",

@@ -1,20 +1,26 @@
 # VoiceBridge
 
-**Grounded, cited and governed voice answers over Progress Agentic RAG (ARAG).**
+**Live, grounded context for people on calls — and for the agents that take them.**
 
-A voice agent that can say anything will eventually say something wrong. VoiceBridge is the
-service between a voice agent and a Knowledge Box that makes sure it doesn't: every spoken answer
-comes from retrieved content, anything the knowledge base cannot support is handed to a human by a
-deterministic rule rather than a model's judgement, and every turn is measured.
+A person on a live call cannot read the manual while listening, and an assistant that invents an
+answer is worse than none. VoiceBridge listens to a conversation as it happens and keeps one
+evolving brief in front of whoever is handling it: who they are speaking to, what that person
+wants, the facts that matter right now — each traceable to a document in a Knowledge Box — and what
+to ask or say next. The same grounding can answer a caller directly when nobody is available.
 
-- **API-first.** One endpoint answers a turn: `POST /api/v1/voice-answer`. Any voice platform that
-  can call an HTTP tool can use it (the shipped demo uses ElevenLabs Conversational AI).
-- **Never dead air.** Upstream timeouts, errors and empty retrievals all degrade to the prospect's
+- **Listening is a session, not a widget.** `POST /api/v1/listen/sessions`, then append transcript
+  chunks from **any** source — a realtime STT stream, a telephony webhook, a meeting bot, or
+  someone typing — and read the evolving brief over SSE. The throttling lives on the server, so
+  every client gets the same behaviour and the same cost profile.
+- **Grounded or silent.** Everything factual in a brief comes from retrieved content, with the
+  sources listed. Nothing is asserted that the Knowledge Box cannot support.
+- **Answer directly when needed.** `POST /api/v1/voice-answer` runs the nine-step turn pipeline for
+  a voice agent: safety guards, retrieval, a deterministic handoff rule, voice shaping, citations.
+  Any platform that can call an HTTP tool can use it (the demo uses ElevenLabs Conversational AI).
+- **Never dead air.** Upstream timeouts, errors and empty retrievals degrade to the prospect's
   configured handoff line inside the agent's tool timeout.
-- **Speakable by construction.** Answers are shaped for text-to-speech: ≤ 3 sentences, no URLs, no
-  markdown, no citation markers. Citations are returned as data and shown on screen, never read out.
-- **Multi-tenant.** A prospect registry maps each caller-facing brand to its own Knowledge Box,
-  prompt, voice and golden set. Adding one is an admin API call, not a redeploy.
+- **Multi-tenant.** A prospect registry maps each brand to its own Knowledge Box, prompt, voice and
+  golden set. Adding one is an admin API call, not a redeploy.
 - **Provable.** A golden set per prospect runs through the same pipeline and gates the demo.
 
 Zero runtime dependencies. Node 22.18+ runs the TypeScript sources directly — no build step.
@@ -27,9 +33,11 @@ make dev             # starts on :8080 with the in-process mock ARAG + a small d
 open http://localhost:8080
 ```
 
-The console opens on the **Ask** tab: type a question (or click a suggestion) and you get the exact
-line the agent would speak, its citations, the latency breakdown and whether it handed off. Press
-**Run golden set** to watch all ten golden questions go through the pipeline.
+The console opens on the **Listen** tab. Press **Play sample conversation** and watch the brief
+build and then change as a scripted discovery call unfolds — caller profile, their goal, the key
+points from the knowledge base, what to ask next, and the sources underneath. Or paste a
+conversation of your own into the box. The **Ask** tab shows the same grounding answering a
+question directly, and **Run golden set** puts all ten golden questions through the pipeline.
 
 With real credentials, copy `.env.example` to `.env`, fill in `ARAG_KB_ID`, `ARAG_API_KEY` and
 `ARAG_REGION`, then `make dev` again. Add `ELEVENLABS_API_KEY` and an agent id to enable the Call
@@ -37,11 +45,26 @@ and Listen tabs.
 
 | Surface | URL | Notes |
 |---|---|---|
-| Demo console | `/` | Ask · Call · Listen · Golden set; consumes only `/api/v1` |
+| Demo console | `/` | Listen · Ask · Call · Golden set; consumes only `/api/v1` |
 | Admin panel | `/admin/` | Sign in with `ADMIN_TOKEN` |
 | API reference | `/api/v1/docs` · `/api/v1/swagger` | Generated from `src/openapi.ts` |
 | OpenAPI document | `/api/v1/openapi.json` | Source of truth for validation and contract tests |
 | Health | `/healthz` · `/readyz` | Readiness includes an ARAG connection check |
+
+## How listening works
+
+```
+transcript chunks ──▶ rolling window ──▶ throttle (gap · dedupe) ──▶ ARAG ask (answer_json_schema)
+   (any source)                                    │                              │
+                                            skipped, cheaply          brief + citations + latency
+                                                                                  │
+                                              SSE: brief | transcript | status ◀──┘
+```
+
+Chunks arrive as fast as the transcription produces them. A refresh only happens when the last
+~28 words have actually moved on (a minimum gap of 1.5 s, a similarity check against the previous
+window), so a chatty client cannot turn every word into an LLM call. Each refresh receives the
+previous brief and the conversation so far, so the brief is *refined*, never restarted.
 
 ## How a turn works
 

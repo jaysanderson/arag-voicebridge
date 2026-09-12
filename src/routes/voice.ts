@@ -2,12 +2,7 @@
  * Voice routes: one turn (`/api/v1/voice-answer`, plus the `/v1/voice-answer` compatibility
  * alias used by already-configured ElevenLabs agents) and the ambient brief (`/api/v1/brief`).
  */
-import {
-  type App,
-  type Ctx,
-  operationSchemas,
-  tooManyRequests,
-} from "../../vendor/arag-platform/src/index.ts";
+import { type App, type Ctx, operationSchemas } from "../../vendor/arag-platform/src/index.ts";
 import { openapi } from "../openapi.ts";
 import type { ProductDeps } from "../server.ts";
 import { runBrief } from "../services/brief.ts";
@@ -76,9 +71,6 @@ export function registerVoiceRoutes(app: App, deps: ProductDeps): void {
   app.post(
     "/api/v1/brief",
     async (ctx) => {
-      // The brief fires every ~1.5 s while listening, so it carries its own stricter budget.
-      const limit = deps.briefLimiter.take(ctx.auth.apiKey ? `k:${ctx.auth.apiKey}` : `ip:${ctx.ip}`);
-      if (!limit.ok) throw tooManyRequests(limit.retryAfter);
       const body = ctx.body as {
         prospect: string;
         text: string;
@@ -109,6 +101,8 @@ export function registerVoiceRoutes(app: App, deps: ProductDeps): void {
       validate: operationSchemas(openapi, "/api/v1/brief", "post"),
       operationId: "brief",
       bodyLimit: 128 * 1024,
+      // The brief costs an LLM call and a listening client fires it continuously: its own budget.
+      rateLimit: { rps: deps.voice.briefRps, burst: deps.voice.briefBurst },
     },
   );
 }

@@ -138,6 +138,127 @@ describe("POST /api/v1/voice-answer", () => {
   });
 });
 
+describe("listen sessions (the hero path)", () => {
+  let sessionId = "";
+
+  it("opens a session for a prospect", async () => {
+    const r = await client.post("/api/v1/listen/sessions", {
+      prospect: "progress",
+      metadata: { queue: "sales" },
+    });
+    expect(r.status).toBe(201);
+    expect(r.headers.get("location")).toContain("/api/v1/listen/sessions/");
+    const body = r.json as { id: string; status: string; brief: unknown; briefVersion: number };
+    sessionId = body.id;
+    expect(body.status).toBe("live");
+    expect(body.brief).toBe(null);
+    expect(body.briefVersion).toBe(0);
+  });
+
+  it("rejects an unknown prospect and a malformed body", async () => {
+    expect((await client.post("/api/v1/listen/sessions", { prospect: "nope" })).status).toBe(404);
+    expect((await client.post("/api/v1/listen/sessions", {})).status).toBe(400);
+  });
+
+  it("builds a grounded brief from ingested conversation", async () => {
+    const r = await client.post(`/api/v1/listen/sessions/${sessionId}/transcript`, {
+      chunks: [
+        { speaker: "caller", text: "we run a machine shop and we print stainless steel brackets" },
+        {
+          speaker: "caller",
+          text: "the sintering step with the PureSinter furnace is what we need to understand",
+        },
+      ],
+    });
+    expect(r.status).toBe(202);
+    expect((r.json as { refresh: string }).refresh).toBe("started");
+    // The refresh is asynchronous: poll until the brief lands.
+    let session = { briefVersion: 0 } as { briefVersion: number; brief?: unknown; citations?: unknown[] };
+    for (let i = 0; i < 100 && session.briefVersion === 0; i++) {
+      await new Promise((res) => setTimeout(res, 25));
+      session = (await client.get(`/api/v1/listen/sessions/${sessionId}`)).json as typeof session;
+    }
+    expect(session.briefVersion).toBeGreaterThan(0);
+    expect(typeof (session.brief as { summary: string }).summary).toBe("string");
+    expect((session.citations ?? []).length).toBeGreaterThan(0);
+  });
+
+  it("throttles a second append instead of firing another LLM call", async () => {
+    const r = await client.post(`/api/v1/listen/sessions/${sessionId}/transcript`, {
+      chunks: [{ speaker: "agent", text: "it supports stainless tool steel copper and titanium" }],
+    });
+    expect(r.status).toBe(202);
+    const body = r.json as { refresh: string; reason: string };
+    expect(["scheduled", "skipped"]).toContain(body.refresh);
+    expect(body.reason).not.toBe("ok");
+  });
+
+  it("returns the transcript tail and session stats", async () => {
+    const r = await client.get(`/api/v1/listen/sessions/${sessionId}?transcript_tail=2`);
+    const body = r.json as {
+      transcript: Array<{ speaker: string }>;
+      transcriptTotal: number;
+      stats: { chunks: number };
+    };
+    expect(body.transcript).toHaveLength(2);
+    expect(body.transcriptTotal).toBe(3);
+    expect(body.stats.chunks).toBe(3);
+  });
+
+  it("streams brief, transcript and status events over SSE", async () => {
+    const created = await client.post("/api/v1/listen/sessions", { prospect: "progress" });
+    const id = (created.json as { id: string }).id;
+    const res = await fetch(`${client.baseUrl}/api/v1/listen/sessions/${id}/events`);
+    expect(res.headers.get("content-type")).toContain("text/event-stream");
+    const reader = res.body!.getReader();
+    const decoder = new TextDecoder();
+    await client.post(`/api/v1/listen/sessions/${id}/transcript`, {
+      chunks: [
+        { speaker: "caller", text: "what materials does the PureSinter furnace support for titanium" },
+      ],
+    });
+    let seen = "";
+    for (let i = 0; i < 200 && !/event: brief[\s\S]*event: brief/.test(seen); i++) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      seen += decoder.decode(value, { stream: true });
+    }
+    await reader.cancel();
+    expect(seen).toContain("event: transcript");
+    expect(seen).toContain("event: status");
+    expect(seen).toContain("event: brief");
+    await client.request("DELETE", `/api/v1/listen/sessions/${id}`);
+  });
+
+  it("ends a session, keeps the brief, and refuses further transcript", async () => {
+    const ended = await client.request("DELETE", `/api/v1/listen/sessions/${sessionId}`);
+    expect(ended.status).toBe(200);
+    const body = ended.json as { status: string; briefVersion: number };
+    expect(body.status).toBe("ended");
+    expect(body.briefVersion).toBeGreaterThan(0);
+    const after = await client.post(`/api/v1/listen/sessions/${sessionId}/transcript`, {
+      chunks: [{ speaker: "caller", text: "are you still there" }],
+    });
+    expect(after.status).toBe(409);
+  });
+
+  it("lists recent sessions and 404s an unknown one", async () => {
+    const list = await client.get("/api/v1/listen/sessions?limit=5");
+    expect((list.json as { items: unknown[] }).items.length).toBeGreaterThan(0);
+    expect((await client.get("/api/v1/listen/sessions/does-not-exist")).status).toBe(404);
+  });
+
+  it("exposes sessions with brief history to admins", async () => {
+    const r = await client.get("/api/v1/admin/listen-sessions?limit=5", admin);
+    expect(r.status).toBe(200);
+    const items = (r.json as { items: Array<{ briefHistory: unknown[]; stats: { refreshes: number } }> })
+      .items;
+    expect(items.length).toBeGreaterThan(0);
+    const withBrief = items.find((s) => s.stats.refreshes > 0);
+    expect((withBrief!.briefHistory ?? []).length).toBeGreaterThan(0);
+  });
+});
+
 describe("POST /api/v1/brief", () => {
   it("returns a structured brief grounded in the knowledge base", async () => {
     const r = await client.post("/api/v1/brief", {

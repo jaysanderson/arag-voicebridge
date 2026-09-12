@@ -90,6 +90,7 @@ export function registerAdminRoutes(app: App, deps: ProductDeps): void {
       uptimeSec: Math.round((Date.now() - deps.usage.startedAt) / 1000),
       prospects: deps.registry.size,
       turns: deps.metrics.size,
+      listenSessions: deps.listen.size,
       metrics: deps.metrics.snapshot(),
       jobs: {
         queued: deps.jobs.count({ status: "queued" }),
@@ -218,6 +219,23 @@ export function registerAdminRoutes(app: App, deps: ProductDeps): void {
       auth: "admin",
       validate: operationSchemas(openapi, "/api/v1/admin/turns", "get"),
       operationId: "adminTurns",
+    },
+  );
+
+  app.get(
+    "/api/v1/admin/listen-sessions",
+    (ctx) => ({
+      items: deps.listen
+        .list({
+          prospect: ctx.queryObj.prospect as string | undefined,
+          limit: (ctx.queryObj.limit as number | undefined) ?? 25,
+        })
+        .map((s) => deps.listen.adminView(deps.listen.require(s.id))),
+    }),
+    {
+      auth: "admin",
+      validate: operationSchemas(openapi, "/api/v1/admin/listen-sessions", "get"),
+      operationId: "adminListenSessions",
     },
   );
 

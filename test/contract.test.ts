@@ -70,6 +70,36 @@ describe("responses validate against the spec", () => {
   const check = (path: string, method: string, status: number, body: unknown) =>
     expect(testing.checkResponse(openapi, path, method, status, body)).toEqual([]);
 
+  it("listen sessions", async () => {
+    const created = await client.post("/api/v1/listen/sessions", { prospect: "progress" });
+    check("/api/v1/listen/sessions", "post", 201, created.json);
+    const id = (created.json as { id: string }).id;
+    const appended = await client.post(`/api/v1/listen/sessions/${id}/transcript`, {
+      chunks: [{ speaker: "caller", text: "we print stainless steel brackets and need a sintering furnace" }],
+    });
+    check("/api/v1/listen/sessions/{id}/transcript", "post", 202, appended.json);
+    for (let i = 0; i < 100; i++) {
+      const s = (await client.get(`/api/v1/listen/sessions/${id}`)).json as { briefVersion: number };
+      if (s.briefVersion > 0) break;
+      await new Promise((r) => setTimeout(r, 25));
+    }
+    check(
+      "/api/v1/listen/sessions/{id}",
+      "get",
+      200,
+      (await client.get(`/api/v1/listen/sessions/${id}`)).json,
+    );
+    check("/api/v1/listen/sessions", "get", 200, (await client.get("/api/v1/listen/sessions")).json);
+    const ended = await client.request("DELETE", `/api/v1/listen/sessions/${id}`);
+    check("/api/v1/listen/sessions/{id}", "delete", 200, ended.json);
+    check(
+      "/api/v1/admin/listen-sessions",
+      "get",
+      200,
+      (await client.get("/api/v1/admin/listen-sessions", admin)).json,
+    );
+  });
+
   it("voice-answer (both paths)", async () => {
     const r = await client.post("/api/v1/voice-answer", {
       prospect: "progress",

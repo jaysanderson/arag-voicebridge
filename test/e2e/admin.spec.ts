@@ -102,6 +102,29 @@ test.describe("admin panel", () => {
     await expect(page.locator("#evalDetail tbody tr")).toHaveCount(10);
   });
 
+  test("shows listen sessions with their brief history", async ({ page, request }) => {
+    const created = await request.post("/api/v1/listen/sessions", { data: { prospect: "progress" } });
+    const { id } = (await created.json()) as { id: string };
+    await request.post(`/api/v1/listen/sessions/${id}/transcript`, {
+      data: {
+        chunks: [
+          { speaker: "caller", text: "we print stainless steel brackets and need a sintering furnace" },
+        ],
+      },
+    });
+    for (let i = 0; i < 80; i++) {
+      const r = await request.get(`/api/v1/listen/sessions/${id}`);
+      if (((await r.json()) as { briefVersion: number }).briefVersion > 0) break;
+      await new Promise((res) => setTimeout(res, 50));
+    }
+    await signIn(page);
+    await page.click('[data-tab="listen"]');
+    await page.click("#reloadListen");
+    await expect(page.locator("#listenTable tbody tr").first()).toBeVisible();
+    await expect(page.locator("#listenMeta")).toContainText("refreshes");
+    await expect(page.locator("#briefHistory")).toContainText("v1");
+  });
+
   test("shows configuration with secrets redacted and recent logs", async ({ page }) => {
     await signIn(page);
     await page.click('[data-tab="config"]');

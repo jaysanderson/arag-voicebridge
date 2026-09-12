@@ -22,6 +22,7 @@
     <div id="panel" hidden>
       <div class="arag-tabs" role="tablist">
         <button role="tab" aria-selected="true" data-tab="overview">Overview</button>
+        <button role="tab" data-tab="listen">Listen sessions</button>
         <button role="tab" data-tab="prospects">Prospects</button>
         <button role="tab" data-tab="turns">Turn log</button>
         <button role="tab" data-tab="evals">Golden evals</button>
@@ -35,6 +36,21 @@
           <div class="body"><table class="arag-table" id="healthTable"><thead><tr><th>Prospect</th><th>KB</th><th>Status</th><th class="num">ms</th></tr></thead><tbody></tbody></table></div>
         </div>
         <div class="arag-card pad"><h3>Usage</h3><arag-json id="usage" src="/api/v1/admin/usage"></arag-json></div>
+      </section>
+
+      <section data-panel="listen" hidden class="vb-panel arag-grid split">
+        <div class="arag-card">
+          <div class="head"><h3>Recent listen sessions</h3><button id="reloadListen" class="arag-btn ghost sm">Reload</button></div>
+          <div class="body"><table class="arag-table" id="listenTable"><thead><tr><th>Started</th><th>Prospect</th><th>Status</th><th class="num">refreshes</th><th class="num">skipped</th><th class="num">p50</th></tr></thead><tbody></tbody></table></div>
+        </div>
+        <div class="arag-card">
+          <div class="head"><h3>Brief history</h3><span id="listenMeta" class="muted small"></span></div>
+          <div class="body">
+            <p class="muted small">Every refresh that produced a usable brief, newest first — this is
+              how the brief evolved through the call, and how long each refresh took.</p>
+            <div id="briefHistory" class="arag-stack"></div>
+          </div>
+        </div>
       </section>
 
       <section data-panel="prospects" hidden class="vb-panel arag-grid split">

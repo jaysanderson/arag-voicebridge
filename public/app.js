@@ -50,6 +50,7 @@ function selectProspect(key) {
     ? "The agent must allow voice overrides for this to apply."
     : "Needs an ElevenLabs key on the server.";
   loadModels();
+  if (listen.sessionId) endListenSession();
   $("#goldenTable").querySelector("tbody").innerHTML = "";
   $("#goldenSummary").textContent = "";
   setChip("#goldenChip", "not run", "neutral");
@@ -289,45 +290,225 @@ function renderCallMessage(source, text) {
   $("#callLog").scrollTop = $("#callLog").scrollHeight;
 }
 
-// ── LISTEN (Scribe realtime STT → evolving brief) ────────────────────────────
+// ── LISTEN: the hero path. A session on the server owns the transcript, the throttling and
+//    the evolving brief; this page just feeds it conversation and renders what comes back.
 const listen = {
-  active: false,
-  ws: null,
-  ctx: null,
-  stream: null,
-  nodes: null,
-  inRate: 16000,
-  reconnect: null,
-  committed: "",
-  partial: "",
-  transcript: "",
-  prev: null,
-  querying: false,
-  lastNorm: "",
-  lastFire: 0,
-  loop: null,
-  sources: new Map(),
+  sessionId: null,
+  close: null,
+  sample: null,
+  renderedVersion: 0,
+  poll: null,
+  mic: { ws: null, ctx: null, stream: null, nodes: null, inRate: 16000, reconnect: null, active: false },
 };
-const WINDOW_WORDS = 28;
-const KEEP_WORDS = 60;
-const TRANSCRIPT_KEEP = 8000;
-const MIN_GAP_MS = 1500;
 
-const lastWords = (s, n) => (s || "").trim().split(/\s+/).filter(Boolean).slice(-n).join(" ");
-const normWords = (s) =>
-  (s || "")
-    .toLowerCase()
-    .replace(/[^a-z0-9 ]/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-function jaccard(a, b) {
-  const A = new Set(a.split(" ").filter(Boolean));
-  const B = new Set(b.split(" ").filter(Boolean));
-  if (!A.size || !B.size) return 0;
-  let inter = 0;
-  for (const x of A) if (B.has(x)) inter++;
-  return inter / (A.size + B.size - inter);
+/** A scripted discovery call, so the hero path works with no microphone and no credentials. */
+const SAMPLE_CONVERSATION = [
+  { speaker: "agent", text: "Thanks for taking the call — what are you making at the moment?" },
+  {
+    speaker: "caller",
+    text: "We run a machine shop. Mostly stainless steel brackets and manifolds, a few hundred a week.",
+  },
+  {
+    speaker: "caller",
+    text: "We are looking at metal 3D printing because machining the manifolds is slow and wasteful.",
+  },
+  {
+    speaker: "agent",
+    text: "Have you looked at binder jetting, or were you thinking laser powder bed fusion?",
+  },
+  {
+    speaker: "caller",
+    text: "Binder jetting, I think. Somebody mentioned the Desktop Metal Shop System to us.",
+  },
+  {
+    speaker: "caller",
+    text: "What I do not understand is what happens after the printer. Is there a separate furnace?",
+  },
+  { speaker: "agent", text: "There is — debinding and sintering. Let me check what the furnace supports." },
+  {
+    speaker: "caller",
+    text: "We would need stainless steel today, and titanium later for an aerospace customer.",
+  },
+  {
+    speaker: "caller",
+    text: "And honestly the budget matters. We cannot put in a whole new facility this year.",
+  },
+];
+
+function listenStatus(msg) {
+  $("#listenStatus").textContent = msg;
 }
+
+function renderStats(session) {
+  $("#statSession").textContent = session.id.slice(0, 8) + "…";
+  $("#statChunks").textContent = String(session.stats.chunks);
+  $("#statRefreshes").textContent = String(session.stats.refreshes);
+  $("#statSkipped").textContent = String(session.stats.skipped);
+  $("#statLatency").textContent = session.stats.lastLatencyMs ? fmtMs(session.stats.lastLatencyMs) : "—";
+}
+
+function renderTranscript(entries, total) {
+  if (!entries.length) return;
+  $("#transcript").classList.remove("muted");
+  $("#transcript").innerHTML = entries
+    .map(
+      (t) =>
+        `<div class="line${t.final ? "" : " interim"}"><span class="who">${esc(t.speaker)}</span><span>${esc(t.text)}</span></div>`,
+    )
+    .join("");
+  $("#transcript").scrollTop = $("#transcript").scrollHeight;
+  $("#transcriptCount").textContent = `${total ?? entries.length} turns`;
+}
+
+async function ensureListenSession() {
+  if (listen.sessionId) return listen.sessionId;
+  if (!state.current) throw new Error("no prospect selected");
+  const session = await api("/api/v1/listen/sessions", {
+    method: "POST",
+    json: { prospect: state.current.key, generative_model: state.selectedModel || undefined },
+  });
+  listen.sessionId = session.id;
+  setChip("#listenChip", "listening", "ok");
+  $("#endBtn").hidden = false;
+  renderStats(session);
+  listen.close?.();
+  listen.close = sse(`/api/v1/listen/sessions/${session.id}/events`, {
+    brief: (e) => {
+      if (e.brief) renderBrief(e.brief, e.citations ?? [], e.version);
+      if (e.stats) renderStats({ id: session.id, stats: e.stats });
+    },
+    transcript: (e) => {
+      if (e.stats) renderStats({ id: session.id, stats: e.stats });
+      syncSession();
+    },
+    status: (e) => {
+      if (e.status === "refreshing") $("#briefMeta").textContent = "updating…";
+      if (e.status === "skipped") $("#briefMeta").textContent = "listening… (nothing new yet)";
+      if (e.status === "ended") setChip("#listenChip", "ended", "neutral");
+    },
+  });
+  clearInterval(listen.poll);
+  listen.poll = setInterval(syncSession, 3000);
+  listenStatus(`Session ${session.id.slice(0, 8)}… open. Everything you send is transcript for this call.`);
+  return session.id;
+}
+
+/**
+ * Reconcile with the server. SSE is the fast path, but a brief can land in the gap between
+ * opening a session and the event stream attaching, so the UI also polls while a session is live.
+ */
+async function syncSession() {
+  if (!listen.sessionId) return;
+  try {
+    const s = await api(`/api/v1/listen/sessions/${listen.sessionId}?transcript_tail=30`);
+    renderTranscript(s.transcript, s.transcriptTotal);
+    renderStats(s);
+    if (s.brief && s.briefVersion > listen.renderedVersion) renderBrief(s.brief, s.citations, s.briefVersion);
+  } catch {
+    /* transient — the next event or poll will catch up */
+  }
+}
+
+async function sendChunks(chunks) {
+  const id = await ensureListenSession();
+  const out = await api(`/api/v1/listen/sessions/${id}/transcript`, { method: "POST", json: { chunks } });
+  $("#sendHint").textContent =
+    out.refresh === "started"
+      ? "brief refreshing…"
+      : out.refresh === "scheduled"
+        ? "queued (throttled)"
+        : `skipped (${out.reason})`;
+  renderStats(out.session);
+  renderTranscript(out.session.transcript, out.session.transcriptTotal);
+  // The refresh is asynchronous; reconcile shortly after in case the event beat the stream.
+  setTimeout(syncSession, 700);
+  return out;
+}
+
+async function endListenSession() {
+  if (!listen.sessionId) return;
+  stopSample();
+  stopMic();
+  try {
+    await api(`/api/v1/listen/sessions/${listen.sessionId}`, { method: "DELETE" });
+  } catch {
+    /* already gone */
+  }
+  listen.close?.();
+  listen.close = null;
+  clearInterval(listen.poll);
+  listen.poll = null;
+  listen.sessionId = null;
+  listen.renderedVersion = 0;
+  setChip("#listenChip", "no session", "neutral");
+  $("#endBtn").hidden = true;
+  listenStatus("Session ended. The brief above is the final state.");
+}
+
+// ── sample conversation ───────────────────────────────────────────────────────
+function stopSample() {
+  if (listen.sample) {
+    clearTimeout(listen.sample);
+    listen.sample = null;
+  }
+  $("#sampleBtn").textContent = "Play sample conversation";
+}
+
+async function playSample() {
+  if (listen.sample) {
+    stopSample();
+    listenStatus("Sample paused.");
+    return;
+  }
+  $("#sampleBtn").textContent = "Stop sample";
+  listenStatus("Playing a sample discovery call…");
+  let i = 0;
+  const step = async () => {
+    if (i >= SAMPLE_CONVERSATION.length) {
+      stopSample();
+      listenStatus("Sample finished — the brief above is what the handler would be reading.");
+      return;
+    }
+    const line = SAMPLE_CONVERSATION[i++];
+    try {
+      await sendChunks([line]);
+    } catch (e) {
+      toast(e.message, "error");
+      stopSample();
+      return;
+    }
+    listen.sample = setTimeout(step, 1400);
+  };
+  await step();
+}
+
+// ── typed / pasted conversation ───────────────────────────────────────────────
+function parseTyped(text) {
+  return text
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => {
+      const m = /^([A-Za-z][\w .-]{0,30}):\s*(.+)$/.exec(line);
+      return m ? { speaker: m[1].toLowerCase(), text: m[2] } : { speaker: "caller", text: line };
+    });
+}
+
+async function sendTyped() {
+  const chunks = parseTyped($("#typedTurn").value);
+  if (!chunks.length) return;
+  $("#sendTurn").disabled = true;
+  try {
+    await sendChunks(chunks);
+    $("#typedTurn").value = "";
+  } catch (e) {
+    toast(e.message, "error");
+  } finally {
+    $("#sendTurn").disabled = false;
+  }
+}
+
+// ── microphone (ElevenLabs Scribe realtime → transcript chunks) ───────────────
 function pcm16(input) {
   const out = new Int16Array(input.length);
   for (let i = 0; i < input.length; i++) {
@@ -365,26 +546,27 @@ function toBase64(bytes) {
 }
 
 async function setupMic() {
-  listen.stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-  listen.ctx = new (window.AudioContext || window.webkitAudioContext)();
-  if (listen.ctx.state === "suspended") {
+  const mic = listen.mic;
+  mic.stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+  mic.ctx = new (window.AudioContext || window.webkitAudioContext)();
+  if (mic.ctx.state === "suspended") {
     try {
-      await listen.ctx.resume();
+      await mic.ctx.resume();
     } catch {}
   }
-  listen.inRate = listen.ctx.sampleRate;
-  const source = listen.ctx.createMediaStreamSource(listen.stream);
-  const processor = listen.ctx.createScriptProcessor(4096, 1, 1);
-  const mute = listen.ctx.createGain();
+  mic.inRate = mic.ctx.sampleRate;
+  const source = mic.ctx.createMediaStreamSource(mic.stream);
+  const processor = mic.ctx.createScriptProcessor(4096, 1, 1);
+  const mute = mic.ctx.createGain();
   mute.gain.value = 0;
   source.connect(processor);
   processor.connect(mute);
-  mute.connect(listen.ctx.destination);
+  mute.connect(mic.ctx.destination);
   processor.onaudioprocess = (e) => {
-    if (!listen.ws || listen.ws.readyState !== WebSocket.OPEN) return;
-    const f32 = downsample(e.inputBuffer.getChannelData(0), listen.inRate, 16000);
+    if (!mic.ws || mic.ws.readyState !== WebSocket.OPEN) return;
+    const f32 = downsample(e.inputBuffer.getChannelData(0), mic.inRate, 16000);
     try {
-      listen.ws.send(
+      mic.ws.send(
         JSON.stringify({
           message_type: "input_audio_chunk",
           audio_base_64: toBase64(new Uint8Array(pcm16(f32).buffer)),
@@ -393,19 +575,21 @@ async function setupMic() {
       );
     } catch {}
   };
-  listen.nodes = { source, processor, mute };
+  mic.nodes = { source, processor, mute };
 }
 
 async function connectScribe() {
-  if (!listen.active) return;
-  $("#listenStatus").textContent = listen.ws ? "reconnecting…" : "connecting…";
+  const mic = listen.mic;
+  if (!mic.active) return;
+  listenStatus(mic.ws ? "reconnecting to transcription…" : "connecting to transcription…");
   let token;
   try {
     token = (await api("/api/v1/scribe-token", { method: "POST" })).token;
   } catch (err) {
-    $("#listenStatus").textContent = `token error: ${err.message}`;
-    setChip("#listenChip", "unavailable", "warn");
-    stopListen();
+    listenStatus(
+      `Microphone transcription needs an ElevenLabs key on the server (${err.message}). The sample and typed conversation work without one.`,
+    );
+    stopMic();
     return;
   }
   const qs = new URLSearchParams({
@@ -415,14 +599,13 @@ async function connectScribe() {
     token,
   });
   const ws = new WebSocket(`wss://api.elevenlabs.io/v1/speech-to-text/realtime?${qs}`);
-  listen.ws = ws;
+  mic.ws = ws;
   ws.onopen = () => {
-    $("#listenStatus").textContent = "listening — speak naturally";
-    $("#listenBtn").textContent = "Stop listening";
+    listenStatus("Listening to the microphone — speak naturally.");
+    $("#listenBtn").textContent = "Stop microphone";
     $("#listenBtn").disabled = false;
-    setChip("#listenChip", "listening", "ok");
   };
-  ws.onmessage = (ev) => {
+  ws.onmessage = async (ev) => {
     let m;
     try {
       m = JSON.parse(ev.data);
@@ -430,131 +613,82 @@ async function connectScribe() {
       return;
     }
     if (m.message_type === "partial_transcript") {
-      listen.partial = m.text || "";
-      $("#listenInterim").textContent = listen.partial || "…";
+      $("#listenInterim").textContent = m.text || "…";
     } else if (m.message_type === "committed_transcript") {
-      const t = (m.text || "").trim();
-      if (t) {
-        listen.committed = lastWords(`${listen.committed} ${t}`, KEEP_WORDS);
-        listen.transcript = `${listen.transcript} ${t}`.slice(-TRANSCRIPT_KEEP);
-      }
-      listen.partial = "";
+      const text = (m.text || "").trim();
       $("#listenInterim").textContent = "…";
+      if (text) {
+        try {
+          await sendChunks([{ speaker: "caller", text }]);
+        } catch {
+          /* keep listening even if one append fails */
+        }
+      }
     } else if (["error", "auth_error", "quota_exceeded"].includes(m.message_type)) {
-      $("#listenStatus").textContent = `error: ${m.error || m.message_type}`;
+      listenStatus(`transcription error: ${m.error || m.message_type}`);
     }
   };
   ws.onclose = () => {
-    if (ws === listen.ws) listen.ws = null;
-    if (listen.active && !listen.reconnect) {
-      listen.reconnect = setTimeout(() => {
-        listen.reconnect = null;
+    if (ws === mic.ws) mic.ws = null;
+    if (mic.active && !mic.reconnect) {
+      mic.reconnect = setTimeout(() => {
+        mic.reconnect = null;
         connectScribe();
       }, 1200);
     }
   };
 }
 
-async function startListen() {
-  if (listen.active || !state.current) return;
-  listen.active = true;
+async function startMic() {
+  const mic = listen.mic;
+  if (mic.active) return;
+  mic.active = true;
   $("#listenBtn").disabled = true;
-  $("#listenStatus").textContent = "starting mic…";
   try {
+    await ensureListenSession();
     await setupMic();
   } catch (err) {
-    $("#listenStatus").textContent = `mic error: ${err.message}`;
-    listen.active = false;
+    listenStatus(`microphone unavailable: ${err.message}`);
+    mic.active = false;
     $("#listenBtn").disabled = false;
     return;
   }
-  listen.loop = setInterval(tickBrief, 600);
   connectScribe();
 }
 
-function stopListen() {
-  listen.active = false;
-  clearTimeout(listen.reconnect);
-  listen.reconnect = null;
-  clearInterval(listen.loop);
-  listen.loop = null;
-  if (listen.ws) {
-    const ws = listen.ws;
-    listen.ws = null;
+function stopMic() {
+  const mic = listen.mic;
+  mic.active = false;
+  clearTimeout(mic.reconnect);
+  mic.reconnect = null;
+  if (mic.ws) {
+    const ws = mic.ws;
+    mic.ws = null;
     try {
       ws.close();
     } catch {}
   }
-  if (listen.nodes) {
-    for (const n of Object.values(listen.nodes)) {
+  if (mic.nodes) {
+    for (const n of Object.values(mic.nodes)) {
       try {
         n.disconnect();
       } catch {}
     }
-    listen.nodes = null;
+    mic.nodes = null;
   }
-  if (listen.ctx) {
+  if (mic.ctx) {
     try {
-      listen.ctx.close();
+      mic.ctx.close();
     } catch {}
-    listen.ctx = null;
+    mic.ctx = null;
   }
-  if (listen.stream) {
-    for (const t of listen.stream.getTracks()) t.stop();
-    listen.stream = null;
+  if (mic.stream) {
+    for (const t of mic.stream.getTracks()) t.stop();
+    mic.stream = null;
   }
-  Object.assign(listen, {
-    committed: "",
-    partial: "",
-    transcript: "",
-    prev: null,
-    lastNorm: "",
-    querying: false,
-  });
-  $("#listenBtn").textContent = "Start listening";
+  $("#listenBtn").textContent = "Listen to microphone";
   $("#listenBtn").disabled = false;
   $("#listenInterim").textContent = "…";
-  $("#listenStatus").textContent = "Idle.";
-  setChip("#listenChip", "idle", "neutral");
-}
-
-function tickBrief() {
-  if (listen.querying || !listen.active) return;
-  const window = lastWords(`${listen.committed} ${listen.partial}`, WINDOW_WORDS);
-  const norm = normWords(window);
-  if (norm.split(" ").filter(Boolean).length < 4) return;
-  if (Date.now() - listen.lastFire < MIN_GAP_MS) return;
-  if (norm === listen.lastNorm) return;
-  if (listen.lastNorm && jaccard(norm, listen.lastNorm) > 0.85) return;
-  fireBrief(window, norm);
-}
-
-async function fireBrief(window, norm) {
-  listen.querying = true;
-  listen.lastFire = Date.now();
-  listen.lastNorm = norm;
-  $("#briefMeta").textContent = "updating…";
-  try {
-    const data = await api("/api/v1/brief", {
-      method: "POST",
-      json: {
-        prospect: state.current.key,
-        text: window,
-        transcript: listen.transcript,
-        prev: listen.prev ?? undefined,
-        generative_model: state.selectedModel || undefined,
-      },
-    });
-    if (data.brief && (data.brief.summary || data.brief.key_points?.length)) {
-      renderBrief(data.brief, data.citations ?? []);
-    } else {
-      $("#briefMeta").textContent = "listening… (nothing relevant yet)";
-    }
-  } catch {
-    $("#briefMeta").textContent = "listening…";
-  } finally {
-    listen.querying = false;
-  }
 }
 
 function list(items, cls = "") {
@@ -562,8 +696,8 @@ function list(items, cls = "") {
   return arr.length ? `<ul class="${cls}">${arr.map((x) => `<li>${esc(x)}</li>`).join("")}</ul>` : "";
 }
 
-function renderBrief(b, citations) {
-  listen.prev = b;
+function renderBrief(b, citations, version) {
+  listen.renderedVersion = version ?? listen.renderedVersion;
   let html = "";
   if (b.topic) html += `<div class="topic">${esc(b.topic)}</div>`;
   const chips = [];
@@ -581,15 +715,10 @@ function renderBrief(b, citations) {
     html += `<div class="label">Recommend</div>${list(b.recommended_products)}`;
   $("#briefBody").innerHTML = html || "<span class='muted'>Listening…</span>";
   $("#briefBody").classList.remove("muted");
-  for (const c of citations) {
-    if (c.title) listen.sources.set(c.title.toLowerCase(), { ...c, seen: Date.now() });
-  }
-  $("#briefSources").innerHTML = [...listen.sources.values()]
-    .sort((a, b2) => b2.seen - a.seen)
-    .slice(0, 8)
-    .map((c) => `<span class="arag-cite">${esc(c.title)}</span>`)
+  $("#briefSources").innerHTML = (citations ?? [])
+    .map((c) => `<span class="arag-cite" title="score ${c.score}">${esc(c.title)}</span>`)
     .join("");
-  $("#briefMeta").textContent = "updated live";
+  $("#briefMeta").innerHTML = `updated live · <span class="version">v${version ?? ""}</span>`;
 }
 
 // ── GOLDEN SET ───────────────────────────────────────────────────────────────
@@ -676,7 +805,8 @@ function showTab(name) {
   }
   for (const p of document.querySelectorAll("[data-panel]")) p.hidden = p.dataset.panel !== name;
   if (name !== "call") endCall();
-  if (name !== "listen") stopListen();
+  // A listen session keeps running while you look at another tab: the conversation does not stop
+  // because the operator switched views. Ending it is explicit.
 }
 
 for (const t of document.querySelectorAll('#modeTabs [role="tab"]')) {
@@ -697,7 +827,13 @@ $("#muteBtn").addEventListener("click", () => {
 $("#clearCall").addEventListener("click", () => {
   $("#callLog").innerHTML = "";
 });
-$("#listenBtn").addEventListener("click", () => (listen.active ? stopListen() : startListen()));
+$("#sampleBtn").addEventListener("click", playSample);
+$("#sendTurn").addEventListener("click", sendTyped);
+$("#typedTurn").addEventListener("keydown", (e) => {
+  if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) sendTyped();
+});
+$("#endBtn").addEventListener("click", endListenSession);
+$("#listenBtn").addEventListener("click", () => (listen.mic.active ? stopMic() : startMic()));
 $("#model").addEventListener("change", (e) => {
   state.selectedModel = e.target.value;
 });
@@ -714,5 +850,6 @@ $("#runGolden2").addEventListener("click", runGolden);
 await ensureSession();
 await loadProspects().catch((e) => toast(e.message, "error"));
 loadVoices();
+showTab("listen");
 pollMetrics();
 setInterval(pollMetrics, 5000);

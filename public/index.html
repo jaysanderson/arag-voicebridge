@@ -22,14 +22,14 @@
     </div>
 
     <div class="arag-tabs" role="tablist" id="modeTabs">
-      <button role="tab" aria-selected="true" data-tab="ask">Ask (text)</button>
+      <button role="tab" aria-selected="true" data-tab="listen">Listen (live brief)</button>
+      <button role="tab" data-tab="ask">Ask (text)</button>
       <button role="tab" data-tab="call">Call</button>
-      <button role="tab" data-tab="listen">Listen</button>
       <button role="tab" data-tab="golden">Golden set</button>
     </div>
 
     <!-- ── ASK: the mock-friendly path — type a question, hear what the agent would say ── -->
-    <section data-panel="ask" class="arag-grid split vb-panel">
+    <section data-panel="ask" hidden class="arag-grid split vb-panel">
       <div class="arag-card">
         <div class="head"><h2>Ask a question</h2><span class="arag-chip info">same pipeline as the phone call</span></div>
         <div class="body arag-stack">
@@ -89,28 +89,63 @@
       </div>
     </section>
 
-    <!-- ── LISTEN: silent copilot ── -->
-    <section data-panel="listen" hidden class="arag-grid split vb-panel">
+    <!-- ── LISTEN: the hero — a live conversation in, an evolving grounded brief out ── -->
+    <section data-panel="listen" class="arag-grid split vb-panel">
       <div class="arag-card">
-        <div class="head"><h2>Listen</h2><span id="listenChip" class="arag-chip neutral">idle</span></div>
+        <div class="head"><h2>Listen</h2><span id="listenChip" class="arag-chip neutral">no session</span></div>
         <div class="body arag-stack">
-          <p class="muted small">The bridge listens and stays silent; the brief on the right keeps evolving
-            with who you are speaking to, what they want, and what to say next.</p>
-          <div class="arag-row"><button id="listenBtn" class="arag-btn lg">Start listening</button></div>
-          <p class="status muted small" id="listenStatus">Idle.</p>
+          <p class="muted small">Feed a live conversation in — from a microphone, from your own
+            speech-to-text, from a telephony webhook, or by typing — and the brief on the right keeps
+            up: who you are speaking to, what they want, the knowledge that matters right now, and
+            what to say next. The bridge listens and stays silent.</p>
+
+          <div class="arag-row">
+            <button id="sampleBtn" class="arag-btn lg">Play sample conversation</button>
+            <button id="listenBtn" class="arag-btn secondary" title="Needs an ElevenLabs key on the server">Listen to microphone</button>
+            <button id="endBtn" class="arag-btn ghost" hidden>End session</button>
+          </div>
+          <p class="status muted small" id="listenStatus">No session yet — play the sample, type below, or start the microphone.</p>
+
+          <div class="arag-field">
+            <label for="typedTurn">Paste or type a conversation</label>
+            <textarea id="typedTurn" class="arag-textarea" rows="4"
+              placeholder="caller: we print stainless steel brackets and the sintering step is our bottleneck&#10;agent: how many parts a week are you running?"></textarea>
+            <span class="arag-help">One line per turn. Prefix with <code>caller:</code> or <code>agent:</code> to label the speaker.</span>
+          </div>
+          <div class="arag-row">
+            <button id="sendTurn" class="arag-btn">Send to session</button>
+            <span id="sendHint" class="muted small"></span>
+          </div>
+
           <div class="vb-hearing"><span class="arag-chip outline">hearing</span><span id="listenInterim" class="muted small">…</span></div>
+
           <div class="arag-field">
             <label for="model">Brief model <span class="arag-help">⚡ speed · ★ quality · $ price</span></label>
             <select id="model" class="arag-select"><option value="">Auto — fast default</option></select>
           </div>
+
+          <dl class="arag-kv" id="listenStats">
+            <dt>Session</dt><dd id="statSession" class="mono small">—</dd>
+            <dt>Chunks</dt><dd id="statChunks">—</dd>
+            <dt>Brief refreshes</dt><dd id="statRefreshes">—</dd>
+            <dt>Skipped (throttled)</dt><dd id="statSkipped">—</dd>
+            <dt>Last refresh</dt><dd id="statLatency">—</dd>
+          </dl>
         </div>
       </div>
+
       <div class="arag-card">
-        <div class="head"><h2>Live brief</h2><span id="briefMeta" class="muted small"></span></div>
+        <div class="head"><h2>Live brief</h2><span id="briefMeta" class="muted small">waiting for the conversation</span></div>
         <div class="body">
-          <div id="briefBody" class="vb-brief muted">Start listening — this pane fills with the most relevant
-            knowledge, who you are speaking to, what they want and what to say next.</div>
+          <div id="briefBody" class="vb-brief muted">The brief appears here and keeps evolving as the
+            conversation moves. Everything factual in it comes from the knowledge base, with the
+            sources listed underneath.</div>
           <div id="briefSources" class="arag-row vb-cites"></div>
+          <div class="arag-divider"></div>
+          <div class="vb-transcript-head">
+            <span class="arag-label">Transcript</span><span id="transcriptCount" class="muted small"></span>
+          </div>
+          <div id="transcript" class="vb-transcript muted small">Nothing heard yet.</div>
         </div>
       </div>
     </section>

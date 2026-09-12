@@ -26,16 +26,18 @@ import { assertVoiceConfig, type VoiceConfig } from "./config.ts";
 import { openapi, VERSION } from "./openapi.ts";
 import { registerAdminRoutes } from "./routes/admin.ts";
 import { registerJobRoutes } from "./routes/jobs.ts";
+import { registerListenRoutes } from "./routes/listen.ts";
 import { registerProspectRoutes } from "./routes/prospects.ts";
 import { GOLDEN_EVAL_JOB, registerQualityRoutes } from "./routes/quality.ts";
 import { registerRealtimeRoutes } from "./routes/realtime.ts";
 import { registerVoiceRoutes } from "./routes/voice.ts";
+import { runBrief } from "./services/brief.ts";
 import { AragClientPool } from "./services/clientPool.ts";
 import { type GoldenEvalResult, GoldenEvalStore, runGoldenEval } from "./services/goldenEval.ts";
+import { ListenService, ListenSessionNotFound } from "./services/listen.ts";
 import { LiveAvatarClient } from "./services/liveavatar.ts";
 import { MetricsService } from "./services/metrics.ts";
 import type { AskCapable, TurnDeps } from "./services/pipeline.ts";
-import { RateLimiter } from "./services/ratelimit.ts";
 import { ProspectNotFoundError, ProspectRegistry, ValidationFailed } from "./services/registry.ts";
 import { mockSeed } from "./services/seed.ts";
 import type { ProspectConfig } from "./types.ts";
@@ -59,9 +61,8 @@ export interface ProductDeps {
   clients: { for(p: ProspectConfig): AragClient; clear(): void };
   metrics: MetricsService;
   evals: GoldenEvalStore;
+  listen: ListenService;
   liveAvatar: LiveAvatarClient;
-  briefLimiter: RateLimiter;
-  scribeLimiter: RateLimiter;
   usage: Usage;
   platformVersion: string;
   /** Pipeline dependencies (client resolver + config + logger). */
@@ -131,6 +132,15 @@ export async function createProduct(
   const metrics = new MetricsService({ store, cap: voice.turnLogLimit });
   const evals = new GoldenEvalStore(store);
   const liveAvatar = new LiveAvatarClient(voice, { log, fetch: opts.liveAvatarFetch });
+  // Real-time listening: sessions own the throttling, the evolving brief and the citations seen
+  // across a call. The brief itself is the same primitive POST /api/v1/brief exposes.
+  const listen = new ListenService({
+    store,
+    log,
+    voice,
+    prospect: (key) => registry.require(key),
+    brief: (req, prospect) => runBrief(req, prospect, { client: clients.for(prospect), voice, log }),
+  });
 
   const deps: ProductDeps = {
     env,
@@ -142,9 +152,8 @@ export async function createProduct(
     clients,
     metrics,
     evals,
+    listen,
     liveAvatar,
-    briefLimiter: new RateLimiter(voice.briefRps, voice.briefBurst),
-    scribeLimiter: new RateLimiter(voice.scribeRps, voice.scribeBurst),
     usage,
     platformVersion: PLATFORM_VERSION,
     turnDeps: () => ({
@@ -209,6 +218,7 @@ export async function createProduct(
       return new HttpError(404, "Not found", err.message, { extra: { known: err.known } });
     }
     if (err instanceof ValidationFailed) return validationError(err.errors, "body");
+    if (err instanceof ListenSessionNotFound) return notFound("Listen session");
     const e = err as { name?: string; message?: string; status?: number };
     if (e?.name === "ScribeError" || e?.name === "VoicesError" || e?.name === "LiveAvatarError") {
       const status = e.status && e.status >= 400 && e.status <= 599 ? e.status : 502;
@@ -239,6 +249,7 @@ export async function createProduct(
   });
   app.docs("/api/v1", openapi, { title: "VoiceBridge API" });
 
+  registerListenRoutes(app, deps);
   registerVoiceRoutes(app, deps);
   registerProspectRoutes(app, deps);
   registerRealtimeRoutes(app, deps);
@@ -268,6 +279,7 @@ export async function createProduct(
     app,
     deps,
     async close() {
+      listen.close();
       store.flushAll();
       await app.close();
       await mock?.close();

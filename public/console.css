@@ -1,11 +1,5 @@
 /* VoiceBridge console — a thin layer on top of the shared ARAG UI kit. */
 
-/* The UI kit's layout rules (.arag-grid { display: grid } and friends) are author styles, so they
-   outrank the user-agent default for [hidden] and a hidden tab panel stays on screen. Both this
-   page and the admin panel switch tabs with the hidden attribute, so restore it globally. */
-[hidden] {
-  display: none !important;
-}
 .vb-bar {
   margin-bottom: 14px;
 }
@@ -141,4 +135,34 @@
   .vb-metrics {
     gap: 12px;
   }
+}
+
+.vb-transcript-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin-top: 4px;
+}
+.vb-transcript {
+  max-height: 22vh;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.vb-transcript .line {
+  display: flex;
+  gap: 6px;
+}
+.vb-transcript .who {
+  font-weight: 650;
+  min-width: 48px;
+  text-transform: capitalize;
+}
+.vb-transcript .line.interim {
+  opacity: 0.6;
+  font-style: italic;
+}
+.vb-brief .version {
+  font-variant-numeric: tabular-nums;
 }

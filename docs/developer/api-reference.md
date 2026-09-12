@@ -1,4 +1,4 @@
-# API reference — VoiceBridge API v0.1.0
+# API reference — VoiceBridge API v0.2.0
 
 Grounded, cited and governed voice answers over Progress Agentic RAG (ARAG).
 
@@ -15,6 +15,157 @@ Generated from `openapi.json` — do not edit by hand. Interactive docs: `/api/v
 - **ApiKey** — apiKey header X-API-Key: Required only when API_KEYS is configured.
 - **Bearer** — http bearer : API key or admin token as a bearer token.
 - **AdminToken** — http bearer : ADMIN_TOKEN; required for /admin routes.
+
+## listen
+
+### `POST /api/v1/listen/sessions`
+
+**Start a listen session** — Opens a session for a prospect. Feed it conversation with `POST /api/v1/listen/sessions/{id}/transcript` from any source — a realtime STT stream, a telephony webhook, a meeting bot, or someone typing — and read the evolving brief from the SSE stream or by polling the session.
+
+Request body (`application/json`): object
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `prospect` | string | yes |  |
+| `locale` | string |  |  |
+| `generative_model` | string |  |  |
+| `metadata` | object |  | Opaque caller context (agent id, queue, call id…) kept with the session |
+
+Responses:
+
+- `201` Session started — `application/json` [ListenSession](#listensession)
+- `400` Validation failed — `application/problem+json` [Problem](#problem)
+- `401` Authentication required — `application/problem+json` [Problem](#problem)
+- `403` Forbidden — `application/problem+json` [Problem](#problem)
+- `404` Not found — `application/problem+json` [Problem](#problem)
+- `429` Rate limited — `application/problem+json` [Problem](#problem)
+- `502` Upstream (ARAG) error — `application/problem+json` [Problem](#problem)
+
+Auth: ApiKey or Bearer
+
+
+### `GET /api/v1/listen/sessions`
+
+**Recent listen sessions**
+
+Parameters:
+
+| Name | In | Type | Required | Description |
+|---|---|---|---|---|
+| `prospect` | query | string |  |  |
+| `limit` | query | integer |  |  |
+
+Responses:
+
+- `200` OK — `application/json` object
+- `400` Validation failed — `application/problem+json` [Problem](#problem)
+- `401` Authentication required — `application/problem+json` [Problem](#problem)
+- `403` Forbidden — `application/problem+json` [Problem](#problem)
+- `404` Not found — `application/problem+json` [Problem](#problem)
+- `429` Rate limited — `application/problem+json` [Problem](#problem)
+- `502` Upstream (ARAG) error — `application/problem+json` [Problem](#problem)
+
+Auth: ApiKey or Bearer
+
+
+### `GET /api/v1/listen/sessions/{id}`
+
+**Session state: brief, citations, stats and a transcript tail**
+
+Parameters:
+
+| Name | In | Type | Required | Description |
+|---|---|---|---|---|
+| `id` | path | string | yes |  |
+| `transcript_tail` | query | integer |  |  |
+
+Responses:
+
+- `200` OK — `application/json` [ListenSession](#listensession)
+- `400` Validation failed — `application/problem+json` [Problem](#problem)
+- `401` Authentication required — `application/problem+json` [Problem](#problem)
+- `403` Forbidden — `application/problem+json` [Problem](#problem)
+- `404` Not found — `application/problem+json` [Problem](#problem)
+- `429` Rate limited — `application/problem+json` [Problem](#problem)
+- `502` Upstream (ARAG) error — `application/problem+json` [Problem](#problem)
+
+Auth: ApiKey or Bearer
+
+
+### `DELETE /api/v1/listen/sessions/{id}`
+
+**End a session (the brief, citations and stats are kept)**
+
+Parameters:
+
+| Name | In | Type | Required | Description |
+|---|---|---|---|---|
+| `id` | path | string | yes |  |
+
+Responses:
+
+- `200` Session ended — `application/json` [ListenSession](#listensession)
+- `400` Validation failed — `application/problem+json` [Problem](#problem)
+- `401` Authentication required — `application/problem+json` [Problem](#problem)
+- `403` Forbidden — `application/problem+json` [Problem](#problem)
+- `404` Not found — `application/problem+json` [Problem](#problem)
+- `429` Rate limited — `application/problem+json` [Problem](#problem)
+- `502` Upstream (ARAG) error — `application/problem+json` [Problem](#problem)
+
+Auth: ApiKey or Bearer
+
+
+### `POST /api/v1/listen/sessions/{id}/transcript`
+
+**Append conversation to a session** — Accepts final or interim chunks from any transcription source. The server throttles and de-duplicates refreshes (a rolling window of the last words, a minimum gap, and a similarity check), so a chatty client cannot turn every word into an LLM call. The response says what the throttle decided.
+
+Parameters:
+
+| Name | In | Type | Required | Description |
+|---|---|---|---|---|
+| `id` | path | string | yes |  |
+
+Request body (`application/json`): object
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `chunks` | array of [TranscriptChunk](#transcriptchunk) | yes |  |
+
+Responses:
+
+- `202` Accepted — `application/json` object
+- `400` Validation failed — `application/problem+json` [Problem](#problem)
+- `401` Authentication required — `application/problem+json` [Problem](#problem)
+- `403` Forbidden — `application/problem+json` [Problem](#problem)
+- `404` Not found — `application/problem+json` [Problem](#problem)
+- `409` The session has ended — `application/problem+json` [Problem](#problem)
+- `429` Rate limited — `application/problem+json` [Problem](#problem)
+- `502` Upstream (ARAG) error — `application/problem+json` [Problem](#problem)
+
+Auth: ApiKey or Bearer
+
+
+### `GET /api/v1/listen/sessions/{id}/events`
+
+**Server-sent events for a session (event: brief | transcript | status)**
+
+Parameters:
+
+| Name | In | Type | Required | Description |
+|---|---|---|---|---|
+| `id` | path | string | yes |  |
+
+Responses:
+
+- `200` text/event-stream — `text/event-stream` string
+- `400` Validation failed — `application/problem+json` [Problem](#problem)
+- `401` Authentication required — `application/problem+json` [Problem](#problem)
+- `403` Forbidden — `application/problem+json` [Problem](#problem)
+- `404` Not found — `application/problem+json` [Problem](#problem)
+- `429` Rate limited — `application/problem+json` [Problem](#problem)
+- `502` Upstream (ARAG) error — `application/problem+json` [Problem](#problem)
+
+Auth: ApiKey or Bearer
 
 ## voice
 
@@ -657,6 +808,30 @@ Responses:
 Auth: AdminToken
 
 
+### `GET /api/v1/admin/listen-sessions`
+
+**Recent listen sessions with brief history and latency**
+
+Parameters:
+
+| Name | In | Type | Required | Description |
+|---|---|---|---|---|
+| `prospect` | query | string |  |  |
+| `limit` | query | integer |  |  |
+
+Responses:
+
+- `200` OK — `application/json` object
+- `400` Validation failed — `application/problem+json` [Problem](#problem)
+- `401` Authentication required — `application/problem+json` [Problem](#problem)
+- `403` Forbidden — `application/problem+json` [Problem](#problem)
+- `404` Not found — `application/problem+json` [Problem](#problem)
+- `429` Rate limited — `application/problem+json` [Problem](#problem)
+- `502` Upstream (ARAG) error — `application/problem+json` [Problem](#problem)
+
+Auth: AdminToken
+
+
 ### `GET /api/v1/admin/golden-evals`
 
 **Golden-set evaluation history**
@@ -750,6 +925,57 @@ RFC 9457 problem details
 | `title` | string | yes | Source document title (shown as a chip, never spoken) |
 | `url` | string | yes | Source URL when the resource carries one |
 | `score` | number | yes | Best paragraph score for the source |
+
+### TranscriptEntry
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `speaker` | string | yes | Free-form label: caller, agent, a diarisation id… |
+| `text` | string | yes |  |
+| `ts` | string | yes |  |
+| `final` | boolean | yes | False for interim STT hypotheses |
+
+### TranscriptChunk
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `speaker` | string |  |  |
+| `text` | string | yes |  |
+| `ts` | string |  |  |
+| `final` | boolean |  | Set false for an interim hypothesis |
+
+### ListenStats
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `chunks` | integer | yes |  |
+| `words` | integer | yes |  |
+| `refreshes` | integer | yes | Brief refreshes that produced something usable |
+| `skipped` | integer | yes | Refreshes the throttle deliberately skipped |
+| `failures` | integer | yes |  |
+| `lastLatencyMs` | integer |  |  |
+| `p50LatencyMs` | integer |  |  |
+| `p95LatencyMs` | integer |  |  |
+
+### ListenSession
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `id` | string | yes |  |
+| `createdAt` | string |  |  |
+| `updatedAt` | string |  |  |
+| `prospect` | string | yes |  |
+| `locale` | string |  |  |
+| `generative_model` | string |  |  |
+| `metadata` | object |  |  |
+| `status` | string (`live`, `ended`) | yes |  |
+| `endedAt` | string |  |  |
+| `brief` | object,null | yes | The evolving brief — same shape as POST /api/v1/brief returns |
+| `briefVersion` | integer | yes | Increments on every usable refresh |
+| `citations` | array of [Citation](#citation) | yes |  |
+| `stats` | [ListenStats](#listenstats) | yes |  |
+| `transcript` | array of [TranscriptEntry](#transcriptentry) |  |  |
+| `transcriptTotal` | integer |  |  |
 
 ### LatencyMs
 

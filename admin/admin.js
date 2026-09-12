@@ -42,6 +42,7 @@ function show(authed) {
     loadProspects();
     loadTurns();
     loadEvals();
+    loadListen();
   }
 }
 
@@ -273,6 +274,50 @@ function showEval(id, items) {
     .join("");
 }
 $("#reloadEvals").addEventListener("click", loadEvals);
+
+// ── listen sessions ────────────────────────────────────────────────────────
+let listenSessions = [];
+
+async function loadListen() {
+  const { items } = await api("/api/v1/admin/listen-sessions?limit=25");
+  listenSessions = items;
+  $("#listenTable").querySelector("tbody").innerHTML =
+    items
+      .map(
+        (s) =>
+          `<tr data-id="${esc(s.id)}"><td class="small muted">${esc(String(s.createdAt).slice(11, 19))}</td>` +
+          `<td class="small">${esc(s.prospect)}</td>` +
+          `<td>${s.status === "live" ? chip("ok", "live") : chip("neutral", "ended")}</td>` +
+          `<td class="num">${s.stats.refreshes}</td><td class="num">${s.stats.skipped}</td>` +
+          `<td class="num">${s.stats.p50LatencyMs || ""}</td></tr>`,
+      )
+      .join("") ||
+    '<tr><td colspan="6" class="muted">No listen sessions yet — start one from the console.</td></tr>';
+  for (const row of $("#listenTable").querySelectorAll("tr[data-id]")) {
+    row.addEventListener("click", () => showListen(row.dataset.id));
+  }
+  if (items[0]) showListen(items[0].id);
+}
+
+function showListen(id) {
+  const s = listenSessions.find((x) => x.id === id);
+  if (!s) return;
+  $("#listenMeta").textContent =
+    `${s.prospect} · ${s.stats.chunks} chunks · ${s.stats.refreshes} refreshes · ${s.stats.skipped} throttled · ` +
+    `p50 ${s.stats.p50LatencyMs || "—"} ms · p95 ${s.stats.p95LatencyMs || "—"} ms`;
+  const history = [...(s.briefHistory ?? [])].reverse();
+  $("#briefHistory").innerHTML =
+    history
+      .map(
+        (h) =>
+          `<div class="arag-card pad"><div class="arag-row" style="justify-content:space-between">` +
+          `<b>v${h.version}</b><span class="muted small">${esc(String(h.at).slice(11, 19))} · ${h.latencyMs} ms</span></div>` +
+          `<div class="small" style="margin-top:6px">${esc(h.brief?.summary ?? "")}</div>` +
+          `${(h.brief?.key_points ?? []).length ? `<ul class="small">${(h.brief.key_points ?? []).map((k) => `<li>${esc(k)}</li>`).join("")}</ul>` : ""}</div>`,
+      )
+      .join("") || '<p class="muted small">No brief was produced in this session.</p>';
+}
+$("#reloadListen").addEventListener("click", loadListen);
 
 // ── logs ─────────────────────────────────────────────────────────────────────
 $("#level").addEventListener("change", (e) => {
