@@ -68,7 +68,7 @@ call asking "was this answer actually grounded"?
 explicitly tells the model never to include citation markers in the spoken text. Why return them
 at all?
 
-> They are UI data, never spoken — shown as chips in the console and available to the agent
+> They are UI data, never spoken — shown as source chips in the workspace and available to the agent
 > platform for on-screen display, but stripped from anything text-to-speech will read
 > (`src/services/voiceShape.ts`'s `stripCitationMarkers`, and `guardOutput`'s
 > `hasSpeakableViolation` as a backstop). A citation marker like `[1]` read aloud mid-sentence is

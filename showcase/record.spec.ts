@@ -138,7 +138,12 @@ test.describe("VoiceBridge showcase", () => {
     // the evolution timeline rather than the page, then shoot the same drawer element again.
     const evolvedHeading = drawer.locator("h3", { hasText: "How the brief evolved" });
     await evolvedHeading.scrollIntoViewIfNeeded();
-    await expect(drawer.locator(".vb-timeline .vb-tl-item").first()).toContainText("v1");
+    // The timeline is newest-first, so the earliest version — v1 — is the last item, not the
+    // first. With a scripted call that evolved through several refreshes there is more than one
+    // to show.
+    const timelineItems = drawer.locator(".vb-timeline .vb-tl-item");
+    await expect(timelineItems.last()).toContainText("v1");
+    expect(await timelineItems.count()).toBeGreaterThan(1);
     await beat(page, 800);
     await drawer.screenshot({ path: `${OUT}/07-conversation-evolution.png` });
     await page.keyboard.press("Escape");

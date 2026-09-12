@@ -153,7 +153,7 @@ function suggestions(k) {
   $("#kbSuggestions").innerHTML = all
     .map(
       (q) =>
-        `<button type="button" class="arag-btn ghost sm" data-q="${esc(q.q)}">${esc(q.q)}${
+        `<button type="button" class="arag-btn ghost sm vb-suggestion" data-q="${esc(q.q)}">${esc(q.q)}${
           q.expect === "handoff"
             ? ' <span class="arag-chip warn" style="margin-left:6px">should hand off</span>'
             : ""

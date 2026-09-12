@@ -325,9 +325,15 @@
   border: 1px solid var(--arag-border);
   border-radius: var(--arag-radius-lg);
   overflow: hidden;
+  max-width: 100%;
+  min-width: 0;
 }
-.vb-table-wrap .vb-scroll {
+/* A wide table scrolls inside its own box. Grid and flex children default to min-width:auto, which
+   would let the table widen its column instead — so every container in the chain is pinned to 0. */
+.vb-scroll {
   overflow-x: auto;
+  max-width: 100%;
+  min-width: 0;
 }
 table.vb-table {
   width: 100%;
@@ -921,6 +927,13 @@ table.vb-table .vb-sub {
   font-weight: 600;
 }
 
+/* A suggestion is a whole question, not a label: it wraps rather than widening the page. */
+.vb-suggestion {
+  white-space: normal;
+  text-align: left;
+  max-width: 100%;
+}
+
 /* Timeline (brief history, golden runs) ------------------------------------- */
 
 .vb-timeline {
@@ -1092,6 +1105,16 @@ table.vb-table .vb-sub {
 .vb-grid {
   display: grid;
   gap: var(--vb-s4);
+}
+.vb-grid > *,
+.vb-split > *,
+.vb-live > *,
+.vb-side > * {
+  min-width: 0;
+}
+.vb-card,
+.vb-card > .vb-card-body {
+  min-width: 0;
 }
 .vb-grid.cols-2 {
   grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));

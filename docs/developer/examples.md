@@ -123,7 +123,7 @@ es.addEventListener("status", (e) => {
 
 Because the browser `EventSource` API cannot set custom request headers, a browser client must
 authenticate the SSE connection with the same-origin `arag_session` cookie from
-`POST /api/v1/session` (what the console does) rather than `X-API-Key` — a server-to-server client
+`POST /api/v1/session` (what the workspace does at boot) rather than `X-API-Key` — a server-to-server client
 (a telephony bridge, say) can instead pass `X-API-Key` on a plain `fetch`/`curl` request since it
 is not bound by that restriction.
 
@@ -169,7 +169,7 @@ A browser running its own STT (the Web Speech API, or a vendor's realtime WebSoc
 Scribe) typically produces a stream of interim hypotheses followed by a final one per utterance:
 send each interim as `{"text": "...", "final": false}` for live-typing feedback in the UI, and the
 committed/final text as `{"final": true}` (the default) once the vendor confirms it — that is
-exactly the shape the console's own microphone path uses (`connectScribe()` in `public/app.js`),
+exactly the shape Live's own microphone path uses (`Microphone.connect()` in `public/app/mic.js`),
 except the shipped console currently only forwards the *final* transcript to the session and shows
 interim text locally rather than sending it — sending interims too is supported by the API and
 would make the brief able to react a little earlier, at the cost of the throttle seeing (and
@@ -224,7 +224,7 @@ and `handoff_reason` (one of `sentinel | not-found-phrase | empty-answer | no-re
 upstream-error` for a real handoff, or a guard code — see below — when a safety guard fired
 instead of ARAG ever being called).
 
-`generative_model` is an optional per-request override (what the console's model dropdown sends).
+`generative_model` is an optional per-request override (what Live's brief-model picker sends).
 
 ### `POST /api/v1/brief` — the stateless brief primitive
 

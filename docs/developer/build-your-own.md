@@ -125,7 +125,7 @@ The real-time listening API (`POST /api/v1/listen/sessions` and its transcript/e
 is deliberately transcription-source-agnostic: nothing in `TranscriptChunk` or `ListenSession`
 names a vendor, and it accepts conversation chunks from anywhere via a plain HTTP `POST`. ElevenLabs
 Scribe (`src/services/scribe.ts`) is one *optional* way to get a live transcript into a session —
-the one the console's own microphone button uses — not a requirement of the API. A telephony
+the one Live's own microphone source uses — not a requirement of the API. A telephony
 platform's transcription webhook, a meeting bot, or a customer's existing STT vendor can feed the
 same session directly. See [`integrations.md`](integrations.md) for the exact env vars and
 degrade-to-503 behaviour of each optional integration, and

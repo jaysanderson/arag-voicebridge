@@ -7,6 +7,10 @@ const port = Number(process.env.PW_PORT ?? 8281);
 // rather than by poking at the DOM.
 const brandedPort = port + 1;
 export const BRANDED_URL = `http://127.0.0.1:${brandedPort}`;
+// Override with PW_DATA_DIR so two runs on the same machine (a live dev server plus this suite, or
+// two checkouts of this suite) never share — and race on flushing — the same session store files.
+const dataDir = process.env.PW_DATA_DIR ?? "./data/e2e";
+const brandedDataDir = process.env.PW_DATA_DIR ? `${dataDir}-branded` : "./data/e2e-branded";
 export default defineConfig({
   testDir: process.env.PW_TESTDIR ?? (process.env.SHOWCASE ? "showcase" : "test/e2e"),
   timeout: 60_000,
@@ -25,7 +29,7 @@ export default defineConfig({
       // ENV_FILE=/dev/null keeps a developer's real .env out of the run: the suite must behave the
       // same on a laptop with live credentials as it does on a clean clone or in CI.
       command:
-        `ENV_FILE=/dev/null ARAG_MOCK=1 ADMIN_TOKEN=e2e-admin-token DATA_DIR=./data/e2e ` +
+        `ENV_FILE=/dev/null ARAG_MOCK=1 ADMIN_TOKEN=e2e-admin-token DATA_DIR=${dataDir} ` +
         `LOG_LEVEL=warn RATE_LIMIT_RPS=100 RATE_LIMIT_BURST=200 PORT=${port} node src/index.ts`,
       url: `http://127.0.0.1:${port}/healthz`,
       reuseExistingServer: !process.env.CI,
@@ -33,7 +37,7 @@ export default defineConfig({
     },
     {
       command:
-        `ENV_FILE=/dev/null ARAG_MOCK=1 ADMIN_TOKEN=e2e-admin-token DATA_DIR=./data/e2e-branded ` +
+        `ENV_FILE=/dev/null ARAG_MOCK=1 ADMIN_TOKEN=e2e-admin-token DATA_DIR=${brandedDataDir} ` +
         `LOG_LEVEL=warn RATE_LIMIT_RPS=100 RATE_LIMIT_BURST=200 PORT=${brandedPort} ` +
         `BRAND_PRODUCT_NAME="Contoso Live Assist" BRAND_TAGLINE="grounded call context" ` +
         `BRAND_POWERED_BY=0 BRAND_PRIMARY_COLOR="#6b2fa0" BRAND_FOOTER_TEXT="© Contoso" ` +

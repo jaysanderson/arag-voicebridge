@@ -43,8 +43,10 @@ stage of the call, a summary, key points drawn only from the knowledge base, sug
 ask, suggested answers to give, and — when something genuinely fits — recommended products. A
 **Sources used so far** row accumulates citation chips underneath as new material is drawn on across
 the call. The chip beside "Brief" reads **no session** → **listening** (with a live dot) → **ended**,
-and a small note under the title reads "showing the last good brief" if a refresh comes back empty —
-the brief is never blanked by a failed or throttled refresh.
+and a small note under the title reads "showing the last good brief" — with a **Retry now** button —
+if a refresh comes back empty; the brief is never blanked by a failed or throttled refresh, and
+retrying asks the server for one more refresh of the same conversation rather than fabricating new
+transcript to provoke one.
 
 Alongside the brief, the **Session** card shows the session id, how long ago it started, turns
 heard, brief refreshes, refreshes the server-side throttle skipped, and the latency of the last
