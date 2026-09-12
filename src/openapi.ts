@@ -268,9 +268,65 @@ const IntegrationStatus = {
     id: { type: "string", enum: ["arag", "elevenlabs", "livekit", "liveavatar"] },
     name: { type: "string" },
     configured: { type: "boolean" },
+    primary: {
+      type: "boolean",
+      description: "True for the integrations the out-of-the-box experience is built on",
+    },
     purpose: { type: "string", description: "What this integration unlocks in the product" },
     detail: { type: "string", description: "Non-secret endpoint or mode, never a credential" },
     setup: { type: "string", description: "The environment variables that switch it on" },
+    capabilities: {
+      type: "array",
+      description: "What this deployment actually uses the integration for",
+      items: {
+        type: "object",
+        required: ["name", "detail", "enabled"],
+        properties: {
+          name: { type: "string" },
+          detail: { type: "string" },
+          enabled: { type: "boolean" },
+        },
+      },
+    },
+    config: {
+      type: "object",
+      description: "Non-secret settings in force (models, endpoints, ids) — never a credential",
+      additionalProperties: { type: "string" },
+    },
+  },
+};
+
+const VoiceAgentTool = {
+  type: "object",
+  required: ["name", "method", "url", "timeoutMs", "bodySchema"],
+  properties: {
+    name: { type: "string" },
+    method: { type: "string" },
+    url: { type: "string" },
+    timeoutMs: { type: "integer", description: "Must exceed VOICE_TURN_TIMEOUT_MS" },
+    bodySchema: { type: "object", additionalProperties: true },
+  },
+};
+
+const VoiceAgentConfig = {
+  type: "object",
+  description:
+    "Everything needed to wire an ElevenLabs Conversational AI agent to this deployment: the " +
+    "custom server tool it calls, and the router prompt that keeps it from answering by itself.",
+  required: ["prospect", "display_name", "provider", "tool", "system_prompt"],
+  properties: {
+    prospect: { type: "string" },
+    display_name: { type: "string" },
+    provider: { type: "string", enum: ["elevenlabs"] },
+    agent_id: { type: ["string", "null"], description: "Non-secret agent id, null when unwired" },
+    ready: { type: "boolean", description: "An agent id is set and is not the example placeholder" },
+    configured: { type: "boolean", description: "This deployment holds an ElevenLabs key" },
+    voice_id: { type: ["string", "null"] },
+    greeting: { type: "string" },
+    handoff_msg: { type: "string" },
+    tool: { $ref: "#/components/schemas/VoiceAgentTool" },
+    system_prompt: { type: "string" },
+    docs_url: { type: "string" },
   },
 };
 
@@ -557,6 +613,8 @@ export const openapi = buildOpenApi({
     ListenSessionExport,
     KnowledgeStatus,
     IntegrationStatus,
+    VoiceAgentTool,
+    VoiceAgentConfig,
     LatencyMs,
     HistoryTurn,
     VoiceAnswerRequest,
@@ -909,6 +967,70 @@ export const openapi = buildOpenApi({
             description: "ElevenLabs is not configured",
             content: { "application/problem+json": { schema: { $ref: "#/components/schemas/Problem" } } },
           },
+          ...standardResponses,
+        },
+        security: publicSecurity,
+      },
+    },
+    "/api/v1/speech": {
+      post: {
+        operationId: "createSpeech",
+        tags: ["realtime"],
+        summary: "Speak a line of the brief aloud (ElevenLabs text-to-speech)",
+        description:
+          "The optional spoken brief: Live can read the grounded brief, or the single line the " +
+          "handler could say next, into their own ear. Nothing is ever injected into the call — this " +
+          "returns audio to the browser that asked for it, and it is off by default.\n\n" +
+          "Synthesis happens server-side so the ElevenLabs key never reaches a browser. Returns 503 " +
+          "when the deployment has no key, which is how the toggle knows to stay hidden.",
+        requestBody: jsonBody({
+          type: "object",
+          required: ["text"],
+          properties: {
+            text: { type: "string", minLength: 1, maxLength: 1200 },
+            voice_id: { type: "string", maxLength: 120, description: "Overrides the configured voice" },
+            prospect: {
+              type: "string",
+              pattern: prospectKeyPattern,
+              description: "Use this prospect's configured voice",
+            },
+          },
+          additionalProperties: false,
+        }),
+        responses: {
+          200: {
+            description: "The spoken line",
+            content: { "audio/mpeg": { schema: { type: "string", format: "binary" } } },
+          },
+          503: {
+            description: "ElevenLabs is not configured on this deployment; the toggle stays hidden",
+            content: { "application/problem+json": { schema: { $ref: "#/components/schemas/Problem" } } },
+          },
+          ...standardResponses,
+        },
+        security: publicSecurity,
+      },
+    },
+    "/api/v1/voice-agent": {
+      get: {
+        operationId: "getVoiceAgent",
+        tags: ["realtime"],
+        summary: "The ElevenLabs agent configuration for a prospect",
+        description:
+          "VoiceBridge is not a voice platform. The agent lives in ElevenLabs Conversational AI and " +
+          "calls `POST /api/v1/voice-answer` as a custom server tool, so every spoken answer still " +
+          "comes from the Knowledge Box. This returns exactly what has to be pasted into the " +
+          "ElevenLabs dashboard — tool definition and router prompt — derived from the registry.",
+        parameters: [
+          {
+            name: "prospect",
+            in: "query",
+            required: true,
+            schema: { type: "string", pattern: prospectKeyPattern },
+          },
+        ],
+        responses: {
+          200: jsonResponse({ $ref: "#/components/schemas/VoiceAgentConfig" }),
           ...standardResponses,
         },
         security: publicSecurity,

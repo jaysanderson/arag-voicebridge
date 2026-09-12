@@ -1,120 +1,128 @@
-import { expect, test } from "@playwright/test";
+import { expect, type Page, test } from "@playwright/test";
 
-test.describe("voice console", () => {
+/**
+ * The Live workspace — the product's hero. These journeys follow what a person actually does:
+ * arrive for the first time, start listening from a source, read the brief as it evolves, and
+ * end the session so it is kept.
+ */
+
+/**
+ * A fresh browser has never seen the product: the first-run guidance is part of the journey.
+ * Cleared after the first load rather than in an init script, so a later reload in the same test
+ * still sees whatever the page itself stored.
+ */
+async function firstRun(page: Page) {
+  await page.goto("/");
+  await page.evaluate(() => localStorage.clear());
+  await page.reload();
+}
+
+/** A returning user: onboarding dismissed, straight into the workspace. */
+async function returning(page: Page) {
+  await page.addInitScript(() => localStorage.setItem("vb.onboarded", "1"));
+  await page.goto("/");
+}
+
+test.describe("Live", () => {
+  test("first run offers the sample conversation and explains what the product will not do", async ({
+    page,
+  }) => {
+    await firstRun(page);
+    await expect(page.locator("#vbOnboard")).toBeVisible();
+    await expect(page.locator("#vbOnboard")).toContainText("The right answer, while you are still talking");
+    await expect(page.locator("#vbOnboard")).toContainText("It never speaks");
+    await expect(page.locator("#vbSampleOnboard")).toBeVisible();
+
+    await page.click("#vbDismissOnboard");
+    await expect(page.locator("#vbOnboard")).toHaveCount(0);
+    // The choice is remembered, so the banner does not greet a returning user again.
+    await page.reload();
+    await expect(page.locator("#vbOnboard")).toHaveCount(0);
+  });
+
+  test("the empty workspace teaches, and offers all three transcript sources", async ({ page }) => {
+    await returning(page);
+    await expect(page.locator("#vbBrief")).toContainText("The brief appears here");
+    await expect(page.locator("#vbMic")).toBeVisible();
+    await expect(page.locator("#vbWebhook")).toBeVisible();
+    await expect(page.locator("#vbTypeHere")).toBeVisible();
+    // No ElevenLabs key on this deployment: the microphone says why rather than failing later.
+    await expect(page.locator("#vbMic")).toBeDisabled();
+    await expect(page.locator("#vbMic")).toContainText("Needs an ElevenLabs key");
+  });
+
   test("builds a live brief from a typed conversation, with citations", async ({ page }) => {
-    await page.goto("/");
-    // Listen is the hero path and the default tab.
-    await expect(page.locator('#modeTabs [role="tab"][aria-selected="true"]')).toContainText("Listen");
-    await expect(page.locator('[data-panel="listen"]')).toBeVisible();
-
+    await returning(page);
     await page.fill(
-      "#typedTurn",
+      "#vbTyped",
       "caller: we run a machine shop and we print stainless steel brackets\n" +
         "caller: the sintering step with the PureSinter furnace is what we need to understand",
     );
-    await page.click("#sendTurn");
+    await page.click("#vbSend");
 
-    await expect(page.locator("#listenChip")).toHaveText("listening", { timeout: 20_000 });
-    await expect(page.locator("#briefBody")).not.toContainText("The brief appears here", { timeout: 20_000 });
-    await expect(page.locator("#briefSources .arag-cite").first()).toBeVisible({ timeout: 20_000 });
-    await expect(page.locator("#briefMeta")).toContainText("updated live");
-    await expect(page.locator("#statRefreshes")).not.toHaveText("—");
-    await expect(page.locator("#transcript")).toContainText("machine shop");
+    await expect(page.locator("#vbSessionChip")).toHaveText("listening", { timeout: 20_000 });
+    await expect(page.locator("#vbBrief .vb-brief")).toBeVisible({ timeout: 20_000 });
+    await expect(page.locator("#vbSources .arag-cite").first()).toBeVisible({ timeout: 20_000 });
+    await expect(page.locator("#vbBriefMeta")).toContainText("updated live");
+    await expect(page.locator("#vbStats")).toContainText("Brief refreshes");
+    await expect(page.locator("#vbTranscript")).toContainText("machine shop");
   });
 
-  test("plays the sample conversation and evolves the brief", async ({ page }) => {
-    await page.goto("/");
-    await page.click("#sampleBtn");
-    await expect(page.locator("#sampleBtn")).toHaveText("Stop sample");
-    await expect(page.locator("#briefSources .arag-cite").first()).toBeVisible({ timeout: 30_000 });
-    const version = page.locator("#briefMeta .version");
-    await expect(version).toBeVisible({ timeout: 30_000 });
-    await page.click("#sampleBtn");
-    await expect(page.locator("#sampleBtn")).toHaveText("Play sample conversation");
-    await page.click("#endBtn");
-    await expect(page.locator("#listenChip")).toHaveText("no session");
+  test("the telephony webhook option explains the integration without leaving the page", async ({ page }) => {
+    await returning(page);
+    await page.click("#vbWebhook");
+    const drawer = page.locator(".vb-drawer");
+    await expect(drawer).toBeVisible();
+    await expect(drawer).toContainText("/api/v1/listen/sessions");
+    await expect(drawer).toContainText("transcript");
+    await page.keyboard.press("Escape");
+    await expect(drawer).toHaveCount(0);
   });
 
-  test("throttling is reported back to the client", async ({ page }) => {
-    await page.goto("/");
-    await page.fill("#typedTurn", "caller: we print stainless steel brackets and manifolds every week");
-    await page.click("#sendTurn");
-    await expect(page.locator("#sendHint")).toContainText("brief refreshing", { timeout: 20_000 });
-    await page.fill("#typedTurn", "caller: and we also print a few titanium parts");
-    await page.click("#sendTurn");
-    await expect(page.locator("#sendHint")).toContainText(/queued|skipped/, { timeout: 20_000 });
+  test("plays the sample conversation, evolves the brief, then ends and keeps it", async ({ page }) => {
+    await returning(page);
+    await page.click("#vbSample");
+    await expect(page.locator("#vbSources .arag-cite").first()).toBeVisible({ timeout: 30_000 });
+    await expect(page.locator("#vbBriefMeta .version")).toBeVisible({ timeout: 30_000 });
+
+    await page.click("#vbEnd");
+    await expect(page.locator("#vbSessionChip")).toHaveText("ended", { timeout: 20_000 });
+    // Ending is not losing: the session is kept and reachable from Conversations.
+    await expect(page.locator("#vbSessionBody")).toContainText("Open in Conversations");
+    await expect(page.locator("#vbBrief .vb-brief")).toBeVisible();
   });
 
-  test("answers a grounded question end to end with citations and latency", async ({ page }) => {
-    await page.goto("/");
-    await page.click('[data-tab="ask"]');
-    await expect(page.locator("arag-shell .product")).toContainText("VoiceBridge");
-    await expect(page.locator("#prospect")).toHaveValue("progress");
-
-    await page.fill("#question", "Tell me about the Desktop Metal PureSinter furnace.");
-    await page.click("#ask");
-
-    const answer = page.locator(".arag-bubble.assistant").last();
-    await expect(answer).toContainText(/sinter/i, { timeout: 20_000 });
-    await expect(answer.locator(".arag-chip.ok")).toHaveText("answered");
-    await expect(answer.locator(".arag-cite").first()).toBeVisible();
-    await expect(page.locator("#factTotal")).not.toHaveText("—");
-    await expect(page.locator("#pipelineSteps li.ok").first()).toBeVisible();
+  test("the throttle tells the client what it did with an append", async ({ page }) => {
+    await returning(page);
+    await page.fill("#vbTyped", "caller: we print stainless steel brackets and manifolds every week");
+    await page.click("#vbSend");
+    await expect(page.locator("#vbSendHint")).toContainText("brief refreshing", { timeout: 20_000 });
+    await page.fill("#vbTyped", "caller: and we also print a few titanium parts");
+    await page.click("#vbSend");
+    await expect(page.locator("#vbSendHint")).toContainText(/queued|skipped/, { timeout: 20_000 });
   });
 
-  test("hands off an out-of-scope question instead of guessing", async ({ page }) => {
-    await page.goto("/");
-    await page.click('[data-tab="ask"]');
-    await page.fill("#question", "What is the capital of France?");
-    await page.click("#ask");
-    const answer = page.locator(".arag-bubble.assistant").last();
-    await expect(answer.locator(".arag-chip.warn")).toContainText("handoff", { timeout: 20_000 });
-    await expect(answer).toContainText("specialist");
+  test("the voice-agent call is a tool inside Live, not a destination", async ({ page }) => {
+    await returning(page);
+    await expect(page.locator("nav.vb-nav")).not.toContainText("Call");
+    await page.click("#vbCallTool");
+    await expect(page.locator(".vb-drawer")).toContainText("Start a voice call");
+    // No agent configured in the mock deployment: it says so instead of failing on click.
+    await expect(page.locator("#vbCallStatus")).toContainText("No voice agent is configured");
   });
 
-  test("suggested questions are wired to the pipeline", async ({ page }) => {
-    await page.goto("/");
-    await page.click('[data-tab="ask"]');
-    await page.locator("#suggestions button").first().click();
-    await expect(page.locator(".arag-bubble.assistant").last()).not.toContainText("Thinking…", {
-      timeout: 20_000,
-    });
-  });
-
-  test("runs the golden set and opens the demo gate", async ({ page }) => {
-    await page.goto("/");
-    await page.click("#runGolden");
-    await expect(page.locator("#goldenChip")).toHaveText("gate open", { timeout: 60_000 });
-    await expect(page.locator("#goldenSummary")).toContainText("10/10 passed");
-    await expect(page.locator("#goldenTable tbody tr")).toHaveCount(10);
-  });
-
-  test("shows live metrics in the footer", async ({ page }) => {
-    await page.goto("/");
-    await page.click('[data-tab="ask"]');
-    await page.fill("#question", "What is binder jetting?");
-    await page.click("#ask");
-    await expect(page.locator("#mBridge")).toHaveText("online", { timeout: 20_000 });
-    await expect(page.locator("#mTurns")).not.toHaveText("—");
-  });
-
-  test("switching tabs actually hides the other panels", async ({ page }) => {
-    await page.goto("/");
-    await expect(page.locator('[data-panel="listen"]')).toBeVisible();
-    await expect(page.locator('[data-panel="call"]')).toBeHidden();
-    await page.click('[data-tab="call"]');
-    await expect(page.locator('[data-panel="call"]')).toBeVisible();
-    await expect(page.locator('[data-panel="listen"]')).toBeHidden();
-    await expect(page.locator('[data-panel="golden"]')).toBeHidden();
-  });
-
-  test("call and listen tabs degrade politely without ElevenLabs credentials", async ({ page }) => {
-    await page.goto("/");
-    await page.click('[data-tab="call"]');
-    await expect(page.locator("#callBtn")).toBeVisible();
-    await page.click("#callBtn");
-    await expect(page.locator("#callStatus")).toContainText(/No ElevenLabs agent configured|error/i);
-    await page.click('[data-tab="listen"]');
-    await expect(page.locator("#listenBtn")).toBeVisible();
+  test("the workspace navigation reaches every section", async ({ page }) => {
+    await returning(page);
+    for (const [label, heading] of [
+      ["Conversations", "Conversations"],
+      ["Knowledge", "Knowledge"],
+      ["Prospects", "Prospects"],
+      ["Quality", "Quality"],
+      ["Settings", "Settings"],
+    ] as const) {
+      await page.click(`nav.vb-nav a:has-text("${label}")`);
+      await expect(page.locator("h1")).toHaveText(heading);
+      await expect(page.locator(`nav.vb-nav a[aria-current="page"]`)).toContainText(label);
+    }
   });
 });

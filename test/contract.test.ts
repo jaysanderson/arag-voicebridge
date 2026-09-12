@@ -147,6 +147,24 @@ describe("responses validate against the spec", () => {
     check("/api/v1/models", "get", 200, (await client.get("/api/v1/models?prospect=progress")).json);
     check("/api/v1/metrics", "get", 200, (await client.get("/api/v1/metrics")).json);
     check("/api/v1/integrations", "get", 200, (await client.get("/api/v1/integrations")).json);
+    check(
+      "/api/v1/voice-agent",
+      "get",
+      200,
+      (await client.get("/api/v1/voice-agent?prospect=progress")).json,
+    );
+  });
+
+  it("the ElevenLabs surfaces", async () => {
+    // Synthesis mints nothing but does spend an upstream credential, so it is never anonymous.
+    const anon = await client.post("/api/v1/speech", { text: "hello" });
+    expect(anon.status).toBe(401);
+    check("/api/v1/speech", "post", 401, anon.json);
+    // Identified, but this deployment holds no ElevenLabs key: 503, the shape the toggle reads.
+    const r = await client.post("/api/v1/speech", { text: "The Shop System suits mid-volume parts." }, admin);
+    expect(r.status).toBe(503);
+    check("/api/v1/speech", "post", 503, r.json);
+    check("/api/v1/voice-agent", "get", 404, (await client.get("/api/v1/voice-agent?prospect=nope")).json);
   });
 
   it("the workspace surfaces: turn log, knowledge and golden history", async () => {

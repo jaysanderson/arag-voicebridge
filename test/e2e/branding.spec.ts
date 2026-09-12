@@ -8,26 +8,28 @@ import { BRANDED_URL } from "../../playwright.config.ts";
 test.describe("white-label branding", () => {
   test("the console wears the partner's name and hides the Progress credit", async ({ page }) => {
     await page.goto(`${BRANDED_URL}/`);
-    await expect(page.locator("arag-shell [data-brand-name]")).toHaveText("Contoso Live Assist");
-    await expect(page.locator("arag-shell [data-brand-tagline]")).toHaveText("grounded call context");
-    await expect(page.locator("arag-shell [data-powered-by]")).toBeHidden();
-    await expect(page.locator("arag-shell [data-brand-footer]")).toHaveText("© Contoso");
+    await expect(page.locator("[data-brand-name]").first()).toHaveText("Contoso Live Assist");
+    await expect(page.locator("[data-brand-tagline]").first()).toHaveText("grounded call context");
+    await expect(page.locator("[data-powered-by]").first()).toBeHidden();
+    await expect(page.locator("[data-brand-footer]").first()).toHaveText("© Contoso");
     const primary = await page.evaluate(() =>
       getComputedStyle(document.documentElement).getPropertyValue("--arag-brand-600").trim(),
     );
     expect(primary).toBe("#6b2fa0");
   });
 
-  test("the admin panel is branded too", async ({ page }) => {
+  test("the operator views are branded too", async ({ page }) => {
     await page.goto(`${BRANDED_URL}/admin/`);
-    await expect(page.locator("arag-shell [data-brand-name]")).toHaveText("Contoso Live Assist");
-    await expect(page.locator("arag-shell [data-powered-by]")).toBeHidden();
+    await page.fill("#token", "e2e-admin-token");
+    await page.click("#signin");
+    await expect(page.locator("[data-brand-name]").first()).toHaveText("Contoso Live Assist");
+    await expect(page.locator("[data-powered-by]").first()).toBeHidden();
   });
 
   test("the unbranded deployment keeps the product name and the credit", async ({ page }) => {
     await page.goto("/");
-    await expect(page.locator("arag-shell [data-brand-name]")).toHaveText("VoiceBridge");
-    await expect(page.locator("arag-shell [data-powered-by]")).toBeVisible();
+    await expect(page.locator("[data-brand-name]").first()).toHaveText("VoiceBridge");
+    await expect(page.locator("[data-powered-by]").first()).toBeVisible();
   });
 
   test("branding is served as public API", async ({ request }) => {

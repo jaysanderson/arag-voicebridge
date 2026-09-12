@@ -58,6 +58,15 @@ export interface VoiceConfig {
   scribeBurst: number;
   elevenLabsApiKey: string;
   elevenLabsApiBase: string;
+  /** Scribe realtime model used for microphone transcription in Live. */
+  scribeModel: string;
+  /** Default ElevenLabs voice for the optional spoken brief (a prospect's voice_id wins). */
+  ttsVoiceId: string;
+  /** Low-latency text-to-speech model for the spoken brief. */
+  ttsModelId: string;
+  /** Per-IP budget for text-to-speech (it costs money per character). */
+  ttsRps: number;
+  ttsBurst: number;
   liveAvatarApiKey: string;
   liveAvatarApiBase: string;
   liveAvatarSecretsPath: string;
@@ -87,6 +96,11 @@ export function readVoiceEnv(src: Src = process.env): VoiceConfig {
     scribeBurst: num(src, "VOICE_SCRIBE_RATE_BURST", 3),
     elevenLabsApiKey: str(src, "ELEVENLABS_API_KEY"),
     elevenLabsApiBase: str(src, "ELEVENLABS_API_BASE", "https://api.elevenlabs.io"),
+    scribeModel: str(src, "ELEVENLABS_SCRIBE_MODEL", "scribe_v2_realtime"),
+    ttsVoiceId: str(src, "ELEVENLABS_TTS_VOICE_ID"),
+    ttsModelId: str(src, "ELEVENLABS_TTS_MODEL", "eleven_flash_v2_5"),
+    ttsRps: num(src, "VOICE_TTS_RATE_RPS", 1),
+    ttsBurst: num(src, "VOICE_TTS_RATE_BURST", 6),
     liveAvatarApiKey: str(src, "LIVEAVATAR_API_KEY"),
     liveAvatarApiBase: str(src, "LIVEAVATAR_API_BASE", "https://api.liveavatar.com/v1"),
     liveAvatarSecretsPath: str(src, "LIVEAVATAR_SECRETS_PATH", "/secrets"),
@@ -143,8 +157,15 @@ export function describeVoiceConfig(v: VoiceConfig): Record<string, unknown> {
     rateLimits: {
       brief: { rps: v.briefRps, burst: v.briefBurst },
       scribeToken: { rps: v.scribeRps, burst: v.scribeBurst },
+      speech: { rps: v.ttsRps, burst: v.ttsBurst },
     },
-    elevenLabs: { configured: Boolean(v.elevenLabsApiKey), apiBase: v.elevenLabsApiBase },
+    elevenLabs: {
+      configured: Boolean(v.elevenLabsApiKey),
+      apiBase: v.elevenLabsApiBase,
+      scribeModel: v.scribeModel,
+      ttsModel: v.ttsModelId,
+      ttsVoiceId: v.ttsVoiceId,
+    },
     liveAvatar: { configured: Boolean(v.liveAvatarApiKey), apiBase: v.liveAvatarApiBase },
     livekit: {
       configured: Boolean(v.livekitUrl && v.livekitApiKey && v.livekitApiSecret),

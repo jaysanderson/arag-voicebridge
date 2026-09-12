@@ -525,10 +525,61 @@ describe("the workspace surfaces", () => {
   it("lists which integrations are configured, and no credentials", async () => {
     const r = await client.get("/api/v1/integrations");
     expect(r.status).toBe(200);
-    const items = (r.json as { items: Array<{ id: string; configured: boolean }> }).items;
+    const items = (
+      r.json as {
+        items: Array<{
+          id: string;
+          configured: boolean;
+          primary?: boolean;
+          capabilities?: Array<{ name: string; enabled: boolean }>;
+          config?: Record<string, string>;
+        }>;
+      }
+    ).items;
     expect(items.find((i) => i.id === "arag")?.configured).toBe(true);
-    expect(items.find((i) => i.id === "elevenlabs")?.configured).toBe(false);
     expect(items.length).toBe(4);
+
+    // ElevenLabs is a primary integration: with a key it powers transcription, the voice agent
+    // and the spoken brief. Without one it reports itself honestly and the product degrades.
+    const el = items.find((i) => i.id === "elevenlabs");
+    expect(el?.primary).toBe(true);
+    expect(el?.configured).toBe(false);
+    expect((el?.capabilities ?? []).map((c) => c.name)).toEqual([
+      "Scribe v2 Realtime",
+      "Conversational AI agents",
+      "Text-to-speech",
+      "Voice library",
+    ]);
+    expect((el?.capabilities ?? []).every((c) => c.enabled === false)).toBe(true);
+    expect(el?.config?.scribeModel).toBe("scribe_v2_realtime");
+    // Non-secret settings only — never a key.
+    expect(JSON.stringify(items)).not.toContain("xi-");
+  });
+
+  it("hands out the ElevenLabs agent configuration a partner has to paste in", async () => {
+    const r = await client.get("/api/v1/voice-agent?prospect=progress");
+    expect(r.status).toBe(200);
+    const cfg = r.json as {
+      provider: string;
+      ready: boolean;
+      tool: { name: string; url: string; timeoutMs: number };
+      system_prompt: string;
+    };
+    expect(cfg.provider).toBe("elevenlabs");
+    expect(cfg.tool.name).toBe("voice_answer");
+    expect(cfg.tool.url).toContain("/api/v1/voice-answer");
+    expect(cfg.system_prompt).toContain("router, not the answer source");
+    expect((await client.get("/api/v1/voice-agent?prospect=nope")).status).toBe(404);
+    expect((await client.get("/api/v1/voice-agent")).status).toBe(400);
+  });
+
+  it("refuses to synthesise speech anonymously, and says so when ElevenLabs is absent", async () => {
+    expect((await client.post("/api/v1/speech", { text: "hello" })).status).toBe(401);
+    const r = await client.post("/api/v1/speech", { text: "hello" }, admin);
+    expect(r.status).toBe(503);
+    expect((r.json as { detail?: string }).detail).toContain("ELEVENLABS_API_KEY");
+    // The request contract is still enforced before anything upstream is attempted.
+    expect((await client.post("/api/v1/speech", {}, admin)).status).toBe(400);
   });
 });
 

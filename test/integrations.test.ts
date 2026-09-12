@@ -6,6 +6,13 @@
 import { readVoiceEnv } from "../src/config.ts";
 import { LiveAvatarClient, LiveAvatarError } from "../src/services/liveavatar.ts";
 import { mintScribeToken, ScribeError } from "../src/services/scribe.ts";
+import {
+  DEFAULT_TTS_MODEL,
+  DEFAULT_TTS_VOICE,
+  speakableFromBrief,
+  synthesizeSpeech,
+} from "../src/services/tts.ts";
+import { systemPrompt, voiceAgentConfig } from "../src/services/voiceAgent.ts";
 import { fetchVoices, VoicesError } from "../src/services/voices.ts";
 import { Logger } from "../vendor/arag-platform/src/index.ts";
 import { describe, expect, it } from "./_expect.ts";
@@ -175,5 +182,144 @@ describe("LiveAvatarClient", () => {
   it("fails when the API returns no secret id", async () => {
     const client = new LiveAvatarClient(configured, { log, fetch: reply(200, {}) });
     expect((await expectError(() => client.registerElevenLabsKey("k"))).message).toContain("no secret_id");
+  });
+});
+
+describe("synthesizeSpeech (the optional spoken brief)", () => {
+  it("synthesises with the server-side key and a low-latency model", async () => {
+    let seenUrl = "";
+    let seenBody: Record<string, unknown> = {};
+    let seenKey: string | undefined;
+    const audio = async (url: string, init?: RequestInit) => {
+      seenUrl = url;
+      seenKey = (init?.headers as Record<string, string>)["xi-api-key"];
+      seenBody = JSON.parse(String(init?.body));
+      return new Response(new Uint8Array([1, 2, 3]), {
+        status: 200,
+        headers: { "content-type": "audio/mpeg" },
+      });
+    };
+    const r = await synthesizeSpeech(configured, { text: "The Shop System suits mid-volume parts." }, audio);
+    expect(r.contentType).toBe("audio/mpeg");
+    expect(r.audio.byteLength).toBe(3);
+    expect(r.modelId).toBe(DEFAULT_TTS_MODEL);
+    expect(r.voiceId).toBe(DEFAULT_TTS_VOICE);
+    expect(seenKey).toBe("xi-test");
+    expect(seenUrl).toContain(`/v1/text-to-speech/${DEFAULT_TTS_VOICE}`);
+    expect(seenBody.model_id).toBe(DEFAULT_TTS_MODEL);
+    expect(seenBody.text).toContain("Shop System");
+  });
+
+  it("prefers an explicit voice, then the deployment's configured one", async () => {
+    const ok = async () => new Response(new Uint8Array([1]), { status: 200 });
+    const withVoice = readVoiceEnv({ ELEVENLABS_API_KEY: "xi-test", ELEVENLABS_TTS_VOICE_ID: "cfg-voice" });
+    expect((await synthesizeSpeech(withVoice, { text: "hi" }, ok)).voiceId).toBe("cfg-voice");
+    expect((await synthesizeSpeech(withVoice, { text: "hi", voiceId: "req" }, ok)).voiceId).toBe("req");
+  });
+
+  it("503s when ElevenLabs is not configured, so the toggle can stay hidden", async () => {
+    const e = await expectError(() => synthesizeSpeech(readVoiceEnv({}), { text: "hi" }));
+    expect(e.status).toBe(503);
+    expect(e.name).toBe("TtsError");
+  });
+
+  it("refuses to spend a synthesis on nothing", async () => {
+    const e = await expectError(() => synthesizeSpeech(configured, { text: "   " }));
+    expect(e.status).toBe(400);
+  });
+
+  it("surfaces the upstream status, and treats empty audio as an upstream failure", async () => {
+    const bad = await expectError(() =>
+      synthesizeSpeech(configured, { text: "hi" }, async () => new Response("nope", { status: 429 })),
+    );
+    expect(bad.status).toBe(429);
+    const empty = await expectError(() =>
+      synthesizeSpeech(
+        configured,
+        { text: "hi" },
+        async () => new Response(new Uint8Array([]), { status: 200 }),
+      ),
+    );
+    expect(empty.status).toBe(502);
+  });
+});
+
+describe("speakableFromBrief", () => {
+  const brief = {
+    topic: "Metal binder jetting",
+    their_goal: "Understand the post-print steps",
+    summary: "They machine manifolds today and want to print them.",
+    key_points: ["Sintering is a separate furnace"],
+    suggested_answers: ["The Shop System suits mid-volume metal parts."],
+    suggested_questions: ["What volumes per month?"],
+  };
+
+  it("speaks the one line the handler could say next", () => {
+    expect(speakableFromBrief(brief, "cue")).toBe("The Shop System suits mid-volume metal parts.");
+  });
+
+  it("falls back to a question when there is nothing to say yet", () => {
+    expect(speakableFromBrief({ suggested_questions: ["What volumes?"] }, "cue")).toBe("What volumes?");
+  });
+
+  it("reads the headline context in brief mode", () => {
+    const spoken = speakableFromBrief(brief, "brief");
+    expect(spoken).toContain("Metal binder jetting");
+    expect(spoken).toContain("machine manifolds");
+  });
+
+  it("clamps long output — a cue must fit the pause it fills", () => {
+    const long = speakableFromBrief({ suggested_answers: ["x".repeat(900)] }, "cue", 100);
+    expect(long.length).toBe(100);
+  });
+
+  it("returns nothing for an absent or empty brief", () => {
+    expect(speakableFromBrief(null)).toBe("");
+    expect(speakableFromBrief({})).toBe("");
+  });
+});
+
+describe("voiceAgentConfig (ElevenLabs Conversational AI)", () => {
+  const prospect = {
+    id: "acme",
+    createdAt: "2026-01-01T00:00:00.000Z",
+    updatedAt: "2026-01-01T00:00:00.000Z",
+    display_name: "Acme",
+    kb_id: "kb-1",
+    region: "europe-1",
+    locale: "en-GB",
+    greeting: "Hello",
+    handoff_msg: "One moment",
+  };
+
+  it("derives the custom server tool from the deployment and the registry", () => {
+    const cfg = voiceAgentConfig({ ...prospect, agent_id: "agent_123" }, configured, "https://bridge.test/");
+    expect(cfg.provider).toBe("elevenlabs");
+    expect(cfg.agent_id).toBe("agent_123");
+    expect(cfg.ready).toBe(true);
+    expect(cfg.configured).toBe(true);
+    expect(cfg.tool.name).toBe("voice_answer");
+    expect(cfg.tool.url).toBe("https://bridge.test/api/v1/voice-answer");
+    // The tool timeout must outlast the bridge's own turn budget, or the agent gets dead air.
+    expect(cfg.tool.timeoutMs).toBeGreaterThan(configured.turnTimeoutMs);
+    expect(JSON.stringify(cfg.tool.bodySchema)).toContain("acme");
+  });
+
+  it("tells the truth about an unwired or placeholder agent", () => {
+    expect(voiceAgentConfig(prospect, configured, "https://b.test").ready).toBe(false);
+    expect(voiceAgentConfig(prospect, configured, "https://b.test").agent_id).toBe(null);
+    const placeholder = voiceAgentConfig(
+      { ...prospect, agent_id: "REPLACE_ME_AGENT_ID" },
+      configured,
+      "https://b.test",
+    );
+    expect(placeholder.ready).toBe(false);
+  });
+
+  it("keeps the agent a router, not the answer source", () => {
+    const prompt = systemPrompt("Acme");
+    expect(prompt).toContain("router, not the answer source");
+    expect(prompt).toContain("voice_answer");
+    expect(prompt).toContain("VERBATIM");
   });
 });

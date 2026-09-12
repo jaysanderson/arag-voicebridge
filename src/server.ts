@@ -220,7 +220,7 @@ export async function createProduct(
     if (err instanceof ValidationFailed) return validationError(err.errors, "body");
     if (err instanceof ListenSessionNotFound) return notFound("Listen session");
     const e = err as { name?: string; message?: string; status?: number };
-    if (e?.name === "ScribeError" || e?.name === "VoicesError" || e?.name === "LiveAvatarError") {
+    if (["ScribeError", "VoicesError", "TtsError", "LiveAvatarError"].includes(e?.name ?? "")) {
       const status = e.status && e.status >= 400 && e.status <= 599 ? e.status : 502;
       return new HttpError(
         status === 503 ? 503 : status,
@@ -262,45 +262,109 @@ export async function createProduct(
   app.get("/api/v1/branding", () => voice.branding, { operationId: "getBranding", noRateLimit: true });
 
   // Which optional integrations are switched on. Booleans and non-secret detail only — this tells
-  // the Settings view why the microphone or the avatar pane is unavailable, without leaking a key.
+  // the Settings view why the microphone, the spoken brief or the avatar pane is unavailable,
+  // without leaking a key. ElevenLabs is marked primary: with a key set it powers the default
+  // out-of-the-box experience (Scribe transcription, the voice agent, the spoken brief), and
+  // without one the product degrades to the sample and typed conversation.
   app.get(
     "/api/v1/integrations",
-    () => ({
-      items: [
-        {
-          id: "arag",
-          name: "Progress Agentic RAG",
-          configured: true,
-          purpose: "Retrieval and generation behind every brief and answer",
-          detail: env.arag.mock ? "mock Knowledge Box (no credentials)" : env.arag.baseUrl,
-          setup: "ARAG_KB_ID, ARAG_API_KEY, ARAG_REGION",
-        },
-        {
-          id: "elevenlabs",
-          name: "ElevenLabs",
-          configured: scribeEnabled(voice),
-          purpose: "Microphone transcription in Live, and the voice-agent call tool",
-          detail: voice.elevenLabsApiBase,
-          setup: "ELEVENLABS_API_KEY",
-        },
-        {
-          id: "livekit",
-          name: "LiveKit",
-          configured: Boolean(voice.livekitUrl && voice.livekitApiKey && voice.livekitApiSecret),
-          purpose: "Media transport for the video avatar pane",
-          detail: voice.livekitUrl || undefined,
-          setup: "LIVEKIT_URL, LIVEKIT_API_KEY, LIVEKIT_API_SECRET",
-        },
-        {
-          id: "liveavatar",
-          name: "LiveAvatar",
-          configured: avatarEnabled(voice),
-          purpose: "The video avatar for the call tool",
-          detail: voice.liveAvatarApiBase,
-          setup: "LIVEAVATAR_API_KEY (plus LiveKit and ElevenLabs)",
-        },
-      ],
-    }),
+    () => {
+      const el = scribeEnabled(voice);
+      return {
+        items: [
+          {
+            id: "arag",
+            name: "Progress Agentic RAG",
+            configured: true,
+            primary: true,
+            purpose: "Retrieval and generation behind every brief and answer",
+            detail: env.arag.mock ? "mock Knowledge Box (no credentials)" : env.arag.baseUrl,
+            setup: "ARAG_KB_ID, ARAG_API_KEY, ARAG_REGION",
+            capabilities: [
+              { name: "Grounded brief", detail: "answer_json_schema structured output", enabled: true },
+              {
+                name: "Grounded answers",
+                detail: "/ask with citations and a handoff sentinel",
+                enabled: true,
+              },
+            ],
+            config: { endpoint: env.arag.mock ? "in-process mock" : env.arag.baseUrl },
+          },
+          {
+            id: "elevenlabs",
+            name: "ElevenLabs",
+            configured: el,
+            primary: true,
+            purpose: "Live transcription, the voice agent, and the optional spoken brief",
+            detail: voice.elevenLabsApiBase,
+            setup: "ELEVENLABS_API_KEY",
+            capabilities: [
+              {
+                name: "Scribe v2 Realtime",
+                detail: "Default microphone transcription in Live, over a single-use token",
+                enabled: el,
+              },
+              {
+                name: "Conversational AI agents",
+                detail: "Default voice channel; calls /api/v1/voice-answer as a custom server tool",
+                enabled: el,
+              },
+              {
+                name: "Text-to-speech",
+                detail: "Optional spoken brief and whisper cue, off by default",
+                enabled: el,
+              },
+              {
+                name: "Voice library",
+                detail: "Voice selection for the agent and the spoken brief",
+                enabled: el,
+              },
+            ],
+            config: {
+              apiBase: voice.elevenLabsApiBase,
+              scribeModel: voice.scribeModel,
+              ttsModel: voice.ttsModelId,
+              ttsVoiceId: voice.ttsVoiceId || "per-prospect or library default",
+              defaultAgentId: voice.defaultAgentId || "set per prospect",
+            },
+          },
+          {
+            id: "livekit",
+            name: "LiveKit",
+            configured: Boolean(voice.livekitUrl && voice.livekitApiKey && voice.livekitApiSecret),
+            primary: false,
+            purpose: "Media transport for the video avatar pane",
+            detail: voice.livekitUrl || undefined,
+            setup: "LIVEKIT_URL, LIVEKIT_API_KEY, LIVEKIT_API_SECRET",
+            capabilities: [
+              {
+                name: "Room tokens",
+                detail: "Minted server-side per avatar session",
+                enabled: Boolean(voice.livekitUrl),
+              },
+            ],
+            config: { url: voice.livekitUrl || "not set" },
+          },
+          {
+            id: "liveavatar",
+            name: "LiveAvatar",
+            configured: avatarEnabled(voice),
+            primary: false,
+            purpose: "The video avatar for the voice agent",
+            detail: voice.liveAvatarApiBase,
+            setup: "LIVEAVATAR_API_KEY (plus LiveKit and ElevenLabs)",
+            capabilities: [
+              {
+                name: "Lite sessions",
+                detail: "Driven by the same ElevenLabs agent",
+                enabled: avatarEnabled(voice),
+              },
+            ],
+            config: { apiBase: voice.liveAvatarApiBase },
+          },
+        ],
+      };
+    },
     { auth: "api", operationId: "listIntegrations" },
   );
 

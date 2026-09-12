@@ -1,332 +1,619 @@
-// VoiceBridge admin panel — consumes /api/v1/admin/* only; auth via an HttpOnly cookie.
-import { api, esc, toast } from "/ui/arag-ui.js";
+// Operator views — the same shell as the product, with the operator's own navigation. Everything
+// here needs the deployment's admin token, exchanged once for an HttpOnly cookie.
+import { renderBrief } from "/app/brief.js";
+import {
+  ago,
+  api,
+  applyBrand,
+  chip,
+  confirmAction,
+  duration,
+  empty,
+  errorState,
+  esc,
+  fmtMs,
+  icon,
+  isOperator,
+  mountShell,
+  openDrawer,
+  signInOperator,
+  skeletonRows,
+  stat,
+  state,
+  toast,
+} from "/app/shell.js";
 
 const $ = (s) => document.querySelector(s);
-const chip = (kind, text) => `<span class="arag-chip ${kind}">${esc(text)}</span>`;
-let editingKey = null;
+let host;
+let prospects = [];
 
-const BLANK = {
-  display_name: "Acme Corp",
-  kb_id: "00000000-0000-0000-0000-000000000000",
-  region: "aws-us-east-2-1",
-  locale: "en-US",
-  greeting: "Hi, thanks for calling. What can I help you with?",
-  handoff_msg: "Let me hand you to a specialist who can help with that.",
-  reranker: "noop",
-  golden_questions: [{ q: "What do you sell?", expect: "answer" }],
+const VIEWS = {
+  overview: renderOverview,
+  connection: renderConnection,
+  sessions: renderSessions,
+  turns: renderTurns,
+  evals: renderEvals,
+  jobs: renderJobs,
+  logs: renderLogs,
+  branding: renderBranding,
+  security: renderSecurity,
 };
 
-// ── auth ─────────────────────────────────────────────────────────────────────
-async function check() {
-  try {
-    await api("/api/v1/admin/health");
-    show(true);
-  } catch (e) {
-    show(false);
-    if (e.status === 403) {
-      $("#loginError").hidden = false;
-      $("#loginError").textContent = e.message;
+const TITLES = {
+  overview: "Overview",
+  connection: "Connection",
+  sessions: "Listen sessions",
+  turns: "Turn log",
+  evals: "Golden runs",
+  jobs: "Jobs",
+  logs: "Logs",
+  branding: "Branding",
+  security: "Security",
+};
+
+// ── sign-in ──────────────────────────────────────────────────────────────────
+
+function signInView() {
+  document.body.className = "arag vb-body";
+  document.body.innerHTML = `
+    <div style="min-height:100vh;display:grid;place-items:center;background:var(--arag-ink-950);padding:24px">
+      <div class="vb-card" style="width:min(420px,100%)">
+        <div class="vb-card-body">
+          <img src="/brand/arag-logo.svg" alt="Progress Agentic RAG" style="height:15px;margin-bottom:20px" />
+          <h1 style="font-size:1.15rem;margin:0 0 6px">Operator sign-in</h1>
+          <p class="muted small">Enter the <code>ADMIN_TOKEN</code> configured for this deployment. It is
+            exchanged for an HttpOnly cookie and never stored in the page.</p>
+          <div class="arag-row" style="margin-top:16px;flex-wrap:nowrap">
+            <input id="token" class="arag-input" type="password" placeholder="Admin token" autocomplete="current-password" />
+            <button id="signin" class="arag-btn" style="flex:none">Sign in</button>
+          </div>
+          <p id="loginError" class="arag-alert error" hidden style="margin-top:12px"></p>
+          <p class="muted small" style="margin-top:18px"><a href="/">Back to the product</a></p>
+        </div>
+      </div>
+    </div>`;
+  const attempt = async () => {
+    const err = $("#loginError");
+    err.hidden = true;
+    try {
+      await signInOperator($("#token").value);
+      location.reload();
+    } catch (e) {
+      err.hidden = false;
+      err.textContent = e.status === 401 ? "That token was not accepted." : e.message;
     }
+  };
+  $("#signin").addEventListener("click", attempt);
+  $("#token").addEventListener("keydown", (e) => e.key === "Enter" && attempt());
+  $("#token").focus();
+}
+
+// ── views ────────────────────────────────────────────────────────────────────
+
+async function renderOverview(el) {
+  el.innerHTML = `<div class="vb-stats" id="ovStats">${Array.from(
+    { length: 6 },
+    () => '<div class="vb-stat"><span class="vb-skeleton" style="width:70%"></span></div>',
+  ).join("")}</div>
+    <div class="vb-split" style="margin-top:20px">
+      <section class="vb-card"><header><h2>Jobs</h2></header><div class="vb-card-body" id="ovJobs"></div></section>
+      <section class="vb-card"><header><h2>Stores</h2></header><div class="vb-card-body" id="ovStores"></div></section>
+    </div>`;
+  try {
+    const [usage, config] = await Promise.all([api("/api/v1/admin/usage"), api("/api/v1/admin/config")]);
+    $("#ovStats").innerHTML = [
+      stat("Uptime", duration(usage.uptimeSec)),
+      stat("Requests", usage.requests),
+      stat("Knowledge Box calls", usage.aragCalls, `${usage.aragErrors} errors`),
+      stat(
+        "Mean upstream",
+        usage.aragCalls ? fmtMs(usage.aragMs / usage.aragCalls) : "—",
+        "per Knowledge Box call",
+      ),
+      stat("Listen sessions", usage.listenSessions),
+      stat("Turns recorded", usage.turns),
+    ].join("");
+    $("#ovJobs").innerHTML = `<dl class="vb-kv">
+        <dt>Queued</dt><dd>${usage.jobs.queued}</dd>
+        <dt>Running</dt><dd>${usage.jobs.running}</dd>
+        <dt>Succeeded</dt><dd>${usage.jobs.succeeded}</dd>
+        <dt>Failed</dt><dd>${usage.jobs.failed}</dd>
+      </dl>`;
+    $("#ovStores").innerHTML = `<dl class="vb-kv">
+        <dt>Service</dt><dd>${esc(config.version)}</dd>
+        <dt>Platform</dt><dd>${esc(config.platformVersion)}</dd>
+        ${Object.entries(config.stores ?? {})
+          .map(
+            ([k, v]) =>
+              `<dt>${esc(k)}</dt><dd>${esc(String(v?.count ?? 0))} record${v?.count === 1 ? "" : "s"}` +
+              `${v?.file ? ` <span class="vb-sub vb-mono">${esc(v.file)}</span>` : ""}</dd>`,
+          )
+          .join("")}
+      </dl>`;
+  } catch (e) {
+    el.innerHTML = errorState(e.message);
   }
 }
 
-function show(authed) {
-  $("#login").hidden = authed;
-  $("#panel").hidden = !authed;
-  if (authed) {
-    // The JSON viewers auto-load on page load, i.e. before sign-in — refresh them now that the
-    // admin cookie exists.
-    for (const el of document.querySelectorAll("arag-json[src]")) el.load();
-    document.querySelector("#log")?.load();
-    loadHealth();
-    loadProspects();
-    loadTurns();
-    loadEvals();
-    loadListen();
-  }
-}
-
-$("#signin").addEventListener("click", async () => {
+async function renderConnection(el) {
+  el.innerHTML = `
+    <div class="vb-table-wrap">
+      <div class="vb-scroll">
+        <table class="vb-table" id="cnTable">
+          <thead><tr><th>Prospect</th><th>Knowledge Box</th><th>Endpoint</th><th>Model</th><th>Status</th><th class="num">ms</th></tr></thead>
+          <tbody>${skeletonRows(3, 6)}</tbody>
+        </table>
+      </div>
+    </div>
+    <section class="vb-card" style="margin-top:20px">
+      <header><h2>Effective configuration</h2><span class="spacer"></span>${chip("secrets redacted", "neutral")}</header>
+      <div class="vb-card-body"><arag-json src="/api/v1/admin/config"></arag-json></div>
+    </section>`;
   try {
-    await api("/api/v1/admin/login", { method: "POST", json: { token: $("#token").value } });
-    $("#token").value = "";
-    $("#loginError").hidden = true;
-    toast("Signed in");
-    check();
-  } catch (e) {
-    $("#loginError").hidden = false;
-    $("#loginError").textContent = e.message;
-  }
-});
-$("#token").addEventListener("keydown", (e) => e.key === "Enter" && $("#signin").click());
-
-document.querySelectorAll('[role="tab"]').forEach((t) =>
-  t.addEventListener("click", () => {
-    document
-      .querySelectorAll('[role="tab"]')
-      .forEach((x) => x.setAttribute("aria-selected", String(x === t)));
-    for (const p of document.querySelectorAll("[data-panel]")) {
-      p.hidden = p.dataset.panel !== t.dataset.tab;
-    }
-  }),
-);
-
-// ── health ───────────────────────────────────────────────────────────────────
-async function loadHealth() {
-  const body = $("#healthTable").querySelector("tbody");
-  body.innerHTML = '<tr><td colspan="4" class="muted">testing…</td></tr>';
-  try {
-    const d = await api("/api/v1/admin/health");
-    body.innerHTML = d.prospects
+    const h = await api("/api/v1/admin/health");
+    $("#cnTable tbody").innerHTML = h.prospects
       .map(
-        (p) =>
-          `<tr><td>${esc(p.display_name)} <span class="subtle">${esc(p.key)}</span></td>` +
-          `<td class="mono small">${esc((p.kbId ?? "").slice(0, 8))}… ${d.mock ? chip("warn", "mock") : ""}</td>` +
-          `<td>${p.ok ? chip("ok", `connected · ${p.resources ?? 0} resources`) : chip("danger", p.error ?? "unreachable")}</td>` +
-          `<td class="num">${p.ms ?? ""}</td></tr>`,
+        (p) => `<tr>
+          <td><span class="vb-primary">${esc(p.display_name)}</span><div class="vb-sub vb-mono">${esc(p.key)}</div></td>
+          <td class="vb-mono">${esc(p.kbId ?? "—")}</td>
+          <td class="vb-mono vb-sub">${esc(p.baseUrl ?? "—")}</td>
+          <td class="vb-sub">${esc(p.generativeModel ?? "KB default")}</td>
+          <td>${
+            p.ok
+              ? '<span class="arag-chip ok">connected</span>'
+              : `<span class="arag-chip danger">${esc(p.error ?? "unreachable")}</span>`
+          }</td>
+          <td class="num">${Math.round(p.ms ?? 0)}</td>
+        </tr>`,
       )
       .join("");
-    $("#usage").load();
   } catch (e) {
-    body.innerHTML = `<tr><td colspan="4">${chip("danger", e.message)}</td></tr>`;
-  }
-}
-$("#reloadHealth").addEventListener("click", loadHealth);
-
-// ── prospects ────────────────────────────────────────────────────────────────
-async function loadProspects() {
-  const { items } = await api("/api/v1/admin/prospects");
-  $("#prospectTable").querySelector("tbody").innerHTML = items
-    .map(
-      (p) =>
-        `<tr data-key="${esc(p.id)}"><td class="mono small">${esc(p.id)}</td><td>${esc(p.display_name)}</td>` +
-        `<td class="small">${esc(p.region)}</td><td class="small">${esc(p.ask_config ?? "—")}</td>` +
-        `<td><button class="arag-btn ghost sm edit">Edit</button></td></tr>`,
-    )
-    .join("");
-  for (const b of $("#prospectTable").querySelectorAll(".edit")) {
-    b.addEventListener("click", () => edit(b.closest("tr").dataset.key, items));
-  }
-  const sel = $("#turnProspect");
-  sel.innerHTML =
-    '<option value="">all prospects</option>' + items.map((p) => `<option>${esc(p.id)}</option>`).join("");
-}
-
-function edit(key, items) {
-  const p = items.find((x) => x.id === key);
-  if (!p) return;
-  editingKey = key;
-  const { id: _id, createdAt: _createdAt, updatedAt, ...config } = p;
-  $("#pKey").value = key;
-  $("#pKey").disabled = true;
-  $("#pJson").value = JSON.stringify(config, null, 2);
-  $("#editorTitle").textContent = `Edit ${key}`;
-  $("#editorState").textContent = `updated ${String(updatedAt ?? "")
-    .slice(0, 19)
-    .replace("T", " ")}`;
-  $("#editorError").hidden = true;
-  $("#provisionResult").data = undefined;
-}
-
-$("#newProspect").addEventListener("click", () => {
-  editingKey = null;
-  $("#pKey").value = "";
-  $("#pKey").disabled = false;
-  $("#pJson").value = JSON.stringify(BLANK, null, 2);
-  $("#editorTitle").textContent = "New prospect";
-  $("#editorState").textContent = "";
-  $("#editorError").hidden = true;
-});
-
-function parseConfig() {
-  try {
-    return JSON.parse($("#pJson").value);
-  } catch (e) {
-    throw new Error(`Configuration is not valid JSON: ${e.message}`);
+    $("#cnTable tbody").innerHTML = `<tr><td colspan="6">${errorState(e.message)}</td></tr>`;
   }
 }
 
-function fail(e) {
-  $("#editorError").hidden = false;
-  $("#editorError").textContent = e.problem?.errors
-    ? `${e.message} — ${e.problem.errors.map((x) => `${x.path} ${x.message}`).join("; ")}`
-    : e.message;
-}
-
-$("#saveProspect").addEventListener("click", async () => {
-  try {
-    const config = parseConfig();
-    if (editingKey) {
-      await api(`/api/v1/admin/prospects/${encodeURIComponent(editingKey)}`, { method: "PUT", json: config });
-      toast("Prospect saved");
-    } else {
-      const key = $("#pKey").value.trim();
-      await api("/api/v1/admin/prospects", { method: "POST", json: { key, config } });
-      editingKey = key;
-      $("#pKey").disabled = true;
-      toast("Prospect created");
+async function renderSessions(el) {
+  el.innerHTML = `
+    <div class="vb-filters">
+      <select id="seProspect" class="arag-select" aria-label="Prospect">
+        <option value="">All prospects</option>
+        ${prospects.map((p) => `<option value="${esc(p.id)}">${esc(p.display_name)}</option>`).join("")}
+      </select>
+      <select id="seStatus" class="arag-select" aria-label="Status">
+        <option value="">Any status</option><option value="live">Live</option><option value="ended">Ended</option>
+      </select>
+      <span class="vb-result-count" id="seCount"></span>
+    </div>
+    <div class="vb-table-wrap">
+      <div class="vb-scroll">
+        <table class="vb-table" id="seTable">
+          <thead><tr><th>Started</th><th>Prospect</th><th>Status</th><th class="num">chunks</th>
+            <th class="num">refreshes</th><th class="num">skipped</th><th class="num">failures</th><th class="num">p50</th></tr></thead>
+          <tbody>${skeletonRows(5, 8)}</tbody>
+        </table>
+      </div>
+    </div>`;
+  const load = async () => {
+    const qs = new URLSearchParams({ limit: "50" });
+    if ($("#seProspect").value) qs.set("prospect", $("#seProspect").value);
+    if ($("#seStatus").value) qs.set("status", $("#seStatus").value);
+    try {
+      const page = await api(`/api/v1/listen/sessions?${qs}`);
+      $("#seCount").textContent = `${page.total} session${page.total === 1 ? "" : "s"}`;
+      $("#seTable tbody").innerHTML = page.items.length
+        ? page.items
+            .map(
+              (s) => `<tr tabindex="0" data-session="${esc(s.id)}">
+                <td>${ago(s.createdAt)}<div class="vb-sub vb-mono">${esc(s.id.slice(0, 8))}</div></td>
+                <td>${esc(s.prospect)}</td>
+                <td>${s.status === "live" ? '<span class="arag-chip ok">live</span>' : '<span class="arag-chip neutral">ended</span>'}</td>
+                <td class="num">${s.stats.chunks}</td>
+                <td class="num">${s.stats.refreshes}</td>
+                <td class="num">${s.stats.skipped}</td>
+                <td class="num">${s.stats.failures}</td>
+                <td class="num">${s.stats.p50LatencyMs || "—"}</td>
+              </tr>`,
+            )
+            .join("")
+        : `<tr><td colspan="8">${empty({ icon: "conversations", title: "No sessions recorded" })}</td></tr>`;
+    } catch (e) {
+      $("#seTable tbody").innerHTML = `<tr><td colspan="8">${errorState(e.message)}</td></tr>`;
     }
-    $("#editorError").hidden = true;
-    loadProspects();
-  } catch (e) {
-    fail(e);
-  }
-});
+  };
+  $("#seProspect").addEventListener("change", load);
+  $("#seStatus").addEventListener("change", load);
+  el.addEventListener("click", (e) => {
+    const tr = e.target.closest("tr[data-session]");
+    if (tr) sessionDrawer(tr.dataset.session);
+  });
+  await load();
+}
 
-$("#deleteProspect").addEventListener("click", async () => {
-  if (!editingKey) return;
+async function sessionDrawer(id) {
+  openDrawer({
+    title: "Listen session",
+    sub: `<span class="vb-mono">${esc(id)}</span>`,
+    actions: `<a class="arag-btn secondary sm" href="/api/v1/listen/sessions/${encodeURIComponent(id)}/export?format=markdown">Export</a>`,
+    body: '<div class="vb-skeleton" style="height:220px"></div>',
+  });
   try {
-    await api(`/api/v1/admin/prospects/${encodeURIComponent(editingKey)}`, { method: "DELETE" });
-    toast(`Deleted ${editingKey}`);
-    editingKey = null;
-    $("#pJson").value = "";
-    $("#pKey").value = "";
-    $("#pKey").disabled = false;
-    loadProspects();
+    const s = await api(`/api/v1/listen/sessions/${encodeURIComponent(id)}/export`);
+    document.querySelector(".vb-drawer-body").innerHTML = `
+      <div class="vb-stats" style="margin-bottom:18px">
+        ${stat("Prospect", s.prospect)}
+        ${stat("Duration", duration(s.durationSec))}
+        ${stat("Brief versions", s.briefVersion)}
+        ${stat("Refreshes", s.stats.refreshes, `${s.stats.skipped} throttled · ${s.stats.failures} failed`)}
+        ${stat("p50 refresh", s.stats.p50LatencyMs ? fmtMs(s.stats.p50LatencyMs) : "—")}
+      </div>
+      <h3>Brief history</h3>
+      <p class="muted small">Every refresh that produced a usable brief, newest first — how the brief
+        evolved through the call, and how long each refresh took.</p>
+      ${
+        s.briefHistory.length
+          ? s.briefHistory
+              .slice()
+              .reverse()
+              .map(
+                (h) => `<div class="vb-card" style="margin-bottom:10px">
+                  <header><h3>v${h.version}</h3><span class="spacer"></span>
+                    <span class="muted small">${ago(h.at)}</span>
+                    <span class="arag-chip neutral">${esc(fmtMs(h.latencyMs))}</span></header>
+                  <div class="vb-card-body"><div class="vb-brief">${renderBrief(h.brief)}</div></div>
+                </div>`,
+              )
+              .join("")
+          : '<p class="muted small">No refresh produced a usable brief.</p>'
+      }`;
   } catch (e) {
-    fail(e);
+    document.querySelector(".vb-drawer-body").innerHTML = errorState(e.message);
   }
-});
+}
 
-$("#provisionProspect").addEventListener("click", async () => {
-  if (!editingKey) {
-    fail(new Error("Save the prospect first, then provision its stored search configuration."));
-    return;
-  }
+async function renderTurns(el) {
+  el.innerHTML = `
+    <div class="vb-filters">
+      <select id="tuProspect" class="arag-select" aria-label="Prospect">
+        <option value="">All prospects</option>
+        ${prospects.map((p) => `<option value="${esc(p.id)}">${esc(p.display_name)}</option>`).join("")}
+      </select>
+      <select id="tuOutcome" class="arag-select" aria-label="Outcome">
+        <option value="">Every turn</option><option value="answered">Answered</option>
+        <option value="handoff">Handed off</option><option value="guard">Guard trips</option>
+      </select>
+      <span class="vb-result-count" id="tuCount"></span>
+    </div>
+    <p class="muted small">The question text is stored only for turns that passed the input guard — an
+      unsafe or injected prompt is recorded as a reason, never as text.</p>
+    <div class="vb-table-wrap">
+      <div class="vb-scroll">
+        <table class="vb-table" id="tuTable">
+          <thead><tr><th>When</th><th>Prospect</th><th>Question</th><th>Result</th>
+            <th class="num">total</th><th class="num">1st token</th><th class="num">cites</th></tr></thead>
+          <tbody>${skeletonRows(8, 7)}</tbody>
+        </table>
+      </div>
+    </div>`;
+  const load = async () => {
+    const qs = new URLSearchParams({ limit: "200" });
+    if ($("#tuProspect").value) qs.set("prospect", $("#tuProspect").value);
+    if ($("#tuOutcome").value) qs.set("outcome", $("#tuOutcome").value);
+    try {
+      const page = await api(`/api/v1/turns?${qs}`);
+      $("#tuCount").textContent = `${page.total} turn${page.total === 1 ? "" : "s"}`;
+      $("#tuTable tbody").innerHTML = page.items.length
+        ? page.items
+            .map(
+              (t) => `<tr>
+                <td>${ago(t.createdAt)}<div class="vb-sub">${esc(t.source)}</div></td>
+                <td>${esc(t.prospect)}</td>
+                <td><span class="vb-truncate" style="max-width:44ch">${
+                  t.question ? esc(t.question) : '<span class="muted">redacted (guard trip)</span>'
+                }</span></td>
+                <td>${
+                  t.guard_trip
+                    ? `<span class="arag-chip danger">guard · ${esc(t.reason ?? "")}</span>`
+                    : t.handoff
+                      ? `<span class="arag-chip warn">handoff · ${esc(t.reason ?? "")}</span>`
+                      : '<span class="arag-chip ok">answered</span>'
+                }</td>
+                <td class="num">${t.total}</td><td class="num">${t.first_token}</td><td class="num">${t.citations}</td>
+              </tr>`,
+            )
+            .join("")
+        : `<tr><td colspan="7">${empty({ icon: "logs", title: "No turns recorded yet" })}</td></tr>`;
+    } catch (e) {
+      $("#tuTable tbody").innerHTML = `<tr><td colspan="7">${errorState(e.message)}</td></tr>`;
+    }
+  };
+  $("#tuProspect").addEventListener("change", load);
+  $("#tuOutcome").addEventListener("change", load);
+  await load();
+}
+
+async function renderEvals(el) {
+  el.innerHTML = `
+    <div class="vb-split">
+      <section class="vb-card">
+        <header><h2>Run history</h2></header>
+        <div class="vb-card-body" style="padding:0"><div class="vb-scroll">
+          <table class="vb-table" id="evTable">
+            <thead><tr><th>When</th><th>Prospect</th><th>Result</th><th class="num">p50</th></tr></thead>
+            <tbody>${skeletonRows(4, 4)}</tbody>
+          </table>
+        </div></div>
+      </section>
+      <section class="vb-card">
+        <header><h2>Detail</h2><span class="spacer"></span><span id="evMeta" class="muted small"></span></header>
+        <div class="vb-card-body" id="evDetail">${empty({ icon: "check", title: "Select a run" })}</div>
+      </section>
+    </div>`;
   try {
-    const r = await api(`/api/v1/admin/prospects/${encodeURIComponent(editingKey)}/provision`, {
-      method: "POST",
-      json: {},
+    const { items } = await api("/api/v1/golden-evals?limit=25");
+    $("#evTable tbody").innerHTML = items.length
+      ? items
+          .map(
+            (r) => `<tr tabindex="0" data-eval="${esc(r.id)}">
+              <td>${ago(r.createdAt)}</td><td>${esc(r.display_name ?? r.prospect)}</td>
+              <td>${r.ok ? '<span class="arag-chip ok">all passed</span>' : `<span class="arag-chip danger">${r.failed} failed</span>`}
+                <span class="vb-sub">${r.passed}/${r.total}</span></td>
+              <td class="num">${r.latency_ms?.p50 ?? "—"}</td>
+            </tr>`,
+          )
+          .join("")
+      : `<tr><td colspan="4">${empty({ icon: "check", title: "No golden run has been recorded" })}</td></tr>`;
+  } catch (e) {
+    $("#evTable tbody").innerHTML = `<tr><td colspan="4">${errorState(e.message)}</td></tr>`;
+  }
+  el.addEventListener("click", async (e) => {
+    const tr = e.target.closest("tr[data-eval]");
+    if (!tr) return;
+    $("#evDetail").innerHTML = '<div class="vb-skeleton" style="height:180px"></div>';
+    try {
+      const r = await api(`/api/v1/golden-evals/${encodeURIComponent(tr.dataset.eval)}`);
+      $("#evMeta").textContent = `${r.passed}/${r.total} passed · p50 ${r.latency_ms.p50} ms`;
+      $("#evDetail").innerHTML = `<div class="vb-scroll"><table class="vb-table">
+          <thead><tr><th>Question</th><th>Expected</th><th>Result</th><th class="num">ms</th></tr></thead>
+          <tbody>${r.cases
+            .map(
+              (c) => `<tr><td>${esc(c.q)}</td><td>${esc(c.expect)}</td>
+                <td>${
+                  c.passed
+                    ? '<span class="arag-chip ok">pass</span>'
+                    : `<span class="arag-chip danger">fail</span> <span class="vb-sub">${esc(
+                        c.checks
+                          .filter((x) => !x.ok)
+                          .map((x) => x.label)
+                          .join("; "),
+                      )}</span>`
+                }</td>
+                <td class="num">${c.latency_ms}</td></tr>`,
+            )
+            .join("")}</tbody></table></div>`;
+    } catch (err) {
+      $("#evDetail").innerHTML = errorState(err.message);
+    }
+  });
+}
+
+async function renderJobs(el) {
+  el.innerHTML = `<div class="vb-table-wrap"><div class="vb-scroll">
+      <table class="vb-table" id="jbTable">
+        <thead><tr><th>Submitted</th><th>Kind</th><th>Reference</th><th>Status</th><th></th></tr></thead>
+        <tbody>${skeletonRows(4, 5)}</tbody>
+      </table></div></div>`;
+  const load = async () => {
+    try {
+      const { items } = await api("/api/v1/jobs?limit=50");
+      $("#jbTable tbody").innerHTML = items.length
+        ? items
+            .map(
+              (j) => `<tr>
+                <td>${ago(j.createdAt)}</td><td>${esc(j.kind)}</td><td class="vb-mono vb-sub">${esc(j.ref ?? "—")}</td>
+                <td><span class="arag-chip ${{ succeeded: "ok", failed: "danger", cancelled: "warn" }[j.status] ?? "info"}">${esc(j.status)}</span></td>
+                <td class="num">${
+                  ["queued", "running"].includes(j.status)
+                    ? `<button class="arag-btn ghost sm danger" data-cancel="${esc(j.id)}">Cancel</button>`
+                    : ""
+                }</td>
+              </tr>`,
+            )
+            .join("")
+        : `<tr><td colspan="5">${empty({ icon: "jobs", title: "No jobs have run" })}</td></tr>`;
+    } catch (e) {
+      $("#jbTable tbody").innerHTML = `<tr><td colspan="5">${errorState(e.message)}</td></tr>`;
+    }
+  };
+  el.addEventListener("click", async (e) => {
+    const btn = e.target.closest("[data-cancel]");
+    if (!btn) return;
+    const yes = await confirmAction({
+      title: "Cancel this job?",
+      body: "A running golden evaluation stops where it is. Cases already recorded are kept.",
+      confirmLabel: "Cancel job",
     });
-    $("#provisionResult").data = r;
-    toast(`Provisioned ${r.name}`);
-    loadProspects();
+    if (!yes) return;
+    try {
+      await api(`/api/v1/jobs/${btn.dataset.cancel}`, { method: "DELETE" });
+      await load();
+    } catch (err) {
+      toast(err.message, "error");
+    }
+  });
+  await load();
+}
+
+function renderLogs(el) {
+  el.innerHTML = `
+    <div class="vb-filters">
+      <select id="lgLevel" class="arag-select" aria-label="Level">
+        <option value="">All levels</option><option>info</option><option>warn</option><option>error</option>
+      </select>
+      <label class="vb-search">${icon("search", 15)}
+        <input id="lgContains" class="arag-input" placeholder="Filter log lines…" /></label>
+    </div>
+    <div class="vb-card"><div class="vb-card-body" style="padding:0">
+      <arag-log id="lgLog" src="/api/v1/admin/logs" limit="200" refresh="5000"></arag-log>
+    </div></div>`;
+  const apply = () => {
+    const log = $("#lgLog");
+    log.setAttribute("level", $("#lgLevel").value);
+    log.setAttribute("contains", $("#lgContains").value);
+    log.load();
+  };
+  $("#lgLevel").addEventListener("change", apply);
+  $("#lgContains").addEventListener("input", apply);
+}
+
+async function renderBranding(el) {
+  el.innerHTML = '<div class="vb-skeleton" style="height:200px"></div>';
+  try {
+    const config = await api("/api/v1/admin/config");
+    const b = config.branding?.deployment ?? {};
+    const per = config.branding?.perProspect ?? {};
+    el.innerHTML = `
+      <section class="vb-card">
+        <header><h2>Effective branding</h2><span class="spacer"></span>
+          ${b.poweredBy === false ? chip("white-labelled", "info") : chip("Progress default", "neutral")}</header>
+        <div class="vb-card-body">
+          <dl class="vb-kv">
+            <dt>Product name</dt><dd>${esc(b.productName ?? "—")}</dd>
+            <dt>Tagline</dt><dd>${esc(b.tagline ?? "—")}</dd>
+            <dt>Logo</dt><dd>${b.logoUrl ? `<span class="vb-mono">${esc(b.logoUrl)}</span>` : "Progress Agentic RAG wordmark"}</dd>
+            <dt>Primary colour</dt><dd class="vb-mono">${esc(b.primaryColor ?? "UI kit default")}</dd>
+            <dt>Accent colour</dt><dd class="vb-mono">${esc(b.accentColor ?? "#5ce500 (Progress green)")}</dd>
+            <dt>Progress credit</dt><dd>${b.poweredBy === false ? "hidden" : "shown"}</dd>
+            <dt>Footer</dt><dd>${esc(b.footerText ?? "—")}</dd>
+            <dt>Docs link</dt><dd class="vb-mono">${esc(b.docsUrl ?? "/api/v1/docs")}</dd>
+          </dl>
+          <p class="muted small" style="margin-top:14px">Set with <code>BRAND_*</code> environment
+            variables; brand assets dropped into <code>DATA_DIR/branding/</code> are served from
+            <code>/branding/</code>, so a rebrand needs no rebuild. Attribution stays in
+            <code>LICENSE</code> and <code>THIRD_PARTY_NOTICES.md</code> whatever the toggle says.</p>
+        </div>
+      </section>
+      <section class="vb-card" style="margin-top:20px">
+        <header><h2>Per-prospect overlays</h2></header>
+        <div class="vb-card-body" style="padding:0"><div class="vb-scroll">
+          <table class="vb-table">
+            <thead><tr><th>Prospect</th><th>Presents as</th></tr></thead>
+            <tbody>${Object.entries(per)
+              .map(
+                ([k, name]) =>
+                  `<tr><td class="vb-mono">${esc(k)}</td><td>${esc(name)}${
+                    name === b.productName ? ' <span class="vb-sub">(deployment default)</span>' : ""
+                  }</td></tr>`,
+              )
+              .join("")}</tbody>
+          </table>
+        </div></div>
+      </section>`;
   } catch (e) {
-    fail(e);
+    el.innerHTML = errorState(e.message);
   }
-});
-
-// ── turn log ─────────────────────────────────────────────────────────────────
-async function loadTurns() {
-  const q = $("#turnProspect").value;
-  const { items } = await api(
-    `/api/v1/admin/turns?limit=200${q ? `&prospect=${encodeURIComponent(q)}` : ""}`,
-  );
-  $("#turnTable").querySelector("tbody").innerHTML =
-    items
-      .map(
-        (t) =>
-          `<tr><td class="small muted">${esc(String(t.createdAt).slice(11, 19))}</td><td class="small">${esc(t.prospect)}</td>` +
-          `<td class="small">${t.question ? esc(t.question) : '<span class="subtle">redacted (guard trip)</span>'}</td>` +
-          `<td>${
-            t.guard_trip
-              ? chip("danger", `guard · ${t.reason ?? ""}`)
-              : t.handoff
-                ? chip("warn", `handoff · ${t.reason ?? ""}`)
-                : chip("ok", "answered")
-          }</td>` +
-          `<td class="num">${t.total}</td><td class="num">${t.first_token}</td><td class="num">${t.citations}</td></tr>`,
-      )
-      .join("") || '<tr><td colspan="7" class="muted">No turns recorded yet.</td></tr>';
 }
-$("#reloadTurns").addEventListener("click", loadTurns);
-$("#turnProspect").addEventListener("change", loadTurns);
 
-// ── golden evals ─────────────────────────────────────────────────────────────
-async function loadEvals() {
-  const { items } = await api("/api/v1/admin/golden-evals?limit=25");
-  $("#evalTable").querySelector("tbody").innerHTML =
-    items
-      .map(
-        (r) =>
-          `<tr data-id="${esc(r.id)}"><td class="small muted">${esc(String(r.createdAt).slice(0, 19).replace("T", " "))}</td>` +
-          `<td class="small">${esc(r.prospect)}</td><td>${
-            r.ok ? chip("ok", `${r.passed}/${r.total}`) : chip("danger", `${r.passed}/${r.total}`)
-          }</td><td class="num">${r.latency_ms?.p50 ?? ""}</td></tr>`,
-      )
-      .join("") ||
-    '<tr><td colspan="4" class="muted">No evaluations yet — run one from the console.</td></tr>';
-  for (const row of $("#evalTable").querySelectorAll("tr[data-id]")) {
-    row.addEventListener("click", () => showEval(row.dataset.id, items));
+async function renderSecurity(el) {
+  el.innerHTML = '<div class="vb-skeleton" style="height:200px"></div>';
+  try {
+    const config = await api("/api/v1/admin/config");
+    const env = config.env ?? {};
+    const voice = config.voice ?? {};
+    // describeEnv keeps empty arrays and redacts secrets to bullet strings, so "configured" has to
+    // mean "non-empty", not "truthy".
+    const set = (v) => (Array.isArray(v) ? v.length > 0 : Boolean(v));
+    const yes = (v) =>
+      set(v) ? '<span class="arag-chip ok">on</span>' : '<span class="arag-chip warn">off</span>';
+    const list = (v) => (Array.isArray(v) && v.length ? v.join(", ") : "");
+    el.innerHTML = `
+      <div class="vb-split">
+        <section class="vb-card">
+          <header><h2>Access</h2></header>
+          <div class="vb-card-body">
+            <dl class="vb-kv">
+              <dt>Admin token</dt><dd>${yes(env.adminToken)} required for every operator route</dd>
+              <dt>API keys</dt><dd>${yes(env.apiKeys)} ${
+                set(env.apiKeys)
+                  ? "<code>X-API-Key</code> required on /api/v1"
+                  : "/api/v1 open to same-origin sessions"
+              }</dd>
+              <dt>CORS origins</dt><dd class="vb-mono">${esc(list(env.allowedOrigins) || "same-origin only")}</dd>
+              <dt>Proxy trust</dt><dd class="vb-mono">${esc(String(env.trustProxy || "none"))}</dd>
+            </dl>
+          </div>
+        </section>
+        <section class="vb-card">
+          <header><h2>Budgets</h2></header>
+          <div class="vb-card-body">
+            <dl class="vb-kv">
+              <dt>Global rate limit</dt><dd>${esc(String(env.rateLimitRps ?? "—"))} rps · burst ${esc(String(env.rateLimitBurst ?? "—"))}</dd>
+              <dt>Brief and sessions</dt><dd>${esc(String(voice.rateLimits?.brief?.rps ?? "—"))} rps · burst ${esc(String(voice.rateLimits?.brief?.burst ?? "—"))}</dd>
+              <dt>Speech tokens</dt><dd>${esc(String(voice.rateLimits?.scribeToken?.rps ?? "—"))} rps · burst ${esc(String(voice.rateLimits?.scribeToken?.burst ?? "—"))}</dd>
+              <dt>Max body</dt><dd>${esc(String(env.maxBodyBytes ?? "—"))} bytes</dd>
+              <dt>Turn timeout</dt><dd>${esc(String(voice.turnTimeoutMs ?? "—"))} ms (tool timeout ${esc(String(voice.agentToolTimeoutMs ?? "—"))} ms)</dd>
+            </dl>
+          </div>
+        </section>
+      </div>
+      <section class="vb-card" style="margin-top:20px">
+        <header><h2>Data kept</h2></header>
+        <div class="vb-card-body">
+          <dl class="vb-kv">
+            <dt>Turn log</dt><dd>Last ${esc(String(voice.turnLogLimit ?? "—"))} turns. A turn whose input tripped a safety guard keeps the reason and never the text.</dd>
+            <dt>Listen sessions</dt><dd>Transcript, brief history (last 20 versions), citations and stats, until the session store rolls over.</dd>
+            <dt>Secrets</dt><dd>Only in the environment. Never sent to a browser, never written to the stores, never logged.</dd>
+          </dl>
+        </div>
+      </section>`;
+  } catch (e) {
+    el.innerHTML = errorState(e.message);
   }
-  if (items[0]) showEval(items[0].id, items);
 }
 
-function showEval(id, items) {
-  const r = items.find((x) => x.id === id);
-  if (!r) return;
-  $("#evalMeta").textContent =
-    `${r.display_name} · ${r.passed}/${r.total} passed · p50 ${r.latency_ms?.p50 ?? "—"} ms · p95 ${r.latency_ms?.p95 ?? "—"} ms`;
-  $("#evalDetail").querySelector("tbody").innerHTML = r.cases
-    .map(
-      (c) =>
-        `<tr><td class="small">${esc(c.q)}</td><td class="small">${esc(c.expect)}</td><td>${
-          c.passed
-            ? chip("ok", "pass")
-            : `${chip("danger", "fail")} <span class="subtle small">${esc(
-                c.checks
-                  .filter((x) => !x.ok)
-                  .map((x) => x.label)
-                  .join("; "),
-              )}</span>`
-        }</td><td class="num">${c.latency_ms}</td></tr>`,
-    )
-    .join("");
+// ── routing ──────────────────────────────────────────────────────────────────
+
+function currentView() {
+  const id = location.hash.replace(/^#/, "") || "overview";
+  return VIEWS[id] ? id : "overview";
 }
-$("#reloadEvals").addEventListener("click", loadEvals);
 
-// ── listen sessions ────────────────────────────────────────────────────────
-let listenSessions = [];
+async function route() {
+  const id = currentView();
+  host = mountShell({
+    section: id,
+    operator: true,
+    title: TITLES[id],
+    description: DESCRIPTIONS[id],
+  });
+  applyBrand(state.branding);
+  await VIEWS[id](host);
+}
 
-async function loadListen() {
-  const { items } = await api("/api/v1/admin/listen-sessions?limit=25");
-  listenSessions = items;
-  $("#listenTable").querySelector("tbody").innerHTML =
-    items
-      .map(
-        (s) =>
-          `<tr data-id="${esc(s.id)}"><td class="small muted">${esc(String(s.createdAt).slice(11, 19))}</td>` +
-          `<td class="small">${esc(s.prospect)}</td>` +
-          `<td>${s.status === "live" ? chip("ok", "live") : chip("neutral", "ended")}</td>` +
-          `<td class="num">${s.stats.refreshes}</td><td class="num">${s.stats.skipped}</td>` +
-          `<td class="num">${s.stats.p50LatencyMs || ""}</td></tr>`,
-      )
-      .join("") ||
-    '<tr><td colspan="6" class="muted">No listen sessions yet — start one from the console.</td></tr>';
-  for (const row of $("#listenTable").querySelectorAll("tr[data-id]")) {
-    row.addEventListener("click", () => showListen(row.dataset.id));
+const DESCRIPTIONS = {
+  overview: "What this deployment has been doing since it started.",
+  connection: "Every prospect's Knowledge Box, and the configuration in force.",
+  sessions: "Every listen session, with the brief history behind each one.",
+  turns: "Every answered turn, handoff and guard trip.",
+  evals: "Golden runs, and the per-question detail behind each.",
+  jobs: "Asynchronous work: golden evaluations run here.",
+  logs: "Recent log lines from this process.",
+  branding: "The branding this deployment presents, and each prospect's overlay.",
+  security: "Who can reach what, the budgets in force, and what is kept.",
+};
+
+if (!(await isOperator())) {
+  signInView();
+} else {
+  try {
+    const [branding, list] = await Promise.all([
+      api("/api/v1/branding").catch(() => null),
+      api("/api/v1/admin/prospects").catch(() => ({ items: [] })),
+    ]);
+    state.branding = branding;
+    prospects = list.items ?? [];
+  } catch {
+    /* the views report their own errors */
   }
-  if (items[0]) showListen(items[0].id);
+  await route();
+  window.addEventListener("hashchange", route);
 }
-
-function showListen(id) {
-  const s = listenSessions.find((x) => x.id === id);
-  if (!s) return;
-  $("#listenMeta").textContent =
-    `${s.prospect} · ${s.stats.chunks} chunks · ${s.stats.refreshes} refreshes · ${s.stats.skipped} throttled · ` +
-    `p50 ${s.stats.p50LatencyMs || "—"} ms · p95 ${s.stats.p95LatencyMs || "—"} ms`;
-  const history = [...(s.briefHistory ?? [])].reverse();
-  $("#briefHistory").innerHTML =
-    history
-      .map(
-        (h) =>
-          `<div class="arag-card pad"><div class="arag-row" style="justify-content:space-between">` +
-          `<b>v${h.version}</b><span class="muted small">${esc(String(h.at).slice(11, 19))} · ${h.latencyMs} ms</span></div>` +
-          `<div class="small" style="margin-top:6px">${esc(h.brief?.summary ?? "")}</div>` +
-          `${(h.brief?.key_points ?? []).length ? `<ul class="small">${(h.brief.key_points ?? []).map((k) => `<li>${esc(k)}</li>`).join("")}</ul>` : ""}</div>`,
-      )
-      .join("") || '<p class="muted small">No brief was produced in this session.</p>';
-}
-$("#reloadListen").addEventListener("click", loadListen);
-
-// ── logs ─────────────────────────────────────────────────────────────────────
-$("#level").addEventListener("change", (e) => {
-  $("#log").setAttribute("level", e.target.value);
-  $("#log").load();
-});
-$("#contains").addEventListener("change", (e) => {
-  $("#log").setAttribute("contains", e.target.value);
-  $("#log").load();
-});
-
-check();
