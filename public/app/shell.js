@@ -309,7 +309,7 @@ export function duration(sec) {
 }
 
 /** A right-hand drawer. Returns a close() function. */
-export function openDrawer({ title, sub = "", actions = "", body }) {
+export function openDrawer({ title, sub = "", actions = "", body, onClose }) {
   const host = document.createElement("div");
   host.className = "vb-drawer-backdrop";
   host.innerHTML = `<section class="vb-drawer" role="dialog" aria-modal="true" aria-label="${esc(title)}">
@@ -322,9 +322,13 @@ export function openDrawer({ title, sub = "", actions = "", body }) {
       </header>
       <div class="vb-drawer-body">${body}</div>
     </section>`;
+  let closed = false;
   const close = () => {
+    if (closed) return;
+    closed = true;
     host.remove();
     document.removeEventListener("keydown", onKey);
+    onClose?.();
   };
   const onKey = (e) => e.key === "Escape" && close();
   host.addEventListener("click", (e) => {

@@ -110,9 +110,9 @@ sources it came from (never spoken — see §3), whether it handed off, and a la
 `latency_ms` numbers will differ (the mock has no network to cross, so single-digit milliseconds
 is normal — a real Knowledge Box is much slower; see `architect-track/sizing-deployment.md`).
 
-Open `http://localhost:8099/` in a browser and ask the same question on the **Ask** tab: you get
-the same JSON, rendered as the console does. That console consumes only `/api/v1` — it has no
-special access, which is why everything you do with curl in this lab is exactly what the UI does.
+Open `http://localhost:8099/knowledge/` in a browser and ask the same question with the text tester
+there: you get the same JSON, rendered by the workspace UI. That UI consumes only `/api/v1` — it has
+no special access, which is why everything you do with curl in this lab is exactly what the UI does.
 
 **Checkpoint:** you have a running server, backed by the mock, answering a real question with
 real citations.
@@ -275,10 +275,10 @@ fc951f3e-f0a6-45fd-b8c0-cd24354d3f5f live briefVersion 2 briefHistory entries 2
 `briefHistory` is what makes this the admin projection rather than the client one — each entry
 carries the `version`, the timestamp and the `latencyMs` for that specific refresh, which is how
 you'd investigate "why did the brief look wrong for those thirty seconds mid-call" after the fact.
-The console's **Listen** tab (open `http://localhost:8099/` and click it) is this exact API: "Play
-sample conversation" posts a short scripted call through `/transcript` chunk by chunk, and the
+The **Live** page (open `http://localhost:8099/` — it's the hero landing page) is this exact API:
+"Play sample conversation" posts a short scripted call through `/transcript` chunk by chunk, and the
 paste/type box lets you feed your own text the same way you just did with curl — the UI has no
-access the console script doesn't also have.
+access the page's own script doesn't also have.
 
 **Checkpoint:** you have opened a session, watched one refresh run immediately and a second one
 coalesce and fire on its own, read an evolving brief with accumulating citations, watched the same
@@ -419,7 +419,7 @@ curl -s -X POST http://localhost:8099/api/v1/voice-answer \
 ```
 
 You'll get `"handoff": true` with `"handoff_reason": "sentinel"` or `"no-retrieval"` — try it
-yourself and check the admin panel or `/api/v1/admin/turns` to see which.
+yourself and check the Quality page's turn log or `/api/v1/admin/turns` to see which.
 
 **Checkpoint:** `GET /api/v1/prospects` (no auth needed — it's the public, non-secret projection)
 lists `atlas` alongside `progress`, `tangerine` and `northwind`.
@@ -511,8 +511,9 @@ BASE_URL=http://localhost:8099 node scripts/eval.ts atlas
 ✓ GOLDEN SET PASSED — gate open.
 ```
 
-Look at the history in the admin panel (`http://localhost:8099/admin/`, sign in with `lab-token`,
-**Golden evals** tab) or:
+Look at the history on the Knowledge page (`http://localhost:8099/knowledge/`, select `atlas`,
+**Run history**) — or, from the operator view (`http://localhost:8099/admin/#evals`, sign in with
+`lab-token`, **Golden runs**) — or:
 
 ```bash
 curl -s -b /tmp/voicebridge-lab-cookies.txt "http://localhost:8099/api/v1/admin/golden-evals?prospect=atlas"

@@ -102,7 +102,7 @@ regardless of this decision.
    conversation are already there.
 5. **After-call summary from the session record.** Ending a session keeps its brief, its full
    citation list and its stats for review — a session's brief history (every version that was ever
-   shown, with its timestamp and latency) is available afterwards in the admin panel, not just
+   shown, with its timestamp and latency) is available afterwards in Conversations, not just
    during the call.
 6. **Self-serve deflection.** The follow-on: the same grounded-answer pipeline, without a human on
    the call, answers a caller directly over `POST /api/v1/voice-answer` and hands off by a
@@ -142,7 +142,7 @@ regardless of this decision.
 - There is no automated quality gate for the live brief today. The golden-set gate — the
   answer/handoff pass-fail check — covers the deflection pipeline (`/api/v1/voice-answer`) only;
   reviewing whether a live brief was actually useful on a given call is a manual read of the brief
-  history in the admin panel, not a scored test suite.
+  history in Conversations, not a scored test suite.
 - It is not a Knowledge Box. Retrieval quality is ARAG's job; a poorly indexed or thin Knowledge Box
   produces a thin brief no matter how good the throttling and prompt discipline are.
 - Session state is a single-machine, in-memory store with a 200-session cap and a bounded brief
@@ -171,7 +171,7 @@ regardless of this decision.
   everything relevant said so far — not just the most recent refresh.
 - **Per-session latency stats, on every session.** Every session tracks refreshes, throttled
   (skipped) refreshes, failures, the latency of the last refresh, and rolling p50/p95 latency over
-  its own recent refreshes — visible on the session and in the admin Listen sessions tab.
+  its own recent refreshes — visible on the session and in Conversations.
 - **Deterministic handoff for the deflection follow-on.** The voice prompt is contracted to prefix
   any unanswerable reply with a fixed sentinel (`HANDOFF:`); the pipeline keys off that exact string,
   with belt-and-braces checks for an empty answer, zero retrieval results, or ARAG's own stock

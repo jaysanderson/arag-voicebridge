@@ -31,7 +31,7 @@ easy to swap:
 A session already accepts a per-session override at creation time — `generative_model` on
 `POST /api/v1/listen/sessions` is threaded through to every refresh as `BriefRequest.model`
 (`ListenService.refresh()` → `runBrief()`), falling back to the prospect's `brief_model`, then its
-`generative_model` (`buildBriefRequest()` in `src/services/brief.ts`). This is what the console's
+`generative_model` (`buildBriefRequest()` in `src/services/brief.ts`). This is what Live's
 model dropdown uses to let a demo compare models on the same conversation without touching the
 registry. `runBrief()` also protects this from a real failure mode seen live: some Knowledge Boxes
 reject *any* per-request `generative_model` override (403/530); the first refresh that hits this
@@ -113,13 +113,15 @@ JSON. Any platform whose agent can call an HTTP tool with a JSON body and speak 
 field can front VoiceBridge: point its custom tool at `/api/v1/voice-answer` with the same
 `{prospect, question, conversation_id, history}` body (see
 [`examples.md`](examples.md#the-elevenlabs-agent-tool-definition)) and have it speak the `answer`
-field verbatim. Only three things are ElevenLabs-specific and isolated behind their own modules:
+field verbatim. Only a handful of things are ElevenLabs-specific, and each is isolated behind its
+own module:
 
-- `src/services/scribe.ts` (Scribe realtime STT token minting) — feeds Listen's microphone button
+- `src/services/scribe.ts` (Scribe realtime STT token minting) — feeds Live's microphone starter
   only; the listen-session API underneath it is not ElevenLabs-specific at all (see
   [`integrations.md`](integrations.md)).
-- `src/services/voices.ts` (voice list for the Call tab's picker).
-- `public/vendor/elevenlabs-client.js` (the vendored browser SDK used by the Call tab).
+- `src/services/tts.ts` (`POST /api/v1/speech`) — the opt-in spoken cue in Live.
+- `src/services/voiceAgent.ts` (`GET /api/v1/voice-agent` — the tool definition and router prompt) and `src/services/voices.ts` (voice list) for the voice-agent call drawer.
+- `public/vendor/elevenlabs-client.js` (the vendored browser SDK used by the voice-agent call drawer).
 
 A different platform's realtime STT or browser SDK would live in equivalent new modules; the turn
 pipeline, handoff contract, voice shaping, citations and golden-set gate are all platform-agnostic
@@ -150,7 +152,7 @@ check (e.g. a minimum-length answer, a banned-phrase check, an LLM-judge quality
 
 1. Add the check inside `checkTurn()` for `gq.expect === "answer"` (or unconditionally, if it
    should also apply to handoffs).
-2. `GoldenCase.checks` and the admin/console UIs already render an arbitrary list of `{ok, label}`
+2. `GoldenCase.checks` and the Knowledge/Operator views already render an arbitrary list of `{ok, label}`
    rows, so a new check needs no UI change — it just shows up as another row in the golden-set
    table and the admin eval detail view.
 3. Keep checks deterministic where possible; the pipeline runs at `temperature: 0` by design (see
@@ -166,7 +168,7 @@ defect in the abstraction, not a one-off to work around.
 
 ### 1. Registry entry
 
-Create the prospect through the admin panel (Prospects tab → New) or the API:
+Create the prospect through `/prospects/` (unlocked with `ADMIN_TOKEN`) or the API:
 
 ```bash
 curl -s -b admin.txt -X POST $BASE/api/v1/admin/prospects \
@@ -219,13 +221,14 @@ make eval P=acme
 Tune `reranker`/`generative_model`/the prompt and re-provision until it passes. **No prospect
 demos until its golden set passes** — this is the whole point of the gate (see
 [`../business/walkthrough-demo.md`](../business/walkthrough-demo.md) for what a passing/failing run
-looks like in the console).
+looks like on Knowledge).
 
 ### 4. Demo gate
 
-Confirm in the console: select the prospect, run a couple of manual questions on the Ask tab
-(one answerable, one deliberately out of scope to see the handoff fire), then **Run golden set**
-and confirm the gate shows "gate open". If ElevenLabs is configured, set the prospect's `agent_id`
-(see [`integrations.md`](integrations.md)) and smoke-test the Call tab. A second person should be
+Confirm in the workspace: select the prospect, use Knowledge's "ask it something" tester for a
+couple of manual questions (one answerable, one deliberately out of scope to see the handoff fire),
+then **Run golden set** and confirm the gate shows "gate open". If ElevenLabs is configured, set the
+prospect's `agent_id` (see [`integrations.md`](integrations.md)) and smoke-test Live's voice-agent
+call drawer. A second person should be
 able to repeat steps 1–4 for a new prospect with no code changes — if they can't, the bottleneck is
 the ritual or the abstraction, not the prospect.

@@ -2,6 +2,7 @@
 // with the full record behind each row: how the brief evolved, the transcript, the sources it drew
 // on and how long each refresh took.
 import { renderBrief } from "./brief.js";
+import { go, onRoute, params } from "./route.js";
 import {
   ago,
   api,
@@ -23,8 +24,34 @@ import {
 } from "./shell.js";
 
 const PAGE = 20;
+/** View state lives in the query string, so a filtered list is shareable and Back works. */
 const filters = { q: "", status: "", prospect: "", sort: "started", order: "desc", offset: 0 };
 let total = 0;
+let closeDetail = null;
+
+function readUrl() {
+  const p = params();
+  filters.q = p.q ?? "";
+  filters.status = p.status ?? "";
+  filters.prospect = p.prospect ?? "";
+  filters.sort = p.sort ?? "started";
+  filters.order = p.order ?? "desc";
+  filters.offset = Number(p.offset ?? 0) || 0;
+  return p.id ?? "";
+}
+
+/** Push the current filters into the URL. `id` opens (or closes) the record drawer. */
+function writeUrl(extra = {}) {
+  go({
+    q: filters.q,
+    status: filters.status,
+    prospect: filters.prospect,
+    sort: filters.sort === "started" ? "" : filters.sort,
+    order: filters.order === "desc" ? "" : filters.order,
+    offset: filters.offset || "",
+    ...extra,
+  });
+}
 
 const $ = (s) => document.querySelector(s);
 
@@ -130,9 +157,8 @@ async function load() {
       }</td></tr>`;
       $("#cvClear")?.addEventListener("click", () => {
         Object.assign(filters, { q: "", status: "", prospect: "", offset: 0 });
-        $("#cvSearch").value = "";
-        $("#cvStatus").value = "";
-        $("#cvProspect").value = "";
+        syncControls();
+        writeUrl();
         load();
       });
     } else {
@@ -151,12 +177,20 @@ async function load() {
 }
 
 async function openDetail(id) {
+  closeDetail?.();
   const close = openDrawer({
+    onClose: () => {
+      closeDetail = null;
+      // Closing by hand clears the record from the URL; closing because the user pressed Back
+      // must not push another entry, and by then the id has already gone.
+      if (params().id) go({ id: "" });
+    },
     title: "Conversation",
     sub: `<span class="vb-mono">${esc(id)}</span>`,
     actions: `<a class="arag-btn secondary sm" href="/api/v1/listen/sessions/${encodeURIComponent(id)}/export?format=markdown">${icon("download", 14)} Export</a>`,
     body: `<div class="vb-skeleton" style="height:220px"></div>`,
   });
+  closeDetail = close;
   try {
     const s = await api(`/api/v1/listen/sessions/${encodeURIComponent(id)}/export`);
     const body = document.querySelector(".vb-drawer-body");
@@ -224,6 +258,22 @@ async function openDetail(id) {
   return close;
 }
 
+/** Put the filter controls back in step with the URL (first load, and every Back). */
+function syncControls() {
+  const q = $("#cvSearch");
+  if (q && q.value !== filters.q) q.value = filters.q;
+  const st = $("#cvStatus");
+  if (st) st.value = filters.status;
+  const pr = $("#cvProspect");
+  if (pr) pr.value = filters.prospect;
+  for (const th of document.querySelectorAll("#cvTable th[data-sort]")) {
+    th.setAttribute(
+      "aria-sort",
+      th.dataset.sort === filters.sort ? (filters.order === "asc" ? "ascending" : "descending") : "none",
+    );
+  }
+}
+
 function wire() {
   let t;
   $("#cvSearch").addEventListener("input", (e) => {
@@ -231,25 +281,30 @@ function wire() {
     t = setTimeout(() => {
       filters.q = e.target.value.trim();
       filters.offset = 0;
+      writeUrl();
       load();
     }, 280);
   });
   $("#cvStatus").addEventListener("change", (e) => {
     filters.status = e.target.value;
     filters.offset = 0;
+    writeUrl();
     load();
   });
   $("#cvProspect").addEventListener("change", (e) => {
     filters.prospect = e.target.value;
     filters.offset = 0;
+    writeUrl();
     load();
   });
   $("#cvPrev").addEventListener("click", () => {
     filters.offset = Math.max(0, filters.offset - PAGE);
+    writeUrl();
     load();
   });
   $("#cvNext").addEventListener("click", () => {
     filters.offset = Math.min(filters.offset + PAGE, Math.max(0, total - 1));
+    writeUrl();
     load();
   });
   for (const th of document.querySelectorAll("#cvTable th[data-sort]")) {
@@ -258,23 +313,23 @@ function wire() {
       filters.order = filters.sort === key && filters.order === "desc" ? "asc" : "desc";
       filters.sort = key;
       filters.offset = 0;
-      for (const other of document.querySelectorAll("#cvTable th[data-sort]")) {
-        other.setAttribute(
-          "aria-sort",
-          other === th ? (filters.order === "asc" ? "ascending" : "descending") : "none",
-        );
-      }
+      syncControls();
+      writeUrl();
       load();
     });
   }
+  const open = (id) => {
+    writeUrl({ id });
+    void openDetail(id);
+  };
   document.addEventListener("click", (e) => {
     const tr = e.target.closest("#cvTable tbody tr[data-id]");
-    if (tr) openDetail(tr.dataset.id);
+    if (tr) open(tr.dataset.id);
   });
   document.addEventListener("keydown", (e) => {
     if (e.key !== "Enter") return;
     const tr = e.target.closest?.("#cvTable tbody tr[data-id]");
-    if (tr) openDetail(tr.dataset.id);
+    if (tr) open(tr.dataset.id);
   });
 }
 
@@ -288,10 +343,22 @@ const host = mountShell({
 });
 
 await boot();
+const openId = readUrl();
 host.innerHTML = chrome();
 prospectSwitcher();
+syncControls();
 wire();
 document.getElementById("cvReload")?.addEventListener("click", load);
-// A session id in the fragment opens straight into its detail (Live links here when one ends).
 await load();
-if (location.hash.length > 1) openDetail(decodeURIComponent(location.hash.slice(1)));
+// ?id=… opens straight into a record — how Live links here when a session ends, and what Back
+// returns you to after closing the drawer.
+if (openId) await openDetail(openId);
+
+// Back and forward move through filters and records, not out of the section.
+onRoute(async (p) => {
+  readUrl();
+  syncControls();
+  await load();
+  closeDetail?.();
+  if (p.id) await openDetail(p.id);
+});

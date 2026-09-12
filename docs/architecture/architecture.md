@@ -20,8 +20,8 @@ flowchart LR
         AGENT["Agent: STT + turn-taking + TTS<br/>custom tool → voice-answer"]
     end
     subgraph Browser["Browser"]
-        CONSOLE["Demo console /<br/>Listen · Ask · Call · Golden set"]
-        ADMIN["Admin panel /admin/<br/>registry CRUD, health, turns, listen sessions, evals"]
+        CONSOLE["Workspace /, /conversations/, /knowledge/,<br/>/prospects/, /quality/, /settings/"]
+        ADMIN["Operator /admin/<br/>health, config, turns, listen sessions,<br/>evals, jobs, logs, branding, security"]
     end
     subgraph VB["VoiceBridge (this service)"]
         API["/api/v1<br/>routes/*.ts"]
@@ -31,8 +31,8 @@ flowchart LR
         DATA[("DATA_DIR<br/>prospects · listen-sessions · turns · jobs · golden-evals")]
     end
     ARAG[("ARAG Knowledge Box<br/>/ask /find /search_configurations")]
-    EL["ElevenLabs<br/>Conversational AI, Scribe, voices"]
-    LA["LiveAvatar + LiveKit<br/>optional video avatar"]
+    EL["ElevenLabs<br/>Conversational AI, Scribe, TTS, voices"]
+    LA["LiveAvatar + LiveKit<br/>video avatar — API-only,<br/>no workspace surface calls it"]
 
     TEL -- "POST .../transcript" --> API
     CONSOLE -- "POST .../transcript" --> API
@@ -47,19 +47,19 @@ flowchart LR
     PIPE -- "POST /ask (NDJSON)" --> ARAG
     API -- "brief / transcript / status" --> CONSOLE
     API -- "registry / listen sessions / turns / jobs / evals" --> DATA
-    CONSOLE -. "WebRTC (voice)" .-> EL
+    CONSOLE -. "WebRTC (voice agent call)" .-> EL
     CONSOLE -. "WebSocket (Scribe STT)" .-> EL
-    API -- "mint single-use token" --> EL
-    CONSOLE -. "LiveKit room (video)" .-> LA
-    API -- "mint room + start session" --> LA
+    API -- "mint token / synthesise speech" --> EL
+    API -. "mint room + start session<br/>(for a custom client)" .-> LA
 ```
 
-Both browser surfaces consume **only** `/api/v1` (the admin panel additionally uses
-`/api/v1/admin/*`) — neither one is trusted with ARAG or ElevenLabs credentials. A voice agent's
-custom tool, a telephony webhook, a meeting bot, and the console's own typed/pasted/sample
-conversation are all independent, symmetric callers of the same session and turn endpoints; from
-VoiceBridge's point of view a phone call being transcribed into a session and a line pasted into the
-Listen tab are the identical request shape.
+Both browser surfaces consume **only** `/api/v1` (Operator additionally uses `/api/v1/admin/*`, and
+the workspace's own `/prospects/` view calls the same admin routes once unlocked with the admin
+token) — neither one is trusted with ARAG or ElevenLabs credentials. A voice agent's custom tool, a
+telephony webhook, a meeting bot, and the workspace's own typed/pasted/sample conversation are all
+independent, symmetric callers of the same session and turn endpoints; from VoiceBridge's point of
+view a phone call being transcribed into a session and a line pasted into Live are the identical
+request shape.
 
 ## Real-time listening
 
@@ -81,7 +81,7 @@ A session (`ListenService`, `src/services/listen.ts`) is the state a voice turn 
 not have: it owns the rolling transcript, the throttle's per-session bookkeeping (`lastNorm`,
 `lastFireAt` — never exposed through the API), the one evolving brief (refined, not restarted, each
 call), citations accumulated across the whole call, and per-refresh latency stats. The throttle
-lives on the server rather than in a browser specifically so every client — the console, a
+lives on the server rather than in a browser specifically so every client — Live, a
 telephony bridge, a softphone plugin — gets the same behaviour and the same cost profile, and a
 naive or chatty client cannot turn every word into an LLM call. A refresh itself is the same
 `runBrief()` primitive `POST /api/v1/brief` exposes statelessly (see
@@ -90,7 +90,7 @@ primitive plus the bookkeeping needed to call it well over the course of a call.
 
 ## The turn pipeline
 
-Every voice turn — live, from the Ask tab, or from a golden-set run — takes the same nine ordered
+Every voice turn — live, from Knowledge's "ask it something" tester, or from a golden-set run — takes the same nine ordered
 steps in `src/services/pipeline.ts::runTurn()`. Every failure path resolves to a spoken handoff line
 rather than throwing, so the caller never gets dead air.
 

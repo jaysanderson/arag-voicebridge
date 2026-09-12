@@ -16,8 +16,10 @@ ARAG_MOCK=1 ADMIN_TOKEN=workshop-token DATA_DIR=/tmp/voicebridge-workshop PORT=8
 ## 1. Orientation — why voice is a different problem from chat (10 min)
 
 VoiceBridge is one endpoint: `POST /api/v1/voice-answer`. Any voice platform whose agent can call
-an HTTP tool can use it — the shipped demo happens to use ElevenLabs Conversational AI, but the
-contract is generic. A voice agent calls the bridge as a **custom tool**, mid-conversation, and
+an HTTP tool can use it — the shipped product defaults to ElevenLabs Conversational AI as its voice
+channel (`GET /api/v1/voice-agent` returns the exact custom-server-tool definition and router prompt
+to paste into the dashboard), but the underlying contract is vendor-neutral. A voice agent calls the
+bridge as a **custom tool**, mid-conversation, and
 the platform enforces its own timeout on that tool call. That single fact — a hard, externally
 enforced deadline, on every single turn, with a human waiting on the other end of a phone call —
 is what makes voice a fundamentally different integration problem from a chat UI, where a slow
@@ -60,12 +62,12 @@ into a turn, you are spending directly from that margin — model this explicitl
 tuning by feel.
 
 **Why `VOICE_BRIEF_TIMEOUT_MS` (default 12000) is allowed to be so much longer.** The brief
-(`POST /api/v1/brief`, the ambient "Listen" copilot) is not on the same clock — it updates a
-sidebar the human is glancing at, not a spoken response the caller is waiting on. `src/services/
-brief.ts`'s `runBrief` never throws; on any failure (including its own timeout) it returns `brief:
-null`, and the UI simply keeps showing the previous brief rather than flashing an error
-(`public/app.js`). A slow brief degrades to "stale," not to "broken conversation" — a materially
-different failure mode, which is why it gets a materially looser budget.
+(`POST /api/v1/brief`, the ambient copilot behind the Live page) is not on the same clock — it
+updates a sidebar the human is glancing at, not a spoken response the caller is waiting on.
+`src/services/brief.ts`'s `runBrief` never throws; on any failure (including its own timeout) it
+returns `brief: null`, and the UI simply keeps showing the previous brief rather than flashing an
+error (`public/app/live.js`). A slow brief degrades to "stale," not to "broken conversation" — a
+materially different failure mode, which is why it gets a materially looser budget.
 
 **Discussion prompt:** a customer wants `VOICE_TURN_TIMEOUT_MS` raised to 7500 because their real
 Knowledge Box is slow. `AGENT_TOOL_TIMEOUT_MS` is fixed at 8000 by their voice platform's plan
@@ -235,7 +237,7 @@ tens of minutes — and one or more viewers watch the brief evolve over `GET ...
 "long-lived" property is the whole architectural difference from a turn, and it's where most of
 the surprises live.
 
-**Sessions per agent.** The product's own model is one session per live call: the console opens
+**Sessions per agent.** The product's own model is one session per live call: the Live page opens
 exactly one on "Play sample conversation" or the first typed/pasted chunk, and ends it when the
 call ends. A contact-centre deployment scales this directly — N agents on N simultaneous calls is
 N concurrently open sessions, each with its own SSE subscriber (the agent's own screen, and
@@ -266,7 +268,7 @@ connections can be open at once**, to one session or across all of them. An open
 request that never resolves for as long as the viewer is watching, and Fly's own admission control
 (`fly.toml`'s `[http_service.concurrency]`, soft 40 / hard 60 — see `sizing-deployment.md`) counts
 it exactly like any other in-flight request. A supervisor dashboard that opens one SSE connection
-per active agent, on top of the agents' own consoles each holding a second connection to the same
+per active agent, on top of the agents' own Live pages each holding a second connection to the same
 sessions, consumes that same 40/60 budget that ordinary `voice-answer` turns need — and unlike a
 turn, an SSE connection doesn't free its slot when the "work" is done, only when the viewer
 disconnects or the session ends.

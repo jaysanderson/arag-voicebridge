@@ -13,7 +13,7 @@ when this stops being enough.
 | File | Collection | Written by | Read by |
 |---|---|---|---|
 | `listen-sessions.json` | live and ended listen sessions, capped ring (`cap: 200`, oldest evicted first regardless of status) | `ListenService` (`src/services/listen.ts`) on every session create/append/refresh/end | `GET /api/v1/listen/sessions[/{id}]`, the SSE events stream, `GET /api/v1/admin/listen-sessions` |
-| `prospects.json` | registry entries | `ProspectRegistry` (`src/services/registry.ts`) — seeded once from `config/prospects.example.json` on first boot if empty, then admin CRUD | every route that resolves a prospect; the console's prospect selector (via the non-secret projection) |
+| `prospects.json` | registry entries | `ProspectRegistry` (`src/services/registry.ts`) — seeded once from `config/prospects.example.json` on first boot if empty, then admin CRUD | every route that resolves a prospect; the workspace's `/prospects/` view and its prospect switcher (via the non-secret projection) |
 | `turns.json` | recent turn log, capped ring (`VOICE_TURN_LOG_LIMIT`, default 500) | `MetricsService.record()` (`src/services/metrics.ts`), called from both the voice-answer route and golden-eval runs | `GET /api/v1/metrics` (aggregated), `GET /api/v1/admin/turns` (raw rows) |
 | `jobs.json` | async job records + their event log | `JobManager` (platform, `vendor/arag-platform/src/store/jobs.ts`) | `GET /api/v1/jobs`, `GET /api/v1/jobs/{id}`, the job-events SSE stream |
 | `golden-evals.json` | golden-eval results, capped at 50 | `GoldenEvalStore.save()` (`src/services/goldenEval.ts`), called when a golden-eval job finishes | `GET /api/v1/golden-evals/{id}`, `GET /api/v1/admin/golden-evals` |
@@ -82,7 +82,7 @@ connect (so a late subscriber is not staring at a blank pane), then streams `tra
 and `status` events as `ListenService.emit()` fires them to every subscriber of that session id — an
 in-process `Map<sessionId, Set<listener>>` (`ListenService.listeners`), not a broker, so fan-out only
 reaches subscribers connected to the same process (see [`scaling.md`](scaling.md) and
-[`limits.md`](limits.md)). The console also polls the session every three seconds as a fallback in
+[`limits.md`](limits.md)). Live also polls the session every three seconds as a fallback in
 case a brief lands in the gap between opening a session and the stream attaching.
 
 **What is persisted, and its cap.** The whole `ListenSession` — id, prospect, locale, transcript
@@ -95,16 +95,19 @@ once exceeded, the **oldest by `createdAt`** are evicted regardless of whether t
 `ended` the next time `ListenService` starts (it cannot be refreshed again honestly once the process
 that was tracking its throttle state is gone).
 
-**What the admin sees.** `GET /api/v1/admin/listen-sessions` returns the same projection as the
-public API (throttle bookkeeping still excluded) plus `briefHistory`, so an operator can see how the
-brief evolved version by version — the console's own session view only shows the current brief, not
-its history, so this is the one place the full evolution is visible without replaying SSE.
+**Reviewing a session afterwards.** `briefHistory` is not admin-only: `GET /api/v1/listen/sessions`
+and `GET /api/v1/listen/sessions/{id}/export` (which backs the Conversations detail drawer and its
+Markdown export) both include it in the public API, so a workspace user can see how the brief
+evolved version by version without ever touching Operator. `GET /api/v1/admin/listen-sessions`
+returns the equivalent projection for Operator's own Listen sessions view — the same underlying
+record, reached from the operator's own navigation. Neither one replays SSE; both read the stored
+`briefHistory` directly.
 
 ## A voice turn
 
 ```mermaid
 sequenceDiagram
-    participant C as Caller (agent tool, or the Ask tab)
+    participant C as Caller (agent tool, or Knowledge's ask tester)
     participant VB as VoiceBridge
     participant AR as ARAG /ask
 
@@ -159,7 +162,7 @@ refreshes are not logged to `turns.json` either, only the session's own aggregat
 
 ```mermaid
 sequenceDiagram
-    participant U as Console or admin panel
+    participant U as Knowledge, Operator, or a script
     participant VB as VoiceBridge (job)
     participant AR as ARAG /ask
 

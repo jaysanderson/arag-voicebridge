@@ -231,7 +231,7 @@ function scribeStrip() {
       <span class="arag-chip ${tone}">${s.state === "connected" ? '<span class="vb-live-dot" style="margin-right:5px"></span>' : ""}${esc(s.state)}</span>
       <span class="label">Transcription: ElevenLabs Scribe</span>
     </div>
-    <dl class="vb-kv">
+    <dl class="vb-kv" style="font-size:12.5px">
       <dt>Model</dt><dd class="vb-mono">${esc(s.model)}</dd>
       <dt>Language</dt><dd>${esc(s.language || "detecting…")}</dd>
       <dt>Last final</dt><dd>${s.latencyMs ? esc(fmtMs(s.latencyMs)) : "—"}</dd>
@@ -278,7 +278,7 @@ function runningPanel(s) {
       ${ended ? "" : `<button class="arag-btn ghost sm" id="vbSample">${icon("play", 14)} ${live.sample ? "Stop sample" : "Play sample"}</button>`}
       ${
         ended
-          ? `<a class="arag-btn secondary sm" href="/conversations/#${esc(s.id)}">Open in Conversations</a>
+          ? `<a class="arag-btn secondary sm" href="/conversations/?id=${encodeURIComponent(s.id)}">Open in Conversations</a>
              <button class="arag-btn sm" id="vbNew">Start another session</button>`
           : `<button class="arag-btn ghost sm danger" id="vbEnd">${icon("end", 14)} End and save</button>`
       }

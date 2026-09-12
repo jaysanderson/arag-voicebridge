@@ -101,7 +101,7 @@ make dev       # starts on :8080 with the mock ARAG and a demo corpus
 open http://localhost:8080
 ```
 
-The console opens on the **Listen** tab. Press **Play sample conversation** and watch a scripted
+The workspace opens on **Live**, the hero page. Press **Play sample conversation** and watch a scripted
 3D-printing discovery call play out line by line — no microphone, no ElevenLabs key, nothing to
 configure — while the brief panel on the right fills in: a topic line, a goal/stage chip row, a
 profile of the caller, a summary, key points from the knowledge base, suggested questions, suggested
@@ -114,10 +114,11 @@ per turn, prefixed with `caller:` or `agent:` — and send it to the same sessio
 react to a different conversation entirely.
 
 When you're ready to point it at a real Knowledge Box, copy `.env.example` to `.env`, fill in
-`ARAG_KB_ID`, `ARAG_API_KEY` and `ARAG_REGION`, and run `make dev` again. Add an ElevenLabs API key
-to unlock **Listen to microphone** (a real realtime transcription feed into the same session API),
-and give a prospect a real ElevenLabs `agent_id` to unlock the **Call** tab, where the same
-grounding answers the caller directly when nobody's available — see the next section.
+`ARAG_KB_ID`, `ARAG_API_KEY` and `ARAG_REGION`, and run `make dev` again. Set `ELEVENLABS_API_KEY`
+and Live's microphone switches to real ElevenLabs Scribe v2 Realtime transcription feeding the same
+session API, and giving a prospect a real ElevenLabs `agent_id` turns on the voice-agent call in
+Live's drawer, where the same grounding answers the caller directly when nobody's available — see
+the next section.
 
 ## The same grounding, when nobody's on the line
 
@@ -136,7 +137,7 @@ doesn't do yet. There's no built-in speech-to-text or telephony — a session ta
 from whatever produces them, which is deliberate, but it does mean there's no audio pipeline
 included. There's no automated quality gate for the live brief the way there is for the deflection
 path; reviewing whether a brief was actually useful on a given call is a manual read of the brief
-history in the admin panel today. Session state lives in a single-machine, in-memory store with a
+history in Conversations today. Session state lives in a single-machine, in-memory store with a
 200-session cap, which is a strong shape for a demo or a pilot, not yet a durable, horizontally
 scaled session store.
 

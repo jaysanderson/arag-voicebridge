@@ -920,9 +920,6 @@ table.vb-table .vb-sub {
   color: var(--arag-text-muted);
   font-weight: 600;
 }
-.vb-scribe .vb-kv {
-  font-size: 12.5px;
-}
 
 /* Timeline (brief history, golden runs) ------------------------------------- */
 

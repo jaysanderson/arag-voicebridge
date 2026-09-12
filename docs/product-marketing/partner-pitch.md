@@ -86,10 +86,10 @@ empty-answer and zero-retrieval checks) rather than the model's own confidence. 
 set of questions it must answer and questions it must refuse.
 
 **8. Live demo.**
-Speaker notes: run it in the room. Listen tab, sample conversation — no credentials needed — showing
-the brief build up live; Ask tab for the deflection pipeline as a text turn; Call tab for a real
-voice round-trip once an agent is configured; Golden set tab run live against the audience's own
-question.
+Speaker notes: run it in the room. The Live page, sample conversation — no credentials needed —
+showing the brief build up live; the Knowledge page's text tester for the deflection pipeline as a
+text turn; the voice-agent call in Live's drawer for a real voice round-trip once an agent is
+configured; the Knowledge page's golden set run live against the audience's own question.
 
 **9. What's open, and the economics.**
 Speaker notes: Apache-2.0, OpenAPI-first (`src/openapi.ts` is the single source of truth), zero
@@ -109,7 +109,7 @@ agree the two or three prospects to start with.
 | "Are we locked into one speech-to-text or telephony vendor?" | No — `POST /api/v1/listen/sessions/{id}/transcript` accepts chunks from anything: a realtime STT stream, a telephony webhook, a meeting bot, or typed text. Nothing in the session API assumes a transport. |
 | "What happens if a brief refresh fails mid-call?" | The previous brief stays exactly as it was — `ListenService.refresh` never throws, and a failed or unusable refresh is logged as a failure in the session's own stats rather than shown as an error. |
 | "How do we know the throttle isn't burning cost on every word?" | The throttle lives on the server (minimum words, minimum gap between refreshes, a similarity check against the previous window), so every client gets the same, provable cost profile — not whatever discipline a given integration happens to build in. |
-| "Is there a pass/fail gate for the brief, the way there is for the deflection answer?" | Not today, honestly. The golden-set gate covers the deflection pipeline (`/api/v1/voice-answer`) only; reviewing whether a live brief was useful on a given call is a manual read of the session's brief history in the admin panel. |
+| "Is there a pass/fail gate for the brief, the way there is for the deflection answer?" | Not today, honestly. The golden-set gate covers the deflection pipeline (`/api/v1/voice-answer`) only; reviewing whether a live brief was useful on a given call is a manual read of the session's brief history in Conversations. |
 | "Is this production-ready?" | It's an MVP, and we say so plainly: session state is a single-machine, in-memory store with a 200-session cap; per-prospect credential isolation is a documented extension point, not a shipped guarantee. What is shipped and tested is the throttled listening service, the evolving-brief schema, the deflection pipeline's handoff contract, and the golden-set gate for deflection. |
 | "What does it cost us to maintain?" | Zero runtime dependencies and an OpenAPI document that drives request validation and contract tests — there is very little surface area to patch, and drift between the spec and the implementation fails the build rather than shipping quietly. |
 
@@ -126,7 +126,7 @@ to change for this phase.
 
 **Phase 3 — Watch it on real conversations.** Run the pilot on real or replayed calls and watch each
 session's stats (`chunks`, `refreshes`, `skipped`, `failures`, `p50LatencyMs`, `p95LatencyMs` — all
-in `GET /api/v1/listen/sessions/{id}` or the admin Listen sessions tab) alongside direct feedback
+in `GET /api/v1/listen/sessions/{id}` or the Conversations page) alongside direct feedback
 from whoever's using the brief. There is no automated pass/fail gate for this phase; success is a
 combination of the session stats staying healthy (refreshes happening, failures low) and the people
 using the brief saying it helped.

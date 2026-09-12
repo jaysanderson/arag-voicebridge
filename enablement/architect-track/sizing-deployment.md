@@ -104,8 +104,8 @@ this is the more dangerous cost driver, because it does not scale with conversat
 scales with **wall-clock time spent on a live call**, per session, for every session open at once.
 As of the current codebase the throttle is entirely server-side (`DECISIONS.md` V-14 — do not size
 against an older assumption of a fixed client-side cadence; that architecture was replaced and no
-longer exists in `public/app.js`): `DEFAULT_THROTTLE.minGapMs` (1500 ms) is a **ceiling** of at
-most 40 refreshes/minute/session, but the similarity and minimum-word checks
+longer exists in the client code, `public/app/live.js`): `DEFAULT_THROTTLE.minGapMs` (1500 ms) is a
+**ceiling** of at most 40 refreshes/minute/session, but the similarity and minimum-word checks
 (`jaccardMax: 0.85`, `minWords: 4`) mean a natural conversation — new, sufficiently different
 content roughly every 10–15 seconds at normal speaking pace — realistically produces on the order
 of **4–6 refreshes/minute/session** in steady state, not 40. Budget against that steady-state
@@ -134,8 +134,8 @@ changes how fast new sessions can be created.
 
 **Golden-set runs** are a smaller, bursty cost: every question in a prospect's `golden_questions`
 array fires one real turn (`runGoldenEval` uses the exact same `runTurn` pipeline, `src/services/
-goldenEval.ts`) each time the set is run — in CI, before a demo, or via the console's "Run golden
-set" button. Ten prospects with ten questions each, run on every CI push, is 100 real generations
+goldenEval.ts`) each time the set is run — in CI, before a demo, or via the Knowledge page's "Run
+golden set" button. Ten prospects with ten questions each, run on every CI push, is 100 real generations
 per push; budget for this the same way you'd budget for any other test suite that calls a paid
 API.
 
@@ -178,8 +178,9 @@ than the four small collections will ever use, and still generous headroom for
 agent-assist at real volume needs to worry about; the write-amplification above, and the
 200-session cap's eviction behaviour (`WORKSHOP.md` §7), are. **The one dial that matters for the
 turn log** is `VOICE_TURN_LOG_LIMIT`: raising it substantially (for a customer who wants a much
-longer visible turn history in the admin panel) increases both the steady-state file size and,
-more importantly, the cost of every single flush, since the whole collection is rewritten on every
+longer visible turn history on the Quality page or the operator turn log) increases both the
+steady-state file size and, more importantly, the cost of every single flush, since the whole
+collection is rewritten on every
 write, not appended to. For the shipped default (500), this is not worth worrying about; if a
 customer asks for 50,000, revisit whether the JSON-file store is still the right choice for that
 collection before just raising the number (see `WORKSHOP.md` §4's note that this store is
@@ -205,7 +206,7 @@ roughly 25 SSE connections of headroom before it starts competing with them — 
 those 25 is consumed for as long as a viewer's browser tab stays open, not just for the duration of
 a single turn. A supervisor dashboard that opens one SSE connection per agent it displays is the
 fastest way to exhaust this budget: 25 monitored agents from one dashboard, plus each agent's own
-console *also* watching its own session, is 50 connections against a 40/60 limit designed with
+Live page *also* watching its own session, is 50 connections against a 40/60 limit designed with
 short-lived turns in mind. Size this explicitly for any customer whose design includes a
 supervisor or monitoring view, and prefer polling `GET /api/v1/listen/sessions/{id}` on a longer
 interval over an SSE subscription for a dashboard that does not need sub-second updates — it trades

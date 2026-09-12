@@ -59,6 +59,36 @@ test.describe("Conversations", () => {
     await expect(page.locator("#cvTable tbody tr[data-id]").first()).toBeVisible({ timeout: 20_000 });
   });
 
+  test("keeps the view in the URL, so a filtered list is shareable and Back works", async ({
+    page,
+    request,
+  }) => {
+    const id = await seedSession(request, "we need a vacuum sintering furnace for stainless brackets");
+    await open(page, "/conversations/");
+    await expect(page.locator("#cvTable tbody tr[data-id]").first()).toBeVisible({ timeout: 20_000 });
+
+    await page.fill("#cvSearch", "vacuum sintering");
+    await expect(page.locator(`#cvTable tbody tr[data-id="${id}"]`)).toBeVisible({ timeout: 20_000 });
+    await expect(page).toHaveURL(/[?&]q=vacuum\+sintering/);
+
+    // A reload lands on the same filtered list, not on an unfiltered one.
+    await page.reload();
+    await expect(page.locator("#cvSearch")).toHaveValue("vacuum sintering");
+    await expect(page.locator(`#cvTable tbody tr[data-id="${id}"]`)).toBeVisible({ timeout: 20_000 });
+
+    // Opening a record is a history entry, so Back closes the drawer rather than leaving the list.
+    await page.click(`#cvTable tbody tr[data-id="${id}"]`);
+    await expect(page.locator(".vb-drawer")).toBeVisible();
+    await expect(page).toHaveURL(new RegExp(`[?&]id=${id}`));
+    await page.goBack();
+    await expect(page.locator(".vb-drawer")).toHaveCount(0);
+    await expect(page.locator("#cvSearch")).toHaveValue("vacuum sintering");
+
+    // And a record URL opens straight into it — the link Live hands over when a session ends.
+    await page.goto(`/conversations/?id=${id}`);
+    await expect(page.locator(".vb-drawer")).toContainText("How the brief evolved", { timeout: 20_000 });
+  });
+
   test("filters by status", async ({ page, request }) => {
     await seedSession(request, "we print titanium aerospace brackets");
     await open(page, "/conversations/");

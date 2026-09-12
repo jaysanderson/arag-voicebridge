@@ -49,7 +49,7 @@ function cardAround(page: Page, childSelector: string) {
 
 test.describe("VoiceBridge showcase", () => {
   test("showcase walkthrough", async ({ page, request }) => {
-    test.setTimeout(240_000);
+    test.setTimeout(300_000);
     mkdirSync(OUT, { recursive: true });
 
     // ── 00:00–00:12 — the problem ────────────────────────────────────────────────
@@ -88,7 +88,7 @@ test.describe("VoiceBridge showcase", () => {
 
     // Let the rest of the scripted call play out and wait for the sample to stop itself — the
     // natural "end of call" beat — rather than guessing at wall-clock time or a turn count.
-    await expect(page.locator("#vbStatus")).toContainText("Sample finished", { timeout: 30_000 });
+    await expect(page.locator("#vbStatus")).toContainText("Sample finished", { timeout: 60_000 });
     await beat(page, 1200);
     await briefCard.screenshot({ path: `${OUT}/03-brief-evolved.png` });
 
