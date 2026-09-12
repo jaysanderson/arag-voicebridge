@@ -8,18 +8,53 @@ as the UI evolves.
 ## Layout
 
 Across the top: a **prospect selector** (which Knowledge Box/persona you're driving), a greeting
-line, and a **Run golden set** button. Below that, four tabs: **Ask**, **Call**, **Listen**,
-**Golden set**. Along the bottom, a live **metrics footer** (turn count, p50/p95 total latency, p50
-first-token latency, handoff rate, citation coverage) that refreshes every 5 seconds.
+line, and a **Run golden set** button. Below that, four tabs, in the order they're presented:
+**Listen**, **Ask**, **Call**, **Golden set**. Along the bottom, a live **metrics footer** (turn
+count, p50/p95 total latency, p50 first-token latency, handoff rate, citation coverage) that
+refreshes every 5 seconds and reflects the deflection pipeline's own turns.
 
-Switching prospects reloads the greeting, the suggested-question chips (drawn from that prospect's
-own golden questions — a handful of answerable ones plus one deliberate handoff), the model picker
-for Listen mode, and resets the golden-set tab to "not run."
+Switching prospects reloads the greeting, the suggested-question chips on the Ask tab (drawn from
+that prospect's own golden questions), the model picker for Listen mode, and resets the golden-set
+tab to "not run."
 
-## Ask (text) — the primary demo path
+## Listen — the hero path
 
-This is the tab the demo leads with, deliberately: it needs no ElevenLabs credentials at all and
-runs the identical pipeline a phone call would (`DECISIONS.md` V-07).
+The console opens here. This is real-time listening: feed a conversation in and a structured brief
+on the right keeps up with it — who you're speaking to, what they want, the knowledge that matters
+right now, and what to say next. The console itself stays silent; it's a copilot for whoever's on
+the call, not a participant in it.
+
+1. Press **Play sample conversation**. No credentials are needed — this plays a scripted
+   3D-printing discovery call (a machine shop asking about metal 3D printing and post-print
+   sintering) line by line into a fresh listen session, roughly one line every 1.4 seconds, so you
+   can watch the brief build in real time rather than all at once. Press **Stop sample** to end it
+   early.
+2. Watch the **live brief** panel on the right fill in as fields become available: a topic line, a
+   goal/stage chip row, a one-line profile of the other person, a summary, key points drawn only
+   from the knowledge base, suggested questions to ask, suggested things to say, and — when
+   something in the knowledge base genuinely fits — recommended products. A running list of citation
+   chips accumulates underneath as new sources are used across the call.
+3. The **session stats** panel on the left shows the session id, chunks received, brief refreshes,
+   refreshes the server-side throttle skipped, and the latency of the last refresh — this is the
+   same throttling and the same numbers a real telephony or STT integration would produce, not a
+   demo-only shortcut.
+4. Instead of (or alongside) the sample, paste or type your own conversation into the **paste or
+   type a conversation** box — one line per turn, prefixed with `caller:` or `agent:` — and press
+   **Send to session** to feed it into the same session and watch the brief react.
+5. With an ElevenLabs key configured on the server, **Listen to microphone** opens a real realtime
+   transcription feed instead of the sample or typed text — what's said out loud appears under
+   "hearing" as an interim hypothesis, and finalised text feeds the same session API as everything
+   else on this tab.
+6. The **Brief model** dropdown lets you pick a specific fast model for the brief; the default,
+   "Auto — fast default," is exactly what a live call would use.
+7. Press **End session** when you're done. The session, its final brief, its full citation list and
+   its stats are kept for review — see [`walkthrough-admin.md`](walkthrough-admin.md#listen-sessions)
+   for where to find them afterwards.
+
+## Ask (text) — the deflection pipeline, as a text turn
+
+This tab runs the deflection follow-on: the identical pipeline a phone call would use
+(`DECISIONS.md` V-07), with no ElevenLabs credentials needed at all.
 
 1. Type a question, or click one of the suggested chips below the input, and press **Ask** (or hit
    Enter).
@@ -35,7 +70,7 @@ runs the identical pipeline a phone call would (`DECISIONS.md` V-07).
 
 Try one in-scope question (e.g. "Tell me about the Desktop Metal PureSinter furnace" against the
 `progress` prospect) and one deliberately out-of-scope one (e.g. "What is the capital of France?")
-back to back — this is the fastest way to show both halves of the trust story: grounded answers
+back to back — this is the fastest way to show both halves of the deflection story: grounded answers
 with citations, and a clean, honest handoff instead of a guess.
 
 ## Call — real voice
@@ -54,28 +89,13 @@ different ElevenLabs voice as a session override — if the agent's own configur
 voice overrides, the console detects the resulting error and falls back to the agent's default
 voice automatically rather than leaving the call broken.
 
-## Listen — the ambient copilot
+## Golden set — the deflection quality gate
 
-This is the agent-assist ("whisper") pattern: the console stays silent and simply listens, while a
-structured brief on the right evolves with who is being spoken to, what they want, and what to say
-next. **Start listening** requests microphone access, opens a realtime speech-to-text connection to
-ElevenLabs Scribe (via a single-use token minted server-side — see
-[`../developer/integrations.md`](../developer/integrations.md)), and begins posting brief refreshes
-roughly every 1.5 seconds as new speech accumulates.
-
-The brief panel fills in as fields become available: a topic line, a goal/stage chip row, a
-one-line profile of the other person, a summary, key points drawn only from the knowledge base,
-suggested questions to ask, suggested things to say, and — when something in the knowledge base
-genuinely fits — recommended products. A running list of source chips accumulates underneath as new
-citations arrive. A **Brief model** dropdown lets you pick a specific fast model for the brief; the
-default is "Auto — fast default," which is exactly what a live call would use.
-
-## Golden set — the demo gate
-
-The demo gate: every one of the selected prospect's golden questions runs through the same
-pipeline the live agent uses, and each must behave correctly — an answerable question must answer
-with at least one citation in three spoken sentences or fewer, with no URLs or citation markers
-leaking through; an out-of-scope question must hand off.
+The demo gate for the deflection pipeline: every one of the selected prospect's golden questions
+runs through the same pipeline the live agent uses, and each must behave correctly — an answerable
+question must answer with at least one citation in three spoken sentences or fewer, with no URLs or
+citation markers leaking through; an out-of-scope question must hand off. There is no equivalent
+automated gate for the Listen brief today — see [`when-to-use.md`](when-to-use.md).
 
 1. Press **Run golden set** (from this tab, or the shortcut button in the top bar — either starts
    the same job and switches to this tab automatically).
@@ -88,6 +108,6 @@ leaking through; an out-of-scope question must hand off.
 4. The chip at the top of the panel reads **gate open** (green) when every question passed, or
    **gate closed** (red) otherwise, alongside a summary line (`N/M passed · p50 … ms · p95 … ms`).
 
-A prospect should not be demoed live until its gate reads open — see
+A prospect should not be answered on its own live until its gate reads open — see
 [`../developer/extension-points.md`](../developer/extension-points.md) for the full onboarding
 ritual this gate is the last step of.

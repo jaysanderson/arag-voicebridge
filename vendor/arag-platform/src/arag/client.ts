@@ -396,6 +396,9 @@ export class AragClient {
 
   /**
    * Stream `/ask` as normalised items. Callers that just want the assembled answer use `ask()`.
+   * Prefer `resource_filters: [rid]` on the KB-level `/ask` to scope a question to one document; the
+   * per-resource `/resource/{rid}/ask` path (`opts.resourceId`) has been observed to fail (500/503) with
+   * `rag_strategies: full_resource` on the live platform and returns no retrieval data on some KBs.
    * Note: ARAG rejects `citations` together with `answer_json_schema`; this method drops
    * `citations` automatically in that case.
    */

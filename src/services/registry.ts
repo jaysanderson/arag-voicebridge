@@ -6,10 +6,16 @@
  * the store on first boot; real KB ids and agent ids live in the store (and in env), not in git.
  */
 import { existsSync, readFileSync } from "node:fs";
-import type { Collection, Logger, Store } from "../../vendor/arag-platform/src/index.ts";
+import type { Branding, Collection, Logger, Store } from "../../vendor/arag-platform/src/index.ts";
 import type { VoiceConfig } from "../config.ts";
 import { avatarEnabled, scribeEnabled } from "../config.ts";
-import type { GoldenQuestion, ProspectConfig, ProspectRecord, PublicProspect } from "../types.ts";
+import type {
+  GoldenQuestion,
+  ProspectBrand,
+  ProspectConfig,
+  ProspectRecord,
+  PublicProspect,
+} from "../types.ts";
 
 export class ProspectNotFoundError extends Error {
   readonly key: string;
@@ -45,6 +51,17 @@ const OPTIONAL_STRINGS: Array<keyof ProspectConfig> = [
   "avatar_id",
 ];
 
+/** The branding fields a prospect may override (see `ProspectBrand`). */
+const BRAND_KEYS = [
+  "productName",
+  "tagline",
+  "logoUrl",
+  "primaryColor",
+  "accentColor",
+  "footerText",
+  "poweredBy",
+];
+
 function isPlainObject(v: unknown): v is Record<string, unknown> {
   return typeof v === "object" && v !== null && !Array.isArray(v);
 }
@@ -77,6 +94,21 @@ export function validateProspect(cfg: unknown): FieldError[] {
     const n = Number(cfg.temperature);
     if (!Number.isFinite(n) || n < 0 || n > 2) {
       errors.push({ path: "/temperature", message: "must be a number between 0 and 2" });
+    }
+  }
+  if (cfg.brand !== undefined) {
+    if (!isPlainObject(cfg.brand)) {
+      errors.push({ path: "/brand", message: "must be an object" });
+    } else {
+      for (const [k, v] of Object.entries(cfg.brand)) {
+        if (!BRAND_KEYS.includes(k)) errors.push({ path: `/brand/${k}`, message: "is not a branding field" });
+        else if (k === "poweredBy" ? typeof v !== "boolean" : typeof v !== "string") {
+          errors.push({
+            path: `/brand/${k}`,
+            message: k === "poweredBy" ? "must be a boolean" : "must be a string",
+          });
+        }
+      }
     }
   }
   if (cfg.golden_questions !== undefined) {
@@ -125,6 +157,11 @@ export function normaliseProspect(cfg: Record<string, unknown>): ProspectConfig 
   if (cfg.max_tokens !== undefined) out.max_tokens = Number(cfg.max_tokens);
   if (cfg.temperature !== undefined) out.temperature = Number(cfg.temperature);
   if (Array.isArray(cfg.golden_questions)) out.golden_questions = cfg.golden_questions as GoldenQuestion[];
+  if (isPlainObject(cfg.brand)) {
+    const brand: Record<string, unknown> = {};
+    for (const k of BRAND_KEYS) if (cfg.brand[k] !== undefined) brand[k] = cfg.brand[k];
+    if (Object.keys(brand).length) out.brand = brand as ProspectBrand;
+  }
   return out;
 }
 
@@ -250,7 +287,21 @@ export class ProspectRegistry {
       golden_questions: p.golden_questions ?? [],
       avatar_ready: avatarEnabled(this.cfg) && Boolean(p.avatar_id),
       scribe_ready: scribeEnabled(this.cfg),
+      brand: this.brandFor(p),
     };
+  }
+
+  /**
+   * Effective branding for a prospect: the deployment's `BRAND_*` branding with the prospect's
+   * own overrides on top, so one deployment can serve several partner customers.
+   */
+  brandFor(p: ProspectRecord): Branding {
+    const base = this.cfg.branding;
+    const over = p.brand ?? {};
+    return {
+      ...base,
+      ...Object.fromEntries(Object.entries(over).filter(([, v]) => v !== undefined && v !== "")),
+    } as Branding;
   }
 
   /** Admin projection: everything stored (kb ids are operator data, not browser data). */

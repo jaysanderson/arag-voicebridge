@@ -1,11 +1,17 @@
 # VoiceBridge developer lab
 
-**Time:** 60–90 minutes, in six timed sections. **Credentials:** none — every step runs against
+**Time:** 60–90 minutes, in seven timed sections. **Credentials:** none — every step runs against
 the in-process mock ARAG (`ARAG_MOCK=1`). Every command below was run for real while writing this
 lab; where a response is quoted, it is what the server actually returned.
 
+The product's hero capability is real-time listening (agent-assist): a session ingests a live
+conversation and streams back an evolving, grounded brief. Section 1 gets the server running;
+section 2 puts you straight into that hero path before anything else, because it's what a customer
+sees first. The turn-pipeline material that used to open this lab still matters — it's now
+sections 3–7.
+
 **You need:** Node 22.18+, `bun` (dev tooling only — never `npm`), a checkout of this repo on the
-`mvp` branch, and two terminal panes.
+`mvp` branch, and two terminal panes (three for section 2, briefly, to watch an event stream).
 
 Work from the repo root (`arag-voice/`) throughout, except where a step says otherwise.
 
@@ -59,7 +65,7 @@ Read that middle line again: `startMockArag` boots a second, private HTTP server
 port) that behaves like a real ARAG Knowledge Box seeded with 8 documents about metal additive
 manufacturing (`src/services/seed.ts`) — binder jetting, sintering furnaces, Formlabs, 3D Systems.
 Every prospect in this lab answers from that same 8-document corpus, whatever its own `kb_id` says
-(more on this in §3). `registry.seeded` shows three prospects were loaded from
+(more on this in §4). `registry.seeded` shows three prospects were loaded from
 `config/prospects.example.json`: `progress`, `tangerine`, `northwind`.
 
 **Terminal B** — check it's alive:
@@ -100,7 +106,7 @@ curl -s -X POST http://localhost:8099/api/v1/voice-answer \
 ```
 
 That is the entire product's contract in one JSON object: an answer short enough to speak, the
-sources it came from (never spoken — see §2), whether it handed off, and a latency breakdown. Your
+sources it came from (never spoken — see §3), whether it handed off, and a latency breakdown. Your
 `latency_ms` numbers will differ (the mock has no network to cross, so single-digit milliseconds
 is normal — a real Knowledge Box is much slower; see `architect-track/sizing-deployment.md`).
 
@@ -113,7 +119,174 @@ real citations.
 
 ---
 
-## 2. Anatomy of a turn (15 min)
+## 2. Listening end to end (15 min)
+
+`POST /api/v1/voice-answer` is one question, one answer. Real-time listening is a different shape
+entirely: a **session** on the server ingests a live conversation, chunk by chunk, from any
+source — a realtime STT stream, a telephony webhook, a meeting bot, or (as here) you typing —
+and keeps one evolving, grounded brief across the whole call. Read the header comment in
+`src/services/listen.ts` before you start: the throttling that decides when a refresh is worth an
+LLM call lives on the server, not in a client, specifically so every client gets the same
+behaviour and the same cost profile.
+
+**Open a session** (Terminal B; Terminal A keeps running the server from §1):
+
+```bash
+curl -s -X POST http://localhost:8099/api/v1/listen/sessions \
+  -H 'content-type: application/json' \
+  -d '{"prospect":"progress"}'
+```
+
+```json
+{"id":"fc951f3e-f0a6-45fd-b8c0-cd24354d3f5f","createdAt":"...","updatedAt":"...","prospect":"progress","locale":"en-US","status":"live","brief":null,"briefVersion":0,"citations":[],"stats":{"chunks":0,"words":0,"refreshes":0,"skipped":0,"failures":0,"lastLatencyMs":0,"p50LatencyMs":0,"p95LatencyMs":0},"transcript":[],"transcriptTotal":0}
+```
+
+Your `id` will differ — export it so the rest of this section is copy-pasteable:
+
+```bash
+SID=fc951f3e-f0a6-45fd-b8c0-cd24354d3f5f   # use your own id
+```
+
+**Append the first turn.** This is the first thing said in the call, so there is nothing to
+compare against yet — the throttle refreshes immediately:
+
+```bash
+curl -s -X POST "http://localhost:8099/api/v1/listen/sessions/$SID/transcript" \
+  -H 'content-type: application/json' \
+  -d '{"chunks":[{"speaker":"caller","text":"We run a machine shop and mostly print stainless steel brackets and manifolds"}]}'
+```
+
+The tail of the response is `"refresh":"started","reason":"ok"` — the session now has a brief
+(`briefVersion: 1`) grounded in the mock's additive-manufacturing corpus, with citations. Look at
+the full brief in your own output: `topic`, `caller_profile`, `their_goal`, `stage`, `summary`,
+`key_points`, `suggested_questions`, `suggested_answers`, `recommended_products` — a structured
+object, not prose, built the same way as `POST /api/v1/brief` (`src/services/brief.ts`'s
+`LIVE_BRIEF_SCHEMA`) but persisted and accumulated on the session.
+
+**Append a second turn right away** — no pause — to see the throttle actually throttle:
+
+```bash
+curl -s -X POST "http://localhost:8099/api/v1/listen/sessions/$SID/transcript" \
+  -H 'content-type: application/json' \
+  -d '{"chunks":[{"speaker":"caller","text":"We are looking at metal 3D printing because machining the manifolds is slow"}]}'
+```
+
+```json
+{"session":{"...":"...","briefVersion":1,"stats":{"chunks":2,"words":26,"refreshes":1,"skipped":1,"...":"..."},"...":"..."},"refresh":"scheduled","reason":"too-soon"}
+```
+
+`refresh` is now `"scheduled"`, `reason` is `"too-soon"`: `DEFAULT_THROTTLE.minGapMs` (1500 ms) in
+`src/services/listen.ts` hasn't elapsed since the first refresh, so this one is **coalesced**
+rather than dropped — `ListenService.schedule` sets a single deferred timer that will re-evaluate
+once the gap passes, using whatever the window looks like *then*, not what it looked like at this
+moment. `briefVersion` is still 1 because the second refresh hasn't run yet. Wait a couple of
+seconds and re-read the session:
+
+```bash
+sleep 2
+curl -s "http://localhost:8099/api/v1/listen/sessions/$SID?transcript_tail=10" | python3 -m json.tool
+```
+
+`briefVersion` is now `2`, `stats.refreshes` is `2`: the deferred refresh fired on its own, with no
+further action from you. Read the citations array in your output — it now has entries pulled in
+across *both* refreshes (`mergeCitations` in `listen.ts` dedupes by title+url and keeps the best
+score across the whole call, so citations accumulate rather than being replaced each time).
+
+**Follow the live event stream.** Open a third terminal pane (Terminal C) and start a fresh
+session so you see the stream from the very first event:
+
+```bash
+# Terminal B: open a second session
+SID2=$(curl -s -X POST http://localhost:8099/api/v1/listen/sessions -H 'content-type: application/json' \
+  -d '{"prospect":"progress"}' | python3 -c 'import json,sys;print(json.load(sys.stdin)["id"])')
+echo "$SID2"
+```
+
+```bash
+# Terminal C: subscribe before anything is said
+curl -N "http://localhost:8099/api/v1/listen/sessions/$SID2/events"
+```
+
+Back in Terminal B, append one chunk to that second session:
+
+```bash
+curl -s -X POST "http://localhost:8099/api/v1/listen/sessions/$SID2/transcript" \
+  -H 'content-type: application/json' \
+  -d '{"chunks":[{"speaker":"caller","text":"We need a sintering furnace that can run stainless steel parts overnight"}]}'
+```
+
+Terminal C prints five events, in this order, and does not close:
+
+```
+: connected
+
+event: brief
+data: {"brief":null,"version":0,"citations":[],"stats":{"chunks":0,"words":0,"refreshes":0,"skipped":0,"failures":0,"lastLatencyMs":0,"p50LatencyMs":0,"p95LatencyMs":0}}
+
+event: status
+data: {"status":"live"}
+
+event: transcript
+data: {"type":"transcript","entries":[{"speaker":"caller","text":"We need a sintering furnace that can run stainless steel parts overnight","ts":"...","final":true}],"stats":{"chunks":1,"words":12,"...":"..."}}
+
+event: status
+data: {"type":"status","status":"refreshing"}
+
+event: brief
+data: {"type":"brief","brief":{"topic":"Metal binder-jet printing","...":"..."},"version":1,"citations":[{"title":"Desktop Metal Shop System","url":"","score":0.5},"..."],"stats":{"...":"...","refreshes":1}}
+```
+
+The first `brief`/`status` pair is sent the instant you subscribe (`src/routes/listen.ts`'s
+`/events` handler sends the session's current state immediately, "so a late subscriber is not
+staring at an empty pane") — that's why it shows `version: 0` even though nothing has been said
+yet. Everything after that is a live push as your one `transcript` append works its way through
+the throttle, the refresh, and the brief. `event: status` also carries `"skipped"` (with a
+`reason`) when a refresh is deliberately declined, and `"ended"` when the session closes — try
+`Ctrl-C` on Terminal C, it's just an HTTP connection, closing it does not end the session.
+
+**End the session and find it in the admin API.** Back in Terminal B:
+
+```bash
+curl -s -X DELETE "http://localhost:8099/api/v1/listen/sessions/$SID2"
+```
+
+`status` is now `"ended"` and the brief, citations and stats are unchanged — ending a session
+stops it accepting new transcript, it does not discard what was learned. Sign in as admin (same
+login as §4 below) and pull it from the operator view, which additionally carries the full brief
+history:
+
+```bash
+curl -s -c /tmp/voicebridge-lab-cookies.txt -X POST http://localhost:8099/api/v1/admin/login \
+  -H 'content-type: application/json' -d '{"token":"lab-token"}'
+curl -s -b /tmp/voicebridge-lab-cookies.txt "http://localhost:8099/api/v1/admin/listen-sessions?limit=5" \
+  | python3 -c '
+import json, sys
+for it in json.load(sys.stdin)["items"]:
+    print(it["id"], it["status"], "briefVersion", it["briefVersion"], "briefHistory entries", len(it.get("briefHistory", [])))
+'
+```
+
+```
+6b944f2d-87da-464b-a455-4cd2558e7136 ended briefVersion 1 briefHistory entries 1
+2728df70-2bf4-4d83-8422-2ed68b600dc8 live briefVersion 2 briefHistory entries 2
+fc951f3e-f0a6-45fd-b8c0-cd24354d3f5f live briefVersion 2 briefHistory entries 2
+```
+
+`briefHistory` is what makes this the admin projection rather than the client one — each entry
+carries the `version`, the timestamp and the `latencyMs` for that specific refresh, which is how
+you'd investigate "why did the brief look wrong for those thirty seconds mid-call" after the fact.
+The console's **Listen** tab (open `http://localhost:8099/` and click it) is this exact API: "Play
+sample conversation" posts a short scripted call through `/transcript` chunk by chunk, and the
+paste/type box lets you feed your own text the same way you just did with curl — the UI has no
+access the console script doesn't also have.
+
+**Checkpoint:** you have opened a session, watched one refresh run immediately and a second one
+coalesce and fire on its own, read an evolving brief with accumulating citations, watched the same
+sequence live over SSE, and found the ended session (with its full brief history) in the admin API.
+
+---
+
+## 3. Anatomy of a turn (12 min)
 
 `src/services/pipeline.ts` documents nine conceptual steps. Read the file header, then watch them
 happen. Restart the server with debug logging so you can see the ARAG call itself:
@@ -178,7 +351,7 @@ the file header lists them after voice shaping.
 
 ---
 
-## 3. Add a prospect and answer as it (15 min)
+## 4. Add a prospect and answer as it (12 min)
 
 VoiceBridge is multi-tenant: the registry lives in `DATA_DIR/prospects.json` with admin CRUD, not
 in a committed file (`DECISIONS.md` V-02) — adding a prospect is an API call, not a redeploy.
@@ -253,7 +426,7 @@ lists `atlas` alongside `progress`, `tangerine` and `northwind`.
 
 ---
 
-## 4. Write and pass a golden question (15 min)
+## 5. Write and pass a golden question (12 min)
 
 Golden questions are the demo gate: every prospect's set runs through the *same* pipeline the
 agent uses, and asserts behaviour, not just "didn't crash" (`src/services/goldenEval.ts`).
@@ -353,7 +526,7 @@ live boolean.
 
 ---
 
-## 5. Break it on purpose (10 min)
+## 6. Break it on purpose (10 min)
 
 The whole point of the pipeline is that it never produces dead air (`README.md`: "Never dead
 air"). Prove it by breaking two different things.
@@ -385,7 +558,7 @@ curl -s -b /tmp/voicebridge-lab-cookies.txt "http://localhost:8099/api/v1/admin/
 Look closely: there is **no `question` field at all** in that record — not a redacted placeholder,
 the key is simply absent. That's `DECISIONS.md` V-08: "the turn log stores the question text only
 for turns that passed the input guard" — an unsafe input is exactly the text you don't want to
-retain and re-display in an admin panel later. Compare it to a normal turn's record from §2, which
+retain and re-display in an admin panel later. Compare it to a normal turn's record from §3, which
 does carry `question`.
 
 ### 5b. Force an upstream failure
@@ -433,7 +606,7 @@ ways it still returns something speakable within budget.
 
 ---
 
-## 6. Extend the pipeline with a new check (15 min)
+## 7. Extend the pipeline with a new check (12 min)
 
 `src/services/safety.ts`'s `guardInput` runs a list of regular expressions before anything reaches
 ARAG. Add one. We'll block a request for someone else's personal data — a real support scenario,
@@ -529,7 +702,9 @@ rm -rf /tmp/voicebridge-lab
 
 ## What's next
 
-- `exercises/` — five short, independent exercises with a runnable acceptance check each.
-- `knowledge-check.md` — 12–15 questions to check what stuck.
+- `exercises/` — six short, independent exercises with a runnable acceptance check each, including
+  driving a listening session from a script (exercise 06).
+- `knowledge-check.md` — questions to check what stuck, including the listening throttle.
 - `../architect-track/WORKSHOP.md` — the same product from a deployment and reliability angle:
-  the turn budget, multi-tenant routing, stored configurations, failure modes at scale.
+  the turn budget, multi-tenant routing, stored configurations, agent-assist at scale, failure
+  modes.

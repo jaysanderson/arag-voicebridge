@@ -65,7 +65,27 @@ function sse(url, handlers) {
   return () => es.close();
 }
 
-/** Two-band product shell. Attributes: product, tagline, nav="Label=/path,Label2=/path2", admin-href, docs-href */
+/**
+ * Apply a branding payload (from GET /api/v1/branding) to the document: CSS variables, title, and
+ * the shell's name/logo/powered-by/footer. Safe to call before or after <arag-shell> renders.
+ */
+function applyBranding(b) {
+  if (!b) return;
+  const root = document.documentElement;
+  if (b.primaryColor) {
+    root.style.setProperty("--arag-brand-600", b.primaryColor);
+    root.style.setProperty("--arag-brand-500", b.primaryColor);
+    root.style.setProperty("--arag-brand-700", b.primaryColor);
+  }
+  if (b.accentColor) {
+    root.style.setProperty("--arag-accent-500", b.accentColor);
+    root.style.setProperty("--arag-accent-400", b.accentColor);
+  }
+  window.__aragBranding = b;
+  for (const el of document.querySelectorAll("arag-shell")) el.applyBranding?.(b);
+}
+
+/** Two-band product shell. Attributes: product, tagline, nav="Label=/path,...", admin-href, docs-href, branding-src (default /api/v1/branding; "none" to skip) */
 class AragShell extends HTMLElement {
   connectedCallback() {
     const product = this.getAttribute("product") ?? "ARAG Product";
@@ -83,24 +103,58 @@ class AragShell extends HTMLElement {
     const admin = this.getAttribute("admin-href");
     const content = Array.from(this.childNodes);
     this.innerHTML = `
-      <div class="arag-band"><div class="arag-container">
+      <div class="arag-band" data-powered-by><div class="arag-container">
         <span class="brand"><span class="dot"></span>Progress Agentic RAG</span>
         <span class="band-actions">
-          <a class="arag-btn ghost sm" style="color:#fff;border-color:rgba(255,255,255,.3)" href="${esc(docs)}">API docs</a>
+          <a class="arag-btn ghost sm" style="color:#fff;border-color:rgba(255,255,255,.3)" href="${esc(docs)}" data-docs-link>API docs</a>
           ${admin ? `<a class="arag-btn ghost sm" style="color:#fff;border-color:rgba(255,255,255,.3)" href="${esc(admin)}">Admin</a>` : ""}
         </span>
       </div></div>
       <header class="arag-header"><div class="arag-container">
-        <a class="product" href="/">${esc(product)}${tagline ? `<span class="tag">${esc(tagline)}</span>` : ""}</a>
+        <a class="product" href="/"><img data-brand-logo alt="" style="height:26px;width:auto;display:none" /><span data-brand-name>${esc(product)}</span>${tagline ? `<span class="tag" data-brand-tagline>${esc(tagline)}</span>` : `<span class="tag" data-brand-tagline hidden></span>`}</a>
         <nav class="arag-nav">${nav.map((n) => `<a href="${esc(n.href)}"${(n.href.replace(/\/$/, "") || "/") === path ? ' aria-current="page"' : ""}>${esc(n.label)}</a>`).join("")}</nav>
         <span class="spacer"></span>
         <slot name="actions"></slot>
         <arag-status endpoint="/readyz" label="service"></arag-status>
       </div></header>
       <main class="arag-main"><div class="arag-container" data-slot="content"></div></main>
-      <footer class="arag-footer"><div class="arag-container"><span>Open source · Apache-2.0</span><span>Built on Progress Agentic RAG</span></div></footer>`;
+      <footer class="arag-footer"><div class="arag-container"><span data-brand-footer>Open source · Apache-2.0</span><span data-powered-by-credit>Built on Progress Agentic RAG</span></div></footer>`;
     const host = this.querySelector('[data-slot="content"]');
     for (const n of content) host.appendChild(n);
+    const src = this.getAttribute("branding-src") ?? "/api/v1/branding";
+    if (window.__aragBranding) this.applyBranding(window.__aragBranding);
+    else if (src !== "none")
+      api(src)
+        .then((b) => applyBranding(b))
+        .catch(() => undefined);
+  }
+  applyBranding(b) {
+    const name = this.querySelector("[data-brand-name]");
+    if (b.productName && name) {
+      name.textContent = b.productName;
+      if (!document.title || document.title.startsWith(this.getAttribute("product") ?? ""))
+        document.title = document.title.replace(this.getAttribute("product") ?? "", b.productName);
+    }
+    const tag = this.querySelector("[data-brand-tagline]");
+    if (tag && b.tagline) {
+      tag.textContent = b.tagline;
+      tag.hidden = false;
+    }
+    const logo = this.querySelector("[data-brand-logo]");
+    if (logo && b.logoUrl) {
+      logo.src = b.logoUrl;
+      logo.style.display = "inline-block";
+    }
+    const band = this.querySelector("[data-powered-by]");
+    const credit = this.querySelector("[data-powered-by-credit]");
+    if (b.poweredBy === false) {
+      if (band) band.hidden = true;
+      if (credit) credit.hidden = true;
+    }
+    const footer = this.querySelector("[data-brand-footer]");
+    if (footer && b.footerText) footer.textContent = b.footerText;
+    const docs = this.querySelector("[data-docs-link]");
+    if (docs && b.docsUrl) docs.href = b.docsUrl;
   }
 }
 
@@ -314,5 +368,5 @@ for (const [name, cls] of [
   if (!customElements.get(name)) customElements.define(name, cls);
 }
 
-window.aragUI = { api, toast, esc, fmtMs, fmtBytes, sse, highlightJson };
-export { api, toast, esc, fmtMs, fmtBytes, sse, highlightJson };
+window.aragUI = { api, toast, esc, fmtMs, fmtBytes, sse, highlightJson, applyBranding };
+export { api, toast, esc, fmtMs, fmtBytes, sse, highlightJson, applyBranding };

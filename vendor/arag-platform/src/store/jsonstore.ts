@@ -27,6 +27,8 @@ export class Collection<T extends StoredDoc> {
   private readonly persist: boolean;
   private dirty = false;
   private flushTimer: NodeJS.Timeout | null = null;
+  /** Set when the on-disk file was unreadable at load; the original is kept as `<file>.corrupt-<ts>`. */
+  corruptBackup: string | null = null;
 
   constructor(dir: string, name: string, opts: CollectionOptions = {}) {
     this.name = name;
@@ -40,12 +42,17 @@ export class Collection<T extends StoredDoc> {
           const arr = JSON.parse(readFileSync(this.file, "utf8")) as T[];
           for (const d of arr) this.docs.set(d.id, d);
         } catch {
-          // corrupt file: start empty but keep a backup
+          // corrupt file: start empty, keep a backup, and make it visible so callers do not silently re-seed
+          const backup = `${this.file}.corrupt-${Date.now()}`;
           try {
-            renameSync(this.file, `${this.file}.corrupt-${Date.now()}`);
+            renameSync(this.file, backup);
+            this.corruptBackup = backup;
           } catch {
             /* ignore */
           }
+          process.stderr.write(
+            `${JSON.stringify({ ts: new Date().toISOString(), level: "error", msg: "store.corrupt", collection: name, backup })}\n`,
+          );
         }
       }
     }

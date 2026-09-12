@@ -17,19 +17,28 @@ make dev             # copies .env.example to .env if missing, then starts on :8
 additive manufacturing (`src/services/seed.ts`) — enough for the `progress` prospect's ten-question
 golden set to pass with no external calls at all.
 
-Open <http://localhost:8080>. The console opens on the **Ask** tab:
+Open <http://localhost:8080>. The console opens on the **Listen** tab — real-time listening
+(agent-assist) is the product's hero capability, so it is what you see first:
 
-1. Type a question (or click one of the suggested chips) and press **Ask**.
-2. You get back the exact line the agent would speak, its citations, the latency breakdown
-   (retrieve / first token / total) and whether the turn handed off.
-3. The "What just happened" panel lights up each of the nine pipeline steps
-   (see [`../architecture/architecture.md`](../architecture/architecture.md)) as they run.
-4. Press **Run golden set** to fire all ten golden questions for the current prospect through the
-   same pipeline and watch the demo gate open or close live.
+1. Press **Play sample conversation**. A scripted ten-line discovery call is fed into a listen
+   session one line at a time (`SAMPLE_CONVERSATION` in `public/app.js`), exactly as a live caller's
+   words would arrive.
+2. Watch the transcript fill in on one side and the brief — a caller profile, their inferred goal,
+   key points, suggested questions and answers, all grounded in the mock Knowledge Box — build up
+   and refine itself on the other, over Server-Sent Events.
+3. The stats row (chunks / refreshes / skipped / latency) shows the server-side throttle at work:
+   not every line triggers a fresh LLM call — see
+   [`../architecture/architecture.md`](../architecture/architecture.md) for why.
+4. Switch to the **Ask** tab to fire a single question instead (you get back the exact line the
+   agent would speak, its citations, the latency breakdown, and whether the turn handed off), or
+   press **Run golden set** to fire all ten golden questions for the current prospect through the
+   turn pipeline and watch the demo gate open or close live.
 
-Nothing here needs an ElevenLabs key: the Ask tab and the golden-set runner exercise the full turn
-pipeline as text. The **Call** and **Listen** tabs are visible but degrade politely — Call reports
-"No ElevenLabs agent configured", Listen's mic button works but minting a Scribe token 503s.
+Nothing here needs an ElevenLabs key: Listen's sample conversation and typed-conversation paths, the
+Ask tab, and the golden-set runner all exercise the full pipeline as text. The **Call** tab and
+Listen's own **microphone** button are visible but degrade politely — Call reports "No ElevenLabs
+agent configured", the microphone button works but minting a Scribe token 503s (typing or pasting a
+conversation into Listen still works with no credentials at all).
 
 ## 2. Live credentials
 
@@ -51,7 +60,8 @@ prospect, so it answers from your own Knowledge Box with no file edits. If the r
 already been seeded, change it through the admin panel instead (see
 [`../business/walkthrough-admin.md`](../business/walkthrough-admin.md)) or add a new prospect.
 
-To light up **Call** (real voice) and **Listen** (ambient Scribe + evolving brief), add:
+To light up **Call** (real voice) and Listen's **microphone** button (transcribing you live via
+ElevenLabs Scribe, instead of the sample or typed conversation), add:
 
 ```bash
 ELEVENLABS_API_KEY=<server-side only — never sent to the browser>
@@ -59,12 +69,71 @@ ELEVENLABS_API_KEY=<server-side only — never sent to the browser>
 
 and give the prospect a real `agent_id` in the registry. See
 [`integrations.md`](integrations.md) for the full ElevenLabs agent setup and what each optional
-integration needs.
+integration needs — none of it is required for the listen-session API itself, which accepts
+conversation text from any source.
 
-## 3. Your first API call
+## 3. Your first API call: real-time listening
 
-Every voice platform that can call an HTTP tool can use VoiceBridge — the shipped demo happens to
-use ElevenLabs. The one endpoint that matters is `POST /api/v1/voice-answer`:
+A listen session is the hero path: open it once, append conversation as it happens from wherever
+it comes from, read the evolving brief. Two calls after creating the session show the whole shape:
+
+```bash
+BASE=http://localhost:8080
+
+# Open a session for a prospect.
+SESSION=$(curl -s $BASE/api/v1/listen/sessions \
+  -H 'Content-Type: application/json' \
+  -d '{"prospect": "progress"}' | jq -r '.id')
+
+# Append conversation — final text from any source: a realtime STT stream, a telephony webhook, a
+# meeting bot, or someone typing.
+curl -s $BASE/api/v1/listen/sessions/$SESSION/transcript \
+  -H 'Content-Type: application/json' \
+  -d '{"chunks": [
+        {"speaker": "caller", "text": "we run a machine shop and need to print stainless steel parts fast"}
+      ]}' | jq '{refresh, reason}'
+```
+
+```json
+{ "refresh": "started", "reason": "ok" }
+```
+
+The refresh runs in the background (it is one ARAG call), so give it a moment, then read the
+session back:
+
+```bash
+sleep 1
+curl -s $BASE/api/v1/listen/sessions/$SESSION | jq '{briefVersion, brief, citations}'
+```
+
+```json
+{
+  "briefVersion": 1,
+  "brief": {
+    "topic": "Metal 3D printing for a machine shop",
+    "caller_profile": "Runs a machine shop, evaluating production-volume metal printing.",
+    "summary": "The caller wants faster stainless steel part production than machining allows.",
+    "key_points": ["..."],
+    "suggested_questions": ["..."],
+    "suggested_answers": ["..."]
+  },
+  "citations": [{ "title": "Desktop Metal Shop System", "url": "", "score": 0.81 }]
+}
+```
+
+A real client would instead open `GET /api/v1/listen/sessions/$SESSION/events` (Server-Sent Events:
+`brief` / `transcript` / `status`) rather than polling, and end the call with
+`DELETE /api/v1/listen/sessions/$SESSION`. See
+[`examples.md`](examples.md#real-time-listening) for the full set — SSE with `EventSource`, the
+polling fallback, driving it from a telephony webhook versus a browser's own speech recognition,
+and the admin view of a session's brief history.
+
+## 4. A single, stateless turn: `POST /api/v1/voice-answer`
+
+Not every integration wants an ongoing session — a voice agent's custom tool typically wants one
+question in, one spoken answer out, with no session to manage. That is `POST /api/v1/voice-answer`,
+the second act after listening: every voice platform that can call an HTTP tool can use it — the
+shipped demo happens to use ElevenLabs.
 
 ```bash
 curl -s http://localhost:8080/api/v1/voice-answer \
@@ -100,9 +169,10 @@ true
 "sentinel"
 ```
 
-That is the whole product contract in one call. From here:
+That is the stateless half of the product contract in one call. From here:
 
-- [`examples.md`](examples.md) — every public route, with copy-pasteable curl/JS.
+- [`examples.md`](examples.md) — real-time listening in full, plus every other public route, with
+  copy-pasteable curl/JS.
 - [`../architecture/architecture.md`](../architecture/architecture.md) — the nine-step pipeline
   and the ADRs behind it.
 - [`../business/walkthrough-demo.md`](../business/walkthrough-demo.md) — a click-by-click tour of

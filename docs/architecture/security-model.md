@@ -34,8 +34,8 @@ Three modes, checked by the platform's `App.authenticate()`/`enforceAuth()`
 | Mode | Route examples | Behaviour |
 |---|---|---|
 | `none` (default) | `/healthz`, `/readyz`, OpenAPI/docs pages, `POST /api/v1/session` | Always public |
-| `api` | `/api/v1/voice-answer`, `/api/v1/prospects`, `/api/v1/brief`, `/api/v1/metrics`, `/api/v1/jobs/*`, realtime bootstrap | Open when `API_KEYS` is unset; requires `X-API-Key`, `Authorization: Bearer <key>`, an admin token, or a signed `arag_session` cookie once `API_KEYS` is set |
-| `admin` | every `/api/v1/admin/*` route | Always requires `ADMIN_TOKEN` — `Authorization: Bearer <token>` or the `arag_admin` cookie set by `POST /api/v1/admin/login`. If `ADMIN_TOKEN` is unset, admin routes answer `403` (disabled, not "open") |
+| `api` | `/api/v1/listen/sessions*` (create, append, read, list, events, end), `/api/v1/voice-answer`, `/api/v1/prospects`, `/api/v1/brief`, `/api/v1/metrics`, `/api/v1/jobs/*`, realtime bootstrap | Open when `API_KEYS` is unset; requires `X-API-Key`, `Authorization: Bearer <key>`, an admin token, or a signed `arag_session` cookie once `API_KEYS` is set |
+| `admin` | every `/api/v1/admin/*` route, including `/api/v1/admin/listen-sessions` | Always requires `ADMIN_TOKEN` — `Authorization: Bearer <token>` or the `arag_admin` cookie set by `POST /api/v1/admin/login`. If `ADMIN_TOKEN` is unset, admin routes answer `403` (disabled, not "open") |
 
 The `arag_session` cookie exists so the demo console can call `auth: "api"` routes without ever
 holding an API key in browser JS: it calls `POST /api/v1/session` once at boot, which issues an
@@ -65,25 +65,72 @@ call it with nothing but the prospect key), but it is a real cost-and-abuse surf
 beyond a demo — set `API_KEYS` and put the real key only in the voice agent's tool configuration
 (never in client-side code) once this stops being a controlled demo audience.
 
+## Sessions carry conversation content
+
+A listen session holds real conversation text — the same category of sensitive input a voice turn's
+`question` is, but retained for the life of the call rather than processed and discarded. Three
+things bound what that means in practice:
+
+1. **Retention is capped, not indefinite.** A session's transcript is capped at the most recent 400
+   entries / 20,000 characters (`MAX_TRANSCRIPT_ENTRIES`/`MAX_TRANSCRIPT_CHARS`,
+   `src/services/listen.ts`), its brief history at 20 versions, and its citation list at 12 — so a
+   very long call does not grow a session without bound. The session itself is deleted only when the
+   collection's 200-session cap evicts it (oldest `createdAt` first, live or ended alike — see
+   [`data-flow.md`](data-flow.md) and [`limits.md`](limits.md)); there is no separate
+   time-based expiry or an explicit "purge this session's content" operation today.
+2. **The same injection screening as the rest of the product.** The transcript reaches the brief
+   prompt as free text, so it gets the same treatment as voice-turn `history`: `screenTranscript()`
+   (`src/services/safety.ts`) drops any line matching the injection patterns before it is
+   interpolated into the ARAG prompt, and the rolling window itself passes through `guardInput()`
+   before a refresh is attempted — a window that reads as an injection attempt or an out-of-scope
+   ask produces `brief: null` (nothing usable) rather than being forwarded to ARAG. This is the
+   same `unsafeReason()` check used everywhere else in the product (see "Guard placement" below),
+   not a separate, session-specific classifier.
+3. **No content-specific redaction in the store.** Unlike the turn log's guard-trip redaction
+   (below), a listen session's transcript is stored as-is regardless of whether a line tripped the
+   injection screen — the screen only affects what gets *sent to ARAG*, not what is written to
+   `listen-sessions.json`. An operator with admin access reading `GET /api/v1/admin/listen-sessions`
+   sees the same transcript/brief history a caller building a client against the public API would.
+
+## Who can read a session
+
+Every listen-session route — create, append, read, list, the SSE stream, and end — is `auth: "api"`
+with no further per-session check: there is no owner or caller identity recorded on a session
+beyond the opaque `metadata` object a creator chooses to attach. With `API_KEYS` unset (the shipped
+default), anyone who can reach the deployment and knows (or enumerates) a session id can read its
+transcript and brief, append to it, or end it — the same shape of exposure documented below for
+`POST /api/v1/voice-answer`, extended to conversation content rather than just spend. `GET
+/api/v1/listen/sessions` additionally lists **recent sessions for a prospect** with no id needed at
+all. Set `API_KEYS` (or rely on the console's own `arag_session` cookie, which is scoped to the
+browser that created it but is not a per-session credential either) before treating session content
+as anything other than shared-within-the-deployment.
+
 ## Rate limiting
 
 Two layers stack:
 
 1. **Platform global limiter** — one per-IP-or-API-key token bucket (`RATE_LIMIT_RPS`/
    `RATE_LIMIT_BURST`, default 5 rps / burst 20) applied to every route unless `noRateLimit: true`
-   (health checks, the OpenAPI document, the job-events SSE stream — a long-lived connection
-   shouldn't be rate-limited as if it were a burst of requests).
-2. **Product-owned per-route limiters** (`src/services/ratelimit.ts::RateLimiter`) stacked on top
-   for the two endpoints where the global budget is provably wrong for the traffic pattern: `/brief`
-   fires roughly every 1.5 s while Listen mode is active (`VOICE_BRIEF_RATE_RPS`, default 1 rps,
-   burst 5) and each call costs a full LLM generation; `/scribe-token` mints ElevenLabs quota
-   (`VOICE_SCRIBE_RATE_RPS`, default 0.2 rps, burst 3). `DECISIONS.md` V-05 records this as a
-   reported gap in the shared platform toolkit — per-route limits belong there long-term, but live
-   here as product code today.
+   (health checks, the OpenAPI document, the job-events SSE stream and a listen session's own SSE
+   stream — a long-lived connection shouldn't be rate-limited as if it were a burst of requests).
+   This is what bounds `POST .../transcript` appends and reads of a session: they carry no
+   route-specific limiter of their own, so they share the same global budget as any other route.
+2. **Per-route limits, declared on the route, enforced by the platform** — `POST
+   /api/v1/listen/sessions` (opening a session) and `POST /api/v1/brief` share one budget
+   (`VOICE_BRIEF_RATE_RPS`, default 1 rps, burst 5) because opening a session is the gateway to a
+   stream of full-LLM-generation refreshes; `/scribe-token` mints ElevenLabs quota
+   (`VOICE_SCRIBE_RATE_RPS`, default 0.2 rps, burst 3). These budgets are declared as a `rateLimit:
+   { rps, burst }` option on the route registration and enforced by the platform's own
+   `App.rateLimited()` (`vendor/arag-platform/src/http/app.ts`) — the product-owned `RateLimiter`
+   this used to require (`src/services/ratelimit.ts`) has been deleted now that the platform
+   supports per-route limits natively, closing the gap `DECISIONS.md` V-05 originally reported
+   (`DECISIONS.md` V-15).
 
 Neither limiter distinguishes "logged in as this admin" from "anonymous caller" beyond the admin
 bypass (`!ctx.auth.admin` in the platform's global limiter) — a golden-eval job hammering
-`/voice-answer` internally, for instance, is not separately throttled from live traffic (see
+`/voice-answer` internally, for instance, is not separately throttled from live traffic, and a
+session's own throttle (`decideRefresh()`, see [`architecture.md`](architecture.md)) is a *cost*
+control on refreshes, not a rate limiter on the append endpoint itself (see
 [`limits.md`](limits.md)).
 
 ## Guard placement

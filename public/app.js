@@ -1,5 +1,5 @@
 // VoiceBridge console. Talks ONLY to /api/v1 — no secrets ever reach the browser.
-import { api, esc, fmtMs, sse, toast } from "/ui/arag-ui.js";
+import { api, applyBranding, esc, fmtMs, sse, toast } from "/ui/arag-ui.js";
 
 const $ = (s) => document.querySelector(s);
 const state = {
@@ -33,6 +33,8 @@ function selectProspect(key) {
   if (!state.current) return;
   $("#prospect").value = state.current.key;
   $("#prospectGreeting").textContent = state.current.greeting;
+  // A partner can brand the deployment and each prospect it serves; the prospect wins.
+  if (state.current.brand) applyBranding(state.current.brand);
   const qs = (state.current.golden_questions ?? []).filter((q) => q.expect === "answer").slice(0, 4);
   const off = (state.current.golden_questions ?? []).find((q) => q.expect === "handoff");
   const chips = [...qs, ...(off ? [off] : [])];

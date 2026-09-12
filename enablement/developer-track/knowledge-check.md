@@ -1,6 +1,6 @@
 # Developer track — knowledge check
 
-15 questions. Try answering before you look — several are judgement calls, not recall, and the
+19 questions. Try answering before you look — several are judgement calls, not recall, and the
 "why" matters more than the label.
 
 ---
@@ -188,3 +188,64 @@ sense?
 > the admin health check one object per Knowledge Box to query; the pool is cleared whenever the
 > registry changes, so a `kb_id` edit takes effect on the next turn rather than being cached
 > forever.
+
+---
+
+**16. Judgement.** `ListenService`'s refresh throttle (a rolling word window, a 1.5 s minimum gap,
+a Jaccard similarity skip, a 4-word minimum) lives entirely inside `src/services/listen.ts`, on the
+server. Why not let each client — the web console, a softphone plugin, a telephony bridge —
+implement its own pacing before it posts to `/transcript`?
+
+> A client-side throttle has to be reimplemented, correctly, by every integration, and a naive or
+> malicious client can simply skip it and fire an LLM call per word — the cost profile of the
+> whole product would then depend on code VoiceBridge doesn't control. Putting the policy on the
+> server (`DECISIONS.md` V-14) makes it a property of the product: every caller gets the same
+> behaviour and the same cost exposure regardless of what wrote the client, and the policy itself
+> becomes unit-testable (`decideRefresh` is a pure function, tested with an injectable clock in
+> `test/listen.test.ts`) without spinning up a browser or a telephony stack.
+
+---
+
+**17. Recall.** A transcript chunk can be sent with `"final": false`. What happens to it when the
+next chunk arrives?
+
+> If the previous entry in the session's transcript is itself non-final, `ListenService.append`
+> pops it before pushing the new one — an interim (non-final) entry is always replaced by
+> whatever comes next for that same utterance, never accumulated. This is what lets a streaming
+> STT source resend its evolving hypothesis every 200 ms without flooding the transcript: only the
+> latest guess for an in-progress utterance is ever kept, and only a `final: true` entry survives
+> once something newer (final or not) arrives after it.
+
+---
+
+**18. Recall.** Every time `ListenService.refresh` actually calls the brief, what three things does
+it send, and why does the previous brief matter?
+
+> The rolling window (the last ~28 words heard, `this.window(session)`), the full transcript text
+> of **final** entries only (`this.transcriptText(session)`, interim chunks are excluded — see
+> Q17), and the session's own previous brief (`session.brief ?? undefined`) as `prev` on the
+> `BriefRequest`. Sending the previous brief is what makes this an *evolving* brief rather than a
+> series of unrelated snapshots: `src/services/brief.ts`'s prompt is written to refine what it
+> already inferred (the caller's profile, their goal, the stage of the call) using only the new
+> window as fresh input, instead of re-deriving the whole picture from scratch on every refresh
+> and potentially contradicting itself turn to turn.
+
+---
+
+**19. Judgement.** A caller wants to build their own client that owns its own transcript buffer and
+its own refresh pacing, and only wants a single one-shot structured brief for a block of text it
+already has. Should they open a `POST /api/v1/listen/sessions` session, or call
+`POST /api/v1/brief` directly? What do they give up either way?
+
+> `POST /api/v1/brief` directly — it is the stateless primitive `ListenService.refresh` itself
+> calls underneath a session (same request shape: `text`, `transcript`, `prev`, `model`). A
+> session buys you server-owned transcript storage, the throttle, accumulated citations across a
+> whole call, latency stats, and multiple readers via `GET .../events` (SSE) or polling — none of
+> which this caller needs if it already owns its own state and only wants one refresh for text it
+> already has in hand. Reaching for a session anyway costs a persisted object (sessions are capped
+> at 200, transcripts at 400 entries in `DATA_DIR`) for state nobody but this one caller will ever
+> read, and it inherits throttle behaviour tuned for a live, continuous call rather than a single
+> deliberate request. Going the other way — calling `/brief` directly when you actually have
+> multiple readers or want the server to own the throttle for you — means reimplementing
+> `decideRefresh`'s policy yourself, badly, which is exactly the mistake V-14 exists to prevent
+> (Q16).

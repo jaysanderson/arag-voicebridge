@@ -4,6 +4,75 @@ VoiceBridge is deliberately small and the seams are intentional. This page lists
 richer behaviour without touching the pipeline's shape, and closes with the onboarding ritual for
 adding a new prospect — the one workflow the whole architecture exists to make cheap.
 
+## Swapping the throttle policy
+
+`decideRefresh()` (`src/services/listen.ts`) is a small, pure function — given the current window,
+the session's throttle state (`lastNorm`/`lastFireAt`) and a clock, it returns whether to refresh
+and why. It is deliberately kept separate from `ListenService` so it is unit-testable with no store,
+clock or ARAG call (see `test/listen.test.ts`'s `decideRefresh` suite), and so the policy itself is
+easy to swap:
+
+1. **Tune the constants** — `DEFAULT_THROTTLE` (`windowWords: 28`, `minGapMs: 1500`, `minWords: 4`,
+   `jaccardMax: 0.85`) can be overridden per deployment by passing `throttle: Partial<ThrottleOptions>`
+   into `new ListenService({ ... })` in `src/server.ts`; there is no env var for this today, so a
+   per-deployment override is a one-line code change, not a config change.
+2. **Replace the policy entirely** — a different signal (e.g. refresh on every sentence boundary
+   detected by the STT vendor, or a fixed cadence regardless of content) only needs a function with
+   `decideRefresh()`'s signature; `ListenService.append()` and the deferred-refresh timer in
+   `schedule()` are the only two call sites.
+3. Keep `ThrottleReason` (`ok | too-few-words | too-soon | unchanged | too-similar`) meaningful if
+   you keep it — it is echoed back to the caller as `reason` on every transcript append
+   (`POST /api/v1/listen/sessions/{id}/transcript`) and is part of the OpenAPI contract
+   (`src/openapi.ts`), so a new policy that needs new reasons should extend the enum in both places
+   the same way a new `GuardReason` would (see the moderation-classifier point below).
+
+## Per-session generative models
+
+A session already accepts a per-session override at creation time — `generative_model` on
+`POST /api/v1/listen/sessions` is threaded through to every refresh as `BriefRequest.model`
+(`ListenService.refresh()` → `runBrief()`), falling back to the prospect's `brief_model`, then its
+`generative_model` (`buildBriefRequest()` in `src/services/brief.ts`). This is what the console's
+model dropdown uses to let a demo compare models on the same conversation without touching the
+registry. `runBrief()` also protects this from a real failure mode seen live: some Knowledge Boxes
+reject *any* per-request `generative_model` override (403/530); the first refresh that hits this
+retries once without the override and remembers the rejection (`rejectedModels`, keyed by
+prospect+model, for the life of the process) so the rest of the call — and every other session
+against that prospect — stops paying for the failed attempt instead of the brief silently going
+blank (`DECISIONS.md` V-17). To let a session's model change **mid-call** (rather than only at
+creation), the smallest change is a new field alongside `chunks` on the transcript-append body that
+`ListenService.append()` writes into `session.generative_model` before deciding whether to refresh —
+no other part of the pipeline needs to change, since `refresh()` already reads the field fresh from
+the session on every call.
+
+## A different session store
+
+Listen sessions are a `Collection<ListenSession>` (`deps.store.collection("listen-sessions", { cap:
+200 })`), the same interface `ProspectRegistry`, `MetricsService` and `GoldenEvalStore` use — see "A
+different store" below. The one thing specific to listen sessions is the in-process state that never
+goes through the store at all: the SSE subscriber list (`ListenService.listeners`) and the deferred-
+refresh timers (`ListenService.timers`) live only in the Node process's memory. Swapping the
+`Collection` backend (Postgres, Redis) makes session *data* durable and shareable across processes,
+but does not by itself make a session's live SSE fan-out or throttle timers work across more than
+one process — see [`../architecture/limits.md`](../architecture/limits.md) for why that matters
+sooner for listening than for the rest of the product, and
+[`../architecture/scaling.md`](../architecture/scaling.md) for what a multi-process version would
+need (a pub/sub layer between processes, or sticky routing so a session's SSE connections and
+appends always land on the process that opened it).
+
+## Post-call summarisation hooks
+
+Nothing runs automatically when a session ends today — `ListenService.end()` marks the session
+`ended`, keeps its final brief/citations/stats/`briefHistory` in the store, emits a `status: ended`
+SSE event, and returns. There is no hook for, say, writing a CRM note, generating a longer written
+summary distinct from the live brief, or triggering a follow-up email. The natural seam is inside
+`end()`: at that point the full `ListenSession` (transcript, `briefHistory`, citations, stats) is
+still in memory, which is the richest single moment to hand off to something else. A first
+implementation would likely queue an async `JobManager` job (the same mechanism golden evals use,
+`src/server.ts`'s `jobs.register()`) rather than doing the work inline in `end()`, since a
+summarisation call is another LLM round trip and `end()` today returns synchronously with no
+failure mode of its own — keep it that way, and let the hook fail independently of ending the
+session.
+
 ## A real moderation classifier
 
 `src/services/safety.ts` implements `guardInput()` and `guardOutput()` as regex checks —
@@ -46,7 +115,9 @@ field can front VoiceBridge: point its custom tool at `/api/v1/voice-answer` wit
 [`examples.md`](examples.md#the-elevenlabs-agent-tool-definition)) and have it speak the `answer`
 field verbatim. Only three things are ElevenLabs-specific and isolated behind their own modules:
 
-- `src/services/scribe.ts` (Scribe realtime STT token minting) — Listen mode only.
+- `src/services/scribe.ts` (Scribe realtime STT token minting) — feeds Listen's microphone button
+  only; the listen-session API underneath it is not ElevenLabs-specific at all (see
+  [`integrations.md`](integrations.md)).
 - `src/services/voices.ts` (voice list for the Call tab's picker).
 - `public/vendor/elevenlabs-client.js` (the vendored browser SDK used by the Call tab).
 
@@ -56,13 +127,14 @@ already.
 
 ## A different store
 
-`src/services/registry.ts`, `src/services/metrics.ts` and `src/services/goldenEval.ts` all depend
-only on the platform's `Collection<T>` interface (`get/put/list/delete`, see
-`vendor/arag-platform/src/store/jsonstore.ts`), not on its JSON-file implementation. To move to
+`src/services/registry.ts`, `src/services/metrics.ts`, `src/services/goldenEval.ts` and
+`src/services/listen.ts` all depend only on the platform's `Collection<T>` interface
+(`get/put/list/delete`, see `vendor/arag-platform/src/store/jsonstore.ts`), not on its JSON-file
+implementation. To move to
 Postgres/Redis at scale (see [`../architecture/scaling.md`](../architecture/scaling.md)):
 
 1. Implement `Collection<T>` and `Store` against the new backend inside `vendor/arag-platform` (per
-   `../../STANDARDS.md` §9, the platform is vendored and never edited in place — the change belongs
+   the platform repository's `STANDARDS.md` §9, the platform is vendored and never edited in place — the change belongs
    upstream in the platform repo, then re-synced with `make sync-platform`).
 2. Nothing in `src/services/*.ts` or `src/routes/*.ts` needs to change: they only call the
    `Collection`/`Store` interface, never touch the JSON files directly.

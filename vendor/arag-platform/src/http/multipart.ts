@@ -29,9 +29,15 @@ export function parseMultipart(body: Buffer, contentType: string): MultipartResu
     const name = /name="([^"]*)"/i.exec(disp)?.[1] ?? "";
     const filename = /filename="([^"]*)"/i.exec(disp)?.[1];
     const ct = /content-type:\s*([^\r\n]+)/i.exec(headers)?.[1]?.trim() ?? "application/octet-stream";
-    if (filename !== undefined)
-      files.push({ field: name, filename: decodeURIComponent(filename), contentType: ct, data });
-    else fields[name] = data.toString("utf8");
+    if (filename !== undefined) {
+      let decoded = filename;
+      try {
+        decoded = decodeURIComponent(filename);
+      } catch {
+        /* keep the raw filename when it is not percent-encoded */
+      }
+      files.push({ field: name, filename: decoded.replace(/[\\/]+/g, "_"), contentType: ct, data });
+    } else fields[name] = data.toString("utf8");
     pos = next;
   }
   return { fields, files };

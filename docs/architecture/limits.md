@@ -2,7 +2,56 @@
 
 An honest list of what this system does not (yet) guarantee, so nobody — including a future
 contributor — discovers it the hard way. Where a limit has a clear extension point, it is linked;
-some genuinely just need attention.
+some genuinely just need attention. Listening is the product's hero capability, so its limits are
+listed first.
+
+## Listening is single-process: SSE fan-out and throttle timers do not span machines
+
+A listen session's live behaviour — who is subscribed to its SSE stream (`ListenService.listeners`)
+and the deferred-refresh timer that fires a coalesced "too-soon" refresh once the throttle's gap has
+elapsed (`ListenService.timers`) — lives only in the Node process's memory, not in
+`DATA_DIR`. This is fine at the shipped single-machine topology, but it means: a subscriber can only
+receive events from the process that accepted its SSE connection, there is no cross-process pub/sub
+today, and running more than one machine (`min_machines_running > 1`) would silently split a
+session's traffic across processes that cannot see each other's subscribers or timers rather than
+scaling listening capacity. See [`scaling.md`](scaling.md) and the session-store extension point in
+[`../developer/extension-points.md`](../developer/extension-points.md) for what closing this gap
+would need.
+
+## Listen sessions live in the same JSON store as everything else
+
+A session's transcript, evolving brief, brief history, citations and stats are written to
+`DATA_DIR/listen-sessions.json` on every append and every refresh — busier writes than any other
+collection in the product (see [`scaling.md`](scaling.md)) — and are capped at 200 sessions, oldest
+`createdAt` evicted first **regardless of `status`**. In the shipped demo this is invisible; in a
+deployment running many long-lived concurrent calls, a still-`live` session could in principle be
+evicted if 200 newer sessions are created before it ends, silently losing its transcript and brief
+history from the store (the caller holding that session id would then get a 404 on its next read).
+There is no warning today when a session is approaching eviction.
+
+## No authorisation boundary between sessions
+
+Every listen-session route checks only the platform's `api`/`admin` auth modes (see
+[`security-model.md`](security-model.md)) — there is no concept of "the caller that opened this
+session" versus any other caller holding the same API key or session cookie. With `API_KEYS` unset
+(the shipped default), anyone who can reach the deployment and knows or enumerates a session id can
+read, append to, or end **any** session for **any** prospect, and `GET /api/v1/listen/sessions` lists
+recent sessions with no id needed at all. This is the same shape of gap already documented for
+`POST /api/v1/voice-answer`, extended from "spend ARAG tokens" to "read and mutate live conversation
+content" — a materially more sensitive thing to leave open. Set `API_KEYS` before running this
+beyond a controlled demo audience.
+
+## No speaker diarisation of its own
+
+`ListenService` trusts whatever `speaker` string a caller sends on each chunk (truncated to 40
+characters) — it does not distinguish voices, infer turns, or correct a mislabelled speaker itself.
+A single realtime STT stream that does not diarise its own audio (most single-channel transcription
+does not) will label every chunk with whatever the client hardcodes (`"caller"`, in the console's
+own mic path), and the brief's inferred `caller_profile`/`their_goal` fields are reasoning about
+"the other person" from conversational content, not from a verified speaker identity. A source that
+needs real diarisation must do it upstream (a diarising STT vendor, or per-channel audio in a
+telephony bridge) and send the correct label per chunk — the API has no diarisation step of its own
+to fall back on.
 
 ## Single shared ARAG service-account token
 
@@ -56,7 +105,7 @@ Golden-eval traffic is recorded into the same turn log as live traffic (tagged
 turn count and handoff rate — there is no way to exclude synthetic traffic from the live metrics
 snapshot today.
 
-## Mock-only golden corpus
+## Mock-only golden corpus (and the listening demo built on the same corpus)
 
 The `progress` prospect's ten-question golden set is guaranteed to pass against the **mock** ARAG
 server (`src/services/seed.ts`'s eight fictional documents) because both were authored together and
@@ -65,7 +114,12 @@ re-verified against the live `progress` Knowledge Box since the platform rewrite
 opt-in, credentialed, 3-question live check) exists precisely to close that gap before a real demo,
 but it is not part of `make check`/CI and is not run automatically. Treat "the golden set passes"
 as a statement about the mock corpus and the pipeline logic until `make smoke` (or a full
-`make eval` against the live KB) has actually been run for a given prospect.
+`make eval` against the live KB) has actually been run for a given prospect. The Listen tab's own
+zero-credential demo (`SAMPLE_CONVERSATION` in `public/app.js`, `DECISIONS.md` V-16) was written
+against this same eight-document mock corpus for the same reason — the brief it produces is a
+faithful demonstration of the throttle and the evolving-brief mechanics against real ARAG semantics
+in mock mode, not evidence that a live Knowledge Box's grounding quality has been checked for a
+given prospect's real content.
 
 ## LiveAvatar integration shapes are unverified
 
@@ -91,7 +145,7 @@ store (see [`../developer/extension-points.md`](../developer/extension-points.md
 For anyone comparing against the original prototype's own audit notes: the Node
 `--experimental-transform-types` flag dependency and TypeScript parameter-property usage that broke
 on newer Node versions are both gone — `package.json` requires Node `>=22.18` (native type
-stripping, no flag) and the codebase is erasable-syntax only throughout (`../../STANDARDS.md` §10).
+stripping, no flag) and the codebase is erasable-syntax only throughout (the platform repository's `STANDARDS.md` §10).
 The registry no longer lives in a committed file with real Knowledge Box/agent ids in git,
 `/admin/reload` no longer exists (or needs to), and the API is versioned under `/api/v1` with an
 OpenAPI document, contract tests and RFC 9457 error responses throughout.

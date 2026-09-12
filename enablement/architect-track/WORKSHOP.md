@@ -1,8 +1,10 @@
 # VoiceBridge architecture workshop
 
-**Time:** 90 minutes. **Audience:** architects and technical leads evaluating or deploying
-VoiceBridge for a customer. Bring a running mock instance if you want to check any claim below —
-every command is copy-pasteable and needs no credentials:
+**Time:** 105 minutes. **Audience:** architects and technical leads evaluating or deploying
+VoiceBridge for a customer. The product's hero capability is real-time listening (agent-assist,
+§7) — sections 1–6 cover the turn-based foundation it's built on, so read them in order even if
+agent-assist is what the customer actually asked about. Bring a running mock instance if you want
+to check any claim below — every command is copy-pasteable and needs no credentials:
 
 ```bash
 mkdir -p /tmp/voicebridge-workshop
@@ -224,7 +226,100 @@ Two failure modes sit **outside** this per-turn table and matter just as much fo
 
 ---
 
-## 7. Exercise — design the deployment (10 min)
+## 7. Designing for agent-assist (15 min)
+
+Everything so far has been one request, one response. Agent-assist (`src/services/listen.ts`,
+`src/routes/listen.ts`) is a **long-lived session**: a human agent (or a telephony bridge on their
+behalf) opens one, keeps appending transcript for the length of a live call — minutes, sometimes
+tens of minutes — and one or more viewers watch the brief evolve over `GET .../events` (SSE). That
+"long-lived" property is the whole architectural difference from a turn, and it's where most of
+the surprises live.
+
+**Sessions per agent.** The product's own model is one session per live call: the console opens
+exactly one on "Play sample conversation" or the first typed/pasted chunk, and ends it when the
+call ends. A contact-centre deployment scales this directly — N agents on N simultaneous calls is
+N concurrently open sessions, each with its own SSE subscriber (the agent's own screen, and
+possibly a supervisor's). Nothing in the product enforces "one session per agent" as a rule; it's
+a convention the calling application has to keep. A caller that opens a fresh session per *turn*
+instead of per *call* would defeat the entire point — the evolving brief and the accumulated
+citations exist specifically because the session persists across many appends.
+
+**Refresh cost per minute — not a flat rate.** `DEFAULT_THROTTLE.minGapMs` (1500 ms) is a
+**ceiling**, not a target: at most 40 refreshes/minute/session, reachable only by unnaturally
+bursty input (rapid re-paste, an aggressive STT chunker). Natural speech at ~130–150 words/minute
+takes 10–15 seconds to produce a fresh, sufficiently-different 28-word window
+(`DEFAULT_THROTTLE.windowWords`), so a real conversation realistically produces on the order of
+4–6 refreshes/minute/session once the Jaccard similarity check (`jaccardMax: 0.85`) is doing its
+job — budget against that steady-state figure, not the ceiling, but design your alerting around
+the ceiling (a session refreshing near 40/min for any length of time means either a client bug
+re-sending the same content as "new," or a misbehaving STT integration). The other half of the
+cost model that is easy to miss: `transcriptText()` sends the **whole running transcript so far**
+(up to `MAX_TRANSCRIPT_CHARS`, 20,000 characters) on every single refresh, not just the new window
+— so refresh 40 of a long call costs materially more input tokens than refresh 2 of the same call,
+even though `max_tokens` (600, `buildBriefRequest`) bounds the output side at a constant. Size a
+customer's cost estimate off their *longest* expected call, not their average one.
+
+**SSE connection budget.** `GET /api/v1/listen/sessions/{id}/events` is registered with
+`noRateLimit: true` — deliberately, since a legitimate viewer reconnecting after a network blip
+should never be throttled. The consequence: **nothing in the product limits how many SSE
+connections can be open at once**, to one session or across all of them. An open SSE stream is a
+request that never resolves for as long as the viewer is watching, and Fly's own admission control
+(`fly.toml`'s `[http_service.concurrency]`, soft 40 / hard 60 — see `sizing-deployment.md`) counts
+it exactly like any other in-flight request. A supervisor dashboard that opens one SSE connection
+per active agent, on top of the agents' own consoles each holding a second connection to the same
+sessions, consumes that same 40/60 budget that ordinary `voice-answer` turns need — and unlike a
+turn, an SSE connection doesn't free its slot when the "work" is done, only when the viewer
+disconnects or the session ends.
+
+**What breaks with many concurrent sessions.** Two independent limits, and a customer can hit
+either without hitting the other:
+
+1. **Request concurrency**, from SSE connections plus normal traffic sharing the same
+   `soft_limit`/`hard_limit` — the symptom is turns and appends starting to queue or get rejected
+   under Fly's admission control while CPU and memory both look fine, because the constraint is
+   held-open connections, not compute (§ "Concurrency and memory per machine" in
+   `sizing-deployment.md`).
+2. **The `listen-sessions` collection cap (200, `ListenService`'s `cap` option, `DATA_DIR/
+   listen-sessions.json`).** Read `Collection.put` in `vendor/arag-platform/src/store/
+   jsonstore.ts` closely: once the collection holds more than the cap, it evicts the
+   **oldest-by-`createdAt`** record — with no distinction between `"live"` and `"ended"`. Ended
+   sessions accumulate in the same collection (they are kept for the admin brief-history view, not
+   deleted), so on a busy day the 200 slots fill with call history long before 200 calls are ever
+   concurrently live. Once the collection is full, the next session created evicts the single
+   oldest record in it — and if that happens to be a long-running call that started before 200
+   newer sessions were created, **a still-live session is silently deleted out from under an agent
+   who is actively on that call.** Its next transcript append throws `ListenSessionNotFound` (a
+   404), which the API surfaces correctly — but "a session that was working stopped working with
+   no warning, mid-call" is a bad way for an operator to discover a capacity limit. This is a real
+   gap, not a hypothetical: raising the cap (`ListenService`'s `cap` constructor option, not
+   currently wired to an env variable) is the honest fix for a deployment expecting more than ~200
+   sessions' worth of combined live-plus-recent-history at once, and it belongs on the go-live
+   checklist for any customer running agent-assist at meaningful volume.
+
+**Retention of conversation content.** A listen session **is** the retained content — the full
+transcript (up to 400 entries, `MAX_TRANSCRIPT_ENTRIES`), up to 20 versions of the evolving brief
+(`MAX_BRIEF_HISTORY`, each a full structured snapshot), and the accumulated citations, all sitting
+in `DATA_DIR/listen-sessions.json` for as long as the cap keeps them around. This is a materially
+larger retention footprint than the turn log (§ "Data retention" idea from the turn-log
+discussion above, which keeps only up to 500 characters of one question per turn):
+`screenTranscript` (`src/services/safety.ts`) screens transcript chunks for the same
+injection/out-of-scope patterns as any other input, but it does not redact anything — a real
+customer's full conversation, verbatim, is what gets stored. And unlike the admin-only turn log,
+`GET /api/v1/listen/sessions/{id}` and `GET /api/v1/listen/sessions` are both `auth: "api"`
+(public) routes: if `API_KEYS` is unset, **anyone who can reach the host can read any session's
+full transcript and brief by id, and list recent sessions across every prospect on the
+deployment**, with no notion of "which agent owns this call." Treat "who may read a session" as
+its own line item in a go-live review, separate from the turn-log question it superficially
+resembles.
+
+**Discussion prompt:** a customer wants a supervisor view that shows all agents' live briefs on
+one screen, refreshed continuously. Using the two limits above, what is the actual ceiling on how
+many agents that one dashboard can watch at once on the shipped `shared-cpu-1x` machine, and which
+limit do you expect to bite first — request concurrency, or the 200-session cap?
+
+---
+
+## 8. Exercise — design the deployment (10 min)
 
 A customer wants VoiceBridge for two brands: `northwind` (health insurance member support, must
 answer from a Knowledge Box governed by a language filter and a `members` security group) and
@@ -244,6 +339,12 @@ answer:
 4. Using `sizing-deployment.md`'s latency and cost breakdown, estimate whether a single
    `shared-cpu-1x` / 512 MB machine (the shipped default) is enough for 50 concurrent calls, or
    whether you need to size up — show your reasoning, not just a number.
+5. Both brands want agent-assist available to every agent on every call, plus one supervisor
+   dashboard per brand watching all of that brand's live sessions at once. Using §7, at what point
+   (in agents, not calls) does the 200-session cap start to matter for a brand running at your
+   projected volume, and at what point does SSE connection count start competing with the same
+   `40`/`60` request-concurrency budget `voice-answer` turns need? Which limit would you expect a
+   real customer to hit first, and what would you tell them to change?
 
 There is no single correct answer to (2) — the point of the exercise is to notice the constraint
 exists at all before a customer's growth surfaces it as an incident.

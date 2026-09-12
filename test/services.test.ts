@@ -5,6 +5,7 @@ import {
   assertVoiceConfig,
   avatarEnabled,
   describeVoiceConfig,
+  readVoiceBranding,
   readVoiceEnv,
   scribeEnabled,
 } from "../src/config.ts";
@@ -92,6 +93,47 @@ describe("config", () => {
     );
     expect(described).not.toContain("sk-super-secret");
     expect(described).not.toContain("s3cret");
+  });
+});
+
+describe("branding (white-label)", () => {
+  it("defaults to the product's own identity with the Progress credit on", () => {
+    const b = readVoiceBranding({});
+    expect(b.productName).toBe("VoiceBridge");
+    expect(b.tagline).toBe("live, grounded call context");
+    expect(b.poweredBy).toBe(true);
+    expect(b.docsUrl).toBe("/api/v1/docs");
+  });
+
+  it("takes a partner's identity from BRAND_* alone", () => {
+    const b = readVoiceBranding({
+      BRAND_PRODUCT_NAME: "Contoso Live Assist",
+      BRAND_TAGLINE: "grounded call context",
+      BRAND_LOGO_URL: "/branding/logo.svg",
+      BRAND_PRIMARY_COLOR: "#6b2fa0",
+      BRAND_FOOTER_TEXT: "© Contoso",
+      BRAND_SUPPORT_URL: "https://support.contoso.test",
+    });
+    expect(b.productName).toBe("Contoso Live Assist");
+    expect(b.logoUrl).toBe("/branding/logo.svg");
+    expect(b.primaryColor).toBe("#6b2fa0");
+    expect(b.footerText).toBe("© Contoso");
+    expect(b.supportUrl).toBe("https://support.contoso.test");
+  });
+
+  it("lets a partner hide the Progress credit in the UI", () => {
+    expect(readVoiceBranding({ BRAND_POWERED_BY: "0" }).poweredBy).toBe(false);
+    expect(readVoiceBranding({ BRAND_POWERED_BY: "false" }).poweredBy).toBe(false);
+    expect(readVoiceBranding({ BRAND_POWERED_BY: "1" }).poweredBy).toBe(true);
+  });
+
+  it("ignores a colour that is not a colour", () => {
+    expect(readVoiceBranding({ BRAND_PRIMARY_COLOR: "javascript:alert(1)" }).primaryColor).toBe("");
+  });
+
+  it("is carried in the product config and shown to admins", () => {
+    const described = describeVoiceConfig(readVoiceEnv({ BRAND_PRODUCT_NAME: "Contoso" }));
+    expect((described.branding as { productName: string }).productName).toBe("Contoso");
   });
 });
 

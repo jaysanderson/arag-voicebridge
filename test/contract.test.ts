@@ -70,6 +70,10 @@ describe("responses validate against the spec", () => {
   const check = (path: string, method: string, status: number, body: unknown) =>
     expect(testing.checkResponse(openapi, path, method, status, body)).toEqual([]);
 
+  it("branding", async () => {
+    check("/api/v1/branding", "get", 200, (await client.get("/api/v1/branding")).json);
+  });
+
   it("listen sessions", async () => {
     const created = await client.post("/api/v1/listen/sessions", { prospect: "progress" });
     check("/api/v1/listen/sessions", "post", 201, created.json);

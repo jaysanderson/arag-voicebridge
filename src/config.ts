@@ -3,7 +3,7 @@
  * integration variables. Secrets live only in the environment (.env locally, Fly secrets in
  * production); they are never sent to browsers and never logged.
  */
-import type { PlatformEnv } from "../vendor/arag-platform/src/index.ts";
+import { type Branding, type PlatformEnv, readBranding } from "../vendor/arag-platform/src/index.ts";
 
 type Src = Record<string, string | undefined>;
 
@@ -17,6 +17,21 @@ function num(src: Src, name: string, fallback: number): number {
   const n = Number(v);
   if (!Number.isFinite(n)) throw new Error(`Env ${name} must be a number, got "${v}"`);
   return n;
+}
+
+/** The product's own defaults, before a partner's BRAND_* variables are applied. */
+export const BRAND_DEFAULTS: Partial<Branding> = {
+  productName: "VoiceBridge",
+  tagline: "live, grounded call context",
+  footerText: "Open source · Apache-2.0",
+};
+
+/**
+ * Deployment branding. A partner rebrands by setting `BRAND_*` in the environment — no fork, no
+ * code change — and per-prospect overrides layer on top of this at request time.
+ */
+export function readVoiceBranding(src: Src = process.env): Branding {
+  return readBranding(src, BRAND_DEFAULTS);
 }
 
 export interface VoiceConfig {
@@ -51,6 +66,8 @@ export interface VoiceConfig {
   livekitUrl: string;
   livekitApiKey: string;
   livekitApiSecret: string;
+  /** White-label branding for this deployment. */
+  branding: Branding;
 }
 
 /** Read the product configuration from the environment (defaults are demo-safe). */
@@ -78,6 +95,7 @@ export function readVoiceEnv(src: Src = process.env): VoiceConfig {
     livekitUrl: str(src, "LIVEKIT_URL"),
     livekitApiKey: str(src, "LIVEKIT_API_KEY"),
     livekitApiSecret: str(src, "LIVEKIT_API_SECRET"),
+    branding: readVoiceBranding(src),
   };
 }
 
@@ -135,5 +153,6 @@ export function describeVoiceConfig(v: VoiceConfig): Record<string, unknown> {
     // Non-secret: the same value is served to browsers on /api/v1/prospects.
     defaultAgentId: v.defaultAgentId,
     features: { scribe: scribeEnabled(v), avatar: avatarEnabled(v) },
+    branding: v.branding,
   };
 }

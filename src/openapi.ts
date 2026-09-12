@@ -5,6 +5,7 @@
  * request validation at runtime and the contract tests fail the build on drift.
  */
 import {
+  BrandingSchema,
   buildOpenApi,
   jsonBody,
   jsonResponse,
@@ -218,6 +219,10 @@ const Prospect = {
     golden_questions: { type: "array", items: { $ref: "#/components/schemas/GoldenQuestion" } },
     avatar_ready: { type: "boolean" },
     scribe_ready: { type: "boolean" },
+    brand: {
+      $ref: "#/components/schemas/Branding",
+      description: "Deployment branding with this prospect's overrides applied",
+    },
   },
 };
 
@@ -235,6 +240,20 @@ const ProspectInput = {
     generative_model: { type: "string", maxLength: 120 },
     temperature: { type: "number", minimum: 0, maximum: 2 },
     brief_model: { type: "string", maxLength: 120 },
+    brand: {
+      type: "object",
+      description: "White-label overrides for this prospect, layered on the deployment's branding",
+      properties: {
+        productName: { type: "string", maxLength: 120 },
+        tagline: { type: "string", maxLength: 200 },
+        logoUrl: { type: "string", maxLength: 500 },
+        primaryColor: { type: "string", maxLength: 40 },
+        accentColor: { type: "string", maxLength: 40 },
+        footerText: { type: "string", maxLength: 200 },
+        poweredBy: { type: "boolean" },
+      },
+      additionalProperties: false,
+    },
     agent_id: { type: "string", maxLength: 120 },
     voice_id: { type: "string", maxLength: 120 },
     avatar_id: { type: "string", maxLength: 120 },
@@ -428,6 +447,7 @@ export const openapi = buildOpenApi({
     { name: "system", description: "Health and session" },
   ],
   schemas: {
+    Branding: BrandingSchema,
     Citation,
     TranscriptEntry,
     TranscriptChunk,
@@ -884,6 +904,21 @@ export const openapi = buildOpenApi({
           ...standardResponses,
         },
         security: publicSecurity,
+      },
+    },
+    "/api/v1/branding": {
+      get: {
+        operationId: "getBranding",
+        tags: ["system"],
+        summary: "White-label branding for this deployment",
+        description:
+          "Public: the console and the admin panel apply it at boot (name, logo, colours, footer, " +
+          "and whether the Progress credit is shown). Partners set `BRAND_*` in the environment; " +
+          "per-prospect overrides are returned with each prospect.",
+        responses: {
+          200: jsonResponse({ $ref: "#/components/schemas/Branding" }),
+          ...standardResponses,
+        },
       },
     },
     "/api/v1/session": {

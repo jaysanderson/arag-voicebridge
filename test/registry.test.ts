@@ -158,6 +158,30 @@ describe("ProspectRegistry", () => {
     expect(reg.seedFromFile(bad)).toBe(0);
   });
 
+  it("layers a prospect's brand over the deployment branding", () => {
+    const { reg } = registry(readVoiceEnv({ BRAND_PRODUCT_NAME: "Partner Assist", BRAND_TAGLINE: "shared" }));
+    const plain = reg.create("plain", valid);
+    expect(reg.brandFor(plain).productName).toBe("Partner Assist");
+    const branded = reg.create("branded", {
+      ...valid,
+      brand: { productName: "Acme Care", primaryColor: "#123456", poweredBy: false },
+    });
+    const effective = reg.brandFor(branded);
+    expect(effective.productName).toBe("Acme Care");
+    expect(effective.primaryColor).toBe("#123456");
+    expect(effective.poweredBy).toBe(false);
+    // Anything the prospect does not override still comes from the deployment.
+    expect(effective.tagline).toBe("shared");
+    expect(reg.publicView(branded).brand.productName).toBe("Acme Care");
+  });
+
+  it("rejects unknown or mistyped branding fields", () => {
+    expect(validateProspect({ ...valid, brand: "nope" })[0]!.path).toBe("/brand");
+    expect(validateProspect({ ...valid, brand: { hacked: "x" } })[0]!.path).toBe("/brand/hacked");
+    expect(validateProspect({ ...valid, brand: { poweredBy: "yes" } })[0]!.path).toBe("/brand/poweredBy");
+    expect(validateProspect({ ...valid, brand: { productName: "ok", poweredBy: false } })).toEqual([]);
+  });
+
   it("publicView never leaks kb ids, regions or stored config names", () => {
     const { reg } = registry();
     const rec = reg.create("acme", { ...valid, ask_config: "acme_voice", avatar_id: "av1" });

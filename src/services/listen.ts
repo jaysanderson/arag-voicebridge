@@ -214,12 +214,14 @@ export class ListenService {
   private readonly inFlight = new Set<string>();
   private readonly timers = new Map<string, NodeJS.Timeout>();
   private readonly now: () => number;
+  private readonly cap: number;
 
   constructor(deps: ListenDeps) {
     this.deps = deps;
     this.opts = { ...DEFAULT_THROTTLE, ...(deps.throttle ?? {}) };
     this.now = deps.now ?? (() => Date.now());
-    this.col = deps.store.collection<ListenSession>("listen-sessions", { cap: deps.cap ?? 200 });
+    this.cap = deps.cap ?? 200;
+    this.col = deps.store.collection<ListenSession>("listen-sessions", { cap: this.cap });
     // A session left "live" by a restart cannot be refreshed again; close it honestly.
     for (const s of this.col.list({ filter: (x) => x.status === "live" })) {
       this.col.update(s.id, { status: "ended", endedAt: new Date().toISOString() });
@@ -230,6 +232,31 @@ export class ListenService {
     return this.col.size;
   }
 
+  /**
+   * Make room before creating a session. The store evicts strictly by age, which would happily
+   * throw away a call that is still in progress, so ended sessions are retired first.
+   */
+  private pruneEnded(): void {
+    const cap = this.cap;
+    if (this.col.size < cap) return;
+    const ended = this.col
+      .list({ filter: (s) => s.status === "ended" })
+      .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+    let over = this.col.size - cap + 1;
+    for (const s of ended) {
+      if (over <= 0) break;
+      this.col.delete(s.id);
+      over--;
+    }
+    if (over > 0) {
+      this.deps.log.warn("listen.sessions.full", {
+        cap,
+        live: this.col.size,
+        message: "every stored session is still live; the oldest will be evicted",
+      });
+    }
+  }
+
   /** Start a session for a prospect. Throws if the prospect is unknown. */
   create(input: {
     prospect: string;
@@ -238,6 +265,7 @@ export class ListenService {
     generative_model?: string;
   }): ListenSessionView {
     const prospect = this.deps.prospect(input.prospect);
+    this.pruneEnded();
     const session: ListenSession = {
       id: randomUUID(),
       createdAt: new Date().toISOString(),

@@ -54,7 +54,7 @@ interface Harness {
   setBrief: (fn: () => Promise<BriefResult>) => void;
 }
 
-function harness(over: { throttle?: Partial<typeof DEFAULT_THROTTLE> } = {}): Harness {
+function harness(over: { throttle?: Partial<typeof DEFAULT_THROTTLE>; cap?: number } = {}): Harness {
   const calls: Harness["calls"] = [];
   let now = 1_000_000;
   let brief = async () => briefResult();
@@ -72,6 +72,7 @@ function harness(over: { throttle?: Partial<typeof DEFAULT_THROTTLE> } = {}): Ha
     },
     now: () => now,
     throttle: over.throttle,
+    cap: over.cap,
   });
   return {
     service,
@@ -347,6 +348,20 @@ describe("ListenService", () => {
     expect(admin.briefHistory.length).toBe(3);
     expect(admin.briefHistory[0]!.version).toBe(1);
     expect(admin.briefHistory[0]!.latencyMs).toBe(30);
+  });
+
+  it("retires ended sessions before the store can evict a live one", () => {
+    const { service } = harness({ cap: 3 });
+    const first = service.create({ prospect: "acme" });
+    const second = service.create({ prospect: "acme" });
+    service.end(first.id);
+    service.create({ prospect: "acme" });
+    // The fourth session must cost the ended one, not the older call that is still running.
+    const fourth = service.create({ prospect: "acme" });
+    expect(service.get(first.id)).toBe(undefined);
+    expect(service.get(second.id) !== undefined).toBe(true);
+    expect(service.get(fourth.id) !== undefined).toBe(true);
+    expect(service.size).toBe(3);
   });
 
   it("never exposes throttle bookkeeping through the API view", () => {

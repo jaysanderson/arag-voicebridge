@@ -80,11 +80,18 @@ customer's specific configuration" — there is no generic pass/fail for it.
 
 - [ ] Confirm `RATE_LIMIT_RPS`/`RATE_LIMIT_BURST` (global per-IP, platform-level) are set
       appropriately for expected traffic — the shipped default (5 rps / burst 20) is demo-sized.
-- [ ] Confirm `VOICE_BRIEF_RATE_RPS`/`BURST` (default 1 rps / burst 5) are in place if Listen mode
-      is in scope — this is a **product-owned** limiter (`DECISIONS.md` V-05), separate from the
-      platform's global limiter, specifically because the brief fires continuously and each
-      refresh costs an LLM generation (see `sizing-deployment.md`'s cost section). Confirm it
-      hasn't been raised without recalculating the cost exposure.
+- [ ] Confirm `VOICE_BRIEF_RATE_RPS`/`BURST` (default 1 rps / burst 5) are in place if listening or
+      the stateless `POST /api/v1/brief` primitive is in scope — a platform route-level budget
+      (`DECISIONS.md` V-15, superseding the earlier product-local limiter in V-05), applied to
+      `POST /api/v1/brief` and to `POST /api/v1/listen/sessions` (opening a session). Do not assume
+      this is what caps a listen session's LLM cost during a live call: `POST
+      /api/v1/listen/sessions/{id}/transcript` — the endpoint that actually triggers refreshes
+      continuously while a call is live — carries **no route-level rate limit of its own**
+      (`src/routes/listen.ts`). Refresh cost is capped entirely by `ListenService`'s internal
+      throttle (`DEFAULT_THROTTLE` in `src/services/listen.ts`), not by this rate limit. Confirm
+      whoever owns this customer's cost model understands that distinction before relying on
+      `VOICE_BRIEF_RATE_RPS` as the control for listening's ongoing spend (see
+      `sizing-deployment.md`'s "Per listen-session refresh" section).
 - [ ] Confirm `VOICE_SCRIBE_RATE_RPS`/`BURST` (default 0.2 rps / burst 3) are in place if Call mode
       is in scope — this limits how fast third-party ElevenLabs Scribe tokens can be minted per
       caller IP.
@@ -101,6 +108,52 @@ customer's specific configuration" — there is no generic pass/fail for it.
       gap, but it means the turn log is not a complete conversation transcript by design.
 - [ ] Confirm who has access to `/admin/` and therefore to this data — it is protected only by
       `ADMIN_TOKEN`, a single shared secret, not per-operator accounts or audit-logged access.
+
+## Real-time listening (agent-assist)
+
+- [ ] Confirm the customer understands a listen session (`DATA_DIR/listen-sessions.json`) retains
+      the **entire** conversation transcript verbatim (up to `MAX_TRANSCRIPT_ENTRIES`, 400
+      entries), not a truncated excerpt like the turn log — `screenTranscript`
+      (`src/services/safety.ts`) screens chunks for the same injection/out-of-scope patterns as any
+      other input, but it does **not** redact or truncate content. This is a materially larger
+      retention footprint of real customer-conversation content than the turn log, and needs its
+      own line in the customer's data-retention and privacy sign-off, not an assumption that the
+      turn-log answer above already covers it.
+- [ ] Confirm who may read a session. `GET /api/v1/listen/sessions/{id}` and
+      `GET /api/v1/listen/sessions` are both `auth: "api"` (public) routes, same as
+      `voice-answer` — if `API_KEYS` is unset, **anyone who can reach the host can read any live or
+      recent session's full transcript and evolving brief by id, and list recent sessions across
+      every prospect on the deployment**, with no concept of "which agent owns this call." If this
+      customer's compliance model requires that only the owning agent (or a supervisor) can read a
+      session, this is a gap to design around, not something already enforced — confirm `API_KEYS`
+      is set, and that "any holder of a valid key can read any session" is an acceptable interim
+      posture, or flag the missing per-session ownership check explicitly.
+- [ ] Confirm the throttle defaults (`DEFAULT_THROTTLE` in `src/services/listen.ts` — 1500 ms
+      minimum gap, a 28-word window, a 4-word minimum, `jaccardMax: 0.85`) have been discussed with
+      this customer if they have unusual conversation characteristics (very fast speakers, a
+      language where the same idea takes far fewer or far more words, deliberately short
+      utterances from an IVR-style flow) — the throttle is not currently exposed as prospect-level
+      or per-request configuration (`ListenService`'s constructor takes one `throttle` override for
+      the whole process, not per session), so "tune it for this customer" today means changing the
+      server default, not a per-prospect setting. Confirm this limitation is understood before
+      promising customer-specific tuning.
+- [ ] Confirm the failure behaviour for a refresh is understood and acceptable: `ListenService
+      .refresh` never throws to the caller — on any failure (an ARAG error, a timeout, an unusable
+      brief) it increments `stats.failures`, emits `status: "skipped"` with a reason over SSE, and
+      leaves the **previous** brief exactly as it was. A viewer sees a brief that has stopped
+      updating, not an error state and not a blank pane — confirm the customer's UI (if not the
+      shipped console) actually surfaces `stats.failures` or a stale `updatedAt` somewhere, since
+      the API itself gives no explicit "this session is currently failing to refresh" signal beyond
+      those two fields.
+- [ ] Confirm the customer's integration actually calls `DELETE /api/v1/listen/sessions/{id}` when
+      a call ends. A session left `"live"` costs nothing extra while idle, but it occupies one of
+      the 200 slots in the capped `listen-sessions` collection indefinitely (until evicted by newer
+      sessions — see `WORKSHOP.md` §7 for why that eviction can hit a still-live session under
+      load) and continues to appear in `GET /api/v1/listen/sessions` as an apparently-active call.
+      The one automatic safety net is at process restart, not at call end: any session still
+      `"live"` when `ListenService` boots is force-ended, so a crash does not leave sessions live
+      forever — but a normal, non-crashing deployment relies entirely on the caller remembering to
+      end its own sessions.
 
 ## Observability
 

@@ -429,7 +429,9 @@ export class MockArag {
             }));
             scored.sort((a, b) => b.s - a.s);
             const best = scored.filter((x) => x.s > 0).map((x) => x.l);
-            return label.multiple ? best.slice(0, 3) : [best[0] ?? label.labels[0]?.label ?? ""];
+            return label.multiple
+              ? best.slice(0, params.on === 0 ? 1 : 2)
+              : [best[0] ?? label.labels[0]?.label ?? ""];
           };
           if (params.on === 0) {
             for (const f of Object.values(r.fields))

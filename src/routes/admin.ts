@@ -77,6 +77,12 @@ export function registerAdminRoutes(app: App, deps: ProductDeps): void {
       voice: describeVoiceConfig(deps.voice),
       platformVersion: deps.platformVersion,
       version: VERSION,
+      branding: {
+        deployment: deps.voice.branding,
+        perProspect: Object.fromEntries(
+          deps.registry.list().map((p) => [p.id, deps.registry.brandFor(p).productName]),
+        ),
+      },
       stores: deps.store.stats(),
       routes: app.listRoutes(),
     }),

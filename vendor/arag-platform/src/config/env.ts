@@ -178,7 +178,8 @@ const SECRET_RE = /(token|key|secret|password)/i;
 /** A redacted, admin-safe view of the env for config pages. */
 export function describeEnv(env: PlatformEnv): Record<string, unknown> {
   const redact = (k: string, v: unknown): unknown => {
-    if (typeof v === "string" && SECRET_RE.test(k)) return v ? `•••(${v.length} chars)` : "";
+    if (typeof v === "string" && SECRET_RE.test(k))
+      return v ? `•••(${v.length < 16 ? "short" : v.length < 64 ? "medium" : "long"})` : "";
     if (Array.isArray(v) && SECRET_RE.test(k)) return v.map(() => "•••");
     return v;
   };

@@ -1,148 +1,194 @@
 # Positioning — VoiceBridge
 
 > Working name: **VoiceBridge**. Treat it as a placeholder — see "Naming" below for the
-> recommendation. The repository and deployed app keep the name `arag-voice-bridge` regardless of
-> which product name is chosen.
+> recommendation, re-evaluated now that real-time listening is the hero feature. The repository and
+> deployed app keep the name `arag-voice-bridge` regardless of which product name is chosen.
 
 ## Positioning statement
 
-VoiceBridge is the discipline layer between a voice agent and a Progress Agentic RAG (ARAG)
-Knowledge Box that makes every spoken answer grounded, cited and — when it can't be grounded —
-handed to a human by rule rather than by guess.
+VoiceBridge listens to a live conversation — from any source, on any call it's connected to — and
+keeps one evolving, cited brief in front of whoever needs it: who the other person is, what they
+want, and what to say next, grounded in a Progress Agentic RAG (ARAG) Knowledge Box and updated as
+the conversation moves. When a human is available, they get the brief. When nobody is, the same
+grounding can answer the caller directly — and, either way, anything the knowledge base can't
+support is handed off by a deterministic rule rather than a guess.
 
 ## The problem, and why it matters
 
-A voice agent that can say anything will eventually say something wrong. Text chatbots get a
-second chance: the user rereads, screenshots, complains. A phone call gets none. A voice agent
-that hallucinates a price, a policy exception or a part number doesn't produce a wrong paragraph —
-it produces a decision the caller acts on: they hang up believing a return is free, a part fits, a
-claim is covered. A caller who is told "I don't know, let me get someone who does" has lost thirty
-seconds. A caller who is told the wrong thing confidently has lost trust, and the business may have
-lost a return, a warranty dispute or a compliance finding.
+A person on a live call — a new support agent, a sales engineer fielding a discovery call they
+didn't script, anyone picking up an escalation mid-conversation — has to know what's true right now,
+not after the call, and not from memory. Get it wrong and it isn't a typo someone edits later: it's
+a sentence said out loud that the other person acts on. The usual fixes are both incomplete. A
+static script or knowledge-base search only works if the person stops the conversation to go look;
+a general-purpose AI copilot that reasons over the conversation without grounding will eventually
+say something fluent and wrong, with the same confident tone whether it's right or not. And when
+nobody is available to take the call at all, someone still has to decide, in real time, whether to
+guess or make the caller wait.
 
-The industry's default answer — "prompt it to be careful" — is not a control, it's a hope. A model
-that decides for itself whether it knows enough is the same model that occasionally decides wrong.
-VoiceBridge's premise is narrow and testable: retrieval must ground every answer, the decision to
-hand off must be a deterministic check rather than a judgement call, and that check must be provable
-against a fixed set of questions before a prospect's demo — or a production line — is allowed to go
-live.
+VoiceBridge's premise is narrow and testable in both directions. While the conversation is live, it
+maintains a single structured brief — topic, who the other person is, their goal, the stage the
+conversation is at, a summary, key points and suggested answers — refined turn by turn, with every
+factual claim traceable to a citation in the Knowledge Box. The server does the throttling (a
+rolling window of recent words, a minimum gap between refreshes, a similarity check that skips
+restating the same thing), so any client — a web console, a softphone plugin, a telephony bridge —
+gets the same behaviour and the same cost profile, not whatever a naive integration happens to fire
+per word. And when the same grounding is asked to answer on its own rather than brief a person, the
+decision to hand off is a deterministic check against the pipeline's output, not the model's opinion
+of its own confidence.
 
 ## Naming
 
-Three candidates, evaluated on how they read as a product name, not just a repo name.
+Three candidates, re-evaluated against the new hero: a live listener that briefs a person, not (only)
+an automated answer endpoint.
 
-1. **VoiceBridge** (current placeholder). Pronounceable and immediately legible — "bridge between a
-   voice agent and a knowledge base" needs no explanation. Trademark risk is real: "Bridge" is one
-   of the most overloaded words in enterprise software (integration bridges, VoIP bridges, data
-   bridges), so clearance and differentiation would take work. It signals infrastructure/plumbing
-   more than a governed-answer product, which undersells the handoff and citation discipline that
-   is the actual differentiator. Said aloud on a call — "you're speaking with VoiceBridge support" —
-   it reads as a technical component name rather than a product a caller would trust.
+1. **VoiceBridge** (current placeholder). This name fits distinctly worse under the new framing than
+   it did when the hero feature was a single automated answer endpoint. "Bridge" describes a passive
+   conduit between two systems — a voice platform and a knowledge base — which was a reasonable
+   description of `/api/v1/voice-answer`. The hero capability now is a service that *listens* to a
+   conversation and *builds* something (an evolving brief), which isn't bridging anything. It's also
+   no longer accurately "Voice": a listen session ingests transcript chunks from any source — a
+   realtime STT stream, a telephony webhook, a meeting bot, or someone typing — and several of the
+   use cases below (an agent reading a pasted transcript, an after-call summary) never touch audio
+   at all. Trademark risk is unchanged and still real ("Bridge" is heavily overloaded in enterprise
+   software). Recommend retiring it as the product name.
+2. **GroundLine**. "Ground" is the claim that now has to hold across *two* products in one: the live
+   brief's key points and suggested answers must be grounded in the Knowledge Box exactly as
+   strictly as an automated spoken answer must be, and citations are the visible proof in both
+   places. "Line" still reads naturally for a live conversation, on a phone or otherwise, without
+   overclaiming what the product automates. Trademark exposure remains lower than "Bridge" and the
+   name says nothing that becomes false when the conversation isn't a phone call. Said aloud, or
+   read on a screen an agent glances at mid-call ("GroundLine is listening"), it stays calm and
+   infrastructure-grade rather than reading as a chatbot brand.
+3. **Handrail**. Re-evaluated, this metaphor arguably fits the new hero *better* on one axis — a
+   handrail is something you use continuously while you're doing something, not just when you'd
+   otherwise fall, which maps well onto a brief that updates every turn of a live conversation
+   rather than only intervening on failure. It still undersells the grounding/citation mechanism
+   that both the assist and the deflection paths depend on, and "safety net" framing sits oddly
+   against a feature whose main value is proactive (suggested questions, suggested answers,
+   recommended products), not just defensive. Trademark risk remains low but category separation
+   from workplace-safety software still needs a real check.
 
-2. **GroundLine**. "Ground" carries the core claim (grounded in retrieved content) and "Line" keeps
-   the phone metaphor without overclaiming AI-ness. Pronounces cleanly in one pass, no ambiguous
-   syllables. Trademark exposure is lower than "Bridge" — the combined term is uncommon in
-   voice-AI branding, though "Ground" alone appears in some safety/compliance products and would
-   need a clearance check. It signals the product's actual mechanism (grounding) rather than its
-   architecture (bridging), which is a better fit for a compliance-literate buyer. Said aloud —
-   "thanks for calling, this is GroundLine" — it sounds calm and infrastructure-grade without
-   sounding like a component.
-
-3. **Handrail**. An ordinary English word repurposed as a safety metaphor: something you hold onto
-   so you don't fall, which maps directly onto the handoff/guardrail behaviour. Highly
-   pronounceable, no ambiguity, memorable because it's a real word used unexpectedly. Trademark
-   risk is low in the voice-AI category (no known direct collision), though "Handrail" is used by
-   some workplace-safety software, so category separation matters. It signals safety net rather
-   than AI capability, which undersells the retrieval/grounding half of the story. Said aloud —
-   "you've reached Handrail" — it's memorable but slightly odd out of context without a follow-up
-   line explaining what it does.
-
-**Recommendation: GroundLine.** It names the mechanism the buyer is actually paying for
-(grounding, not bridging), carries materially lower trademark risk than "VoiceBridge", and reads
-as calm and trustworthy when said aloud on a live call — the one context where the name itself is
-part of the product experience. "VoiceBridge" is a fine engineering codename and should stay as
-the repository, binary and Fly app name (`arag-voice-bridge`) regardless of the outcome of this
-decision.
+**Recommendation: GroundLine.** The single claim a buyer has to believe — that what's on screen (or
+spoken) traces to real content, not the model's confidence — is the one thing that has to be true
+whether a human or the pipeline is the one acting on the brief, and "Ground" says exactly that.
+"VoiceBridge" should be retired as the product name: it describes an architecture (bridging two
+systems) that the hero feature doesn't have, and a transport ("Voice") the hero feature doesn't
+require. "VoiceBridge" stays as the repository, binary and Fly app name (`arag-voice-bridge`)
+regardless of this decision.
 
 ## Personas
 
 | Persona | Job to be done | Objection they raise |
 |---|---|---|
-| **Solutions engineer** running prospect demos | Stand up a credible, on-brand voice demo against a new prospect's own content inside a single sales cycle — without a bespoke integration project. | "The last voice demo we built said something embarrassing live in front of the prospect. How do I know this one won't?" |
-| **Contact-centre operations lead** | Deflect routine call volume from human agents without increasing complaint or escalation rates. | "What happens when it doesn't know the answer — does the caller get stuck in a loop, or told something wrong with total confidence?" |
-| **Platform / AI engineering lead** | Wire a voice channel into an existing ARAG Knowledge Box without taking on another heavyweight service to operate, patch and secure. | "Is this actually a thin, inspectable layer, or is it another opaque platform with its own lock-in and dependency tree?" |
-| **Compliance / risk reviewer** | Sign off a voice channel before it goes anywhere near a real caller, with evidence rather than a demo that happened to go well once. | "Show me the test set, show me what happens on the questions it should refuse, and show me that behaviour doesn't drift when someone edits the prompt." |
+| **Contact-centre supervisor / enablement lead** | Get agents — especially new ones — to say the right thing on a live call without waiting for them to memorise the knowledge base, and see afterwards what the call actually covered. | "My agents already have a knowledge-base search bar. Why is a brief that updates itself better than search, and how do I know it isn't just another window they have to babysit?" |
+| **Sales engineer** running discovery calls | Keep track of what a prospect has said, what they're really trying to solve, and what to ask or offer next — without breaking eye contact with the call to go searching for a spec sheet. | "The moment I have to type a query mid-conversation, I've lost the thread. Does this actually keep up with where the conversation is, or is it one turn behind?" |
+| **AI platform lead** | Add a live-conversation copilot to an existing telephony/CRM/meeting stack without taking on a new STT vendor dependency or a bespoke integration per channel. | "Is the session API actually independent of how the transcript gets to it, or am I locked into one speech-to-text vendor's SDK?" |
+| **Compliance reviewer** | Sign off a system that puts suggestions in front of a person handling a live conversation, with evidence that every factual claim traces to approved content and that the system degrades honestly when it doesn't know. | "Show me that a suggested answer can always be traced to a citation, that the brief doesn't invent product facts, and what happens on the questions the knowledge base can't support." |
 
 ## Use cases
 
-1. **Grounded phone support.** A production voice agent answers caller questions from a Knowledge
-   Box, citing sources as data and escalating on a fixed rule rather than a vibe.
-2. **Pre-sales demo factory, per prospect.** A solutions engineer adds a new prospect — its own
-   Knowledge Box, prompt, voice and golden questions — as an admin API call, not a redeploy, and
-   gets a working phone demo against that prospect's real content.
-3. **Ambient call copilot (Listen mode).** While a human agent is on the call, the bridge listens
-   and maintains a structured, evolving brief — topic, caller goal, suggested answers, citations —
-   so the agent (not the caller) gets the assist.
-4. **Escalation-by-design.** Call flows where "hand off to a human" is a first-class, testable
-   outcome of the pipeline, not a silent failure mode discovered after go-live.
-5. **Quality gate before go-live.** A prospect's golden set — the questions it must answer and the
-   ones it must refuse — runs through the exact production pipeline and blocks the demo or the
-   deploy until every case passes.
-6. **Multi-brand, multi-Knowledge-Box routing.** One bridge deployment serves several brands or
-   business units, each mapped to its own Knowledge Box, system prompt, voice and golden set,
-   selected per call by a prospect key.
+1. **Live sales discovery copilot.** A person qualifying a prospect gets an evolving read of who
+   they're speaking to, their goal, the stage of the conversation, and grounded talking points and
+   product fits as the discovery call moves — the shipped demo's own sample conversation (a
+   3D‑printing discovery call) is built around exactly this case.
+2. **Support agent assist.** A person handling a live support call gets suggested, cited answers
+   drawn only from the Knowledge Box, so a newer agent doesn't have to choose between guessing and
+   putting the caller on hold to go searching.
+3. **Onboarding new agents.** The brief is a continuously-updating handrail for someone who doesn't
+   yet know the knowledge base by heart — they read what's suggested rather than having to know what
+   to search for.
+4. **Escalation prep.** Whoever picks up an escalated call inherits the session's current brief and
+   accumulated citations instead of starting cold — the topic, the caller's goal and the stage of the
+   conversation are already there.
+5. **After-call summary from the session record.** Ending a session keeps its brief, its full
+   citation list and its stats for review — a session's brief history (every version that was ever
+   shown, with its timestamp and latency) is available afterwards in the admin panel, not just
+   during the call.
+6. **Self-serve deflection.** The follow-on: the same grounded-answer pipeline, without a human on
+   the call, answers a caller directly over `POST /api/v1/voice-answer` and hands off by a
+   deterministic rule when the knowledge base can't support an answer.
 
 ## Competitive framing
 
-- **Generic LLM voice agents** (an LLM plus a system prompt, no retrieval). Fluent and fast to
-  build, but nothing stops the model from answering confidently from parametric memory. There is
-  no citation to check and no deterministic point at which it must stop and hand off.
-- **RAG-less IVR / scripted bots.** Safe in the narrow sense that they cannot hallucinate — they
-  also cannot answer anything outside their menu tree, and callers route around them at the first
-  question the script didn't anticipate.
-- **Closed, end-to-end voice-AI suites.** Bundle telephony, models and a knowledge layer behind one
-  proprietary surface. Fast to buy, hard to bring your own Knowledge Box to, and the grounding and
-  handoff logic — the part that actually matters for risk — is not inspectable.
-- **DIY glue code.** Teams wiring an LLM, a vector store and a telephony provider together
-  themselves. Every team reinvents voice shaping, citation handling, handoff logic and turn metrics
-  from scratch, and the discipline usually arrives after the first bad call, not before it.
+- **Agent-assist / real-time coaching incumbents.** Mature products in this category typically add
+  call recording, sentiment and talk-time analytics, CRM and dialer integrations, and coaching/QA
+  scoring on top of a live transcript. VoiceBridge doesn't do any of that — it does one thing,
+  a grounded, cited, evolving brief, and does it independently of which STT vendor or telephony
+  stack sits underneath. A buyer who wants the wider coaching/analytics suite should look there
+  first; a buyer who specifically needs the brief to be provably grounded and inspectable, not a
+  black-box model call, is the fit.
+- **Generic LLM meeting copilots / notetakers.** Fluent, fast to set up, and good at summarising what
+  was said — but nothing stops them answering a factual question from the model's general knowledge
+  rather than the buyer's own content, and there's no citation to check the claim against. The brief
+  here is deliberately more conservative: key points and suggested answers are drawn only from the
+  Knowledge Box, and the schema leaves a field empty rather than inventing something to fill it.
+- **RAG-less IVR / scripted bots.** Still relevant for the deflection follow-on: safe in the sense
+  that they can't hallucinate, but they also can't answer anything outside a fixed menu tree.
+- **DIY glue code.** Teams wiring a realtime STT feed, an LLM and a prompt together themselves get a
+  working demo quickly and then discover the throttling, citation handling and "what happens on
+  failure" problems this ships with already solved — usually after the first call where an
+  unthrottled client fired an LLM call on every word, or a failed refresh blanked the screen instead
+  of leaving the last good brief up.
 
 ### Where we don't win
 
-- VoiceBridge is not a telephony or PBX product. It needs a voice platform in front of it that can
-  place or receive calls and speak the answer (the shipped demo uses ElevenLabs Conversational AI);
-  without one, it is an HTTP API with no phone number attached.
-- It is not a Knowledge Box. Retrieval quality is ARAG's job; VoiceBridge cannot make a poorly
-  indexed or thin Knowledge Box answer well — it can only refuse cleanly when the content isn't
-  there.
-- It is not a contact-centre platform. There is no CRM, ticketing, workforce management or
-  omnichannel routing here — only the voice-turn discipline layer.
+- VoiceBridge does not do speech-to-text, diarisation, or telephony. A session ingests transcript
+  chunks; something else — a realtime STT vendor, a telephony webhook, a meeting bot, or the shipped
+  browser microphone client — has to produce them. Bring-your-own-transcription is deliberate, but
+  it does mean there is no built-in audio pipeline to point at a phone number.
+- There is no coaching, scoring, sentiment or talk-time analytics layer, and no CRM or dialer
+  integration. This is the brief and nothing else; a buyer expecting a full agent-assist suite will
+  need to add those separately.
+- There is no automated quality gate for the live brief today. The golden-set gate — the
+  answer/handoff pass-fail check — covers the deflection pipeline (`/api/v1/voice-answer`) only;
+  reviewing whether a live brief was actually useful on a given call is a manual read of the brief
+  history in the admin panel, not a scored test suite.
+- It is not a Knowledge Box. Retrieval quality is ARAG's job; a poorly indexed or thin Knowledge Box
+  produces a thin brief no matter how good the throttling and prompt discipline are.
+- Session state is a single-machine, in-memory store with a 200-session cap and a bounded brief
+  history (the last 20 versions per session); a process restart ends any session left "live". This
+  is a strong demo/pilot shape, not a durable, horizontally-scaled session store.
 - Today's architecture pools ARAG credentials per Knowledge Box and zone rather than per prospect;
   strict per-tenant credential isolation is a documented extension point, not a shipped guarantee.
-- Observability is a 500-turn in-memory ring buffer plus a turn log, not a full analytics or BI
-  stack — fine for a demo or a single deployment, not a substitute for a metrics platform at scale.
 
 ## Proof points (true today)
 
-- **Deterministic handoff, not a judgement call.** The voice prompt is contracted to prefix any
-  unanswerable reply with a fixed sentinel (`HANDOFF:`); the bridge keys off that exact string, with
-  belt-and-braces checks for an empty answer, zero retrieval results, or ARAG's own stock refusal
-  phrasings — so a turn degrades safely even if a stored configuration omits the prompt.
-- **A golden-set gate, not a demo that happened to go well.** Every prospect ships a set of
-  questions it must answer and questions it must refuse; `runGoldenEval` runs each one through the
-  exact production pipeline and asserts behaviour (answer vs handoff), grounding (≥1 citation),
-  and voice shape (≤3 sentences, no URLs, no citation markers) before the demo is trusted.
-- **Citations as data, never spoken.** Every response carries a `citations` array (title, URL,
-  score) for the console or the human agent to see; the spoken line never contains a URL or a
-  citation marker — checked by the golden set, not just by convention.
-- **Per-turn latency, on every response.** Every `voice-answer` response returns
+- **One evolving brief, not a fresh answer each time.** Every refresh receives the running
+  transcript and the previous brief and is instructed to refine and extend it rather than restart —
+  the brief carries a `topic`, `caller_profile`, `their_goal`, `stage`, `summary`, `key_points`,
+  `suggested_questions`, `suggested_answers` and `recommended_products`, all grounded in the
+  Knowledge Box except the persona/intent reasoning, which is explicitly over the conversation.
+- **Server-side throttling, not per-client guesswork.** A refresh only fires on a genuinely new
+  window of conversation: at least 4 words, at least 1.5 seconds since the last refresh, and not
+  merely a re-statement of the last window (a similarity check skips anything more than 85% the same
+  as what was just asked about) — the same rule for a web console, a softphone plugin, or a
+  telephony bridge.
+- **A refresh failure never blanks the brief.** `ListenService.refresh` never throws: an upstream
+  error, a timeout, or a brief with nothing usable in it leaves the previous brief exactly as it
+  was, rather than flashing an error at someone mid-call.
+- **Citations accumulate across the whole call.** Sources seen in any refresh are deduped by title
+  and URL and kept at their best score, capped at twelve, so the citation list under a brief reflects
+  everything relevant said so far — not just the most recent refresh.
+- **Per-session latency stats, on every session.** Every session tracks refreshes, throttled
+  (skipped) refreshes, failures, the latency of the last refresh, and rolling p50/p95 latency over
+  its own recent refreshes — visible on the session and in the admin Listen sessions tab.
+- **Deterministic handoff for the deflection follow-on.** The voice prompt is contracted to prefix
+  any unanswerable reply with a fixed sentinel (`HANDOFF:`); the pipeline keys off that exact string,
+  with belt-and-braces checks for an empty answer, zero retrieval results, or ARAG's own stock
+  refusal phrasings.
+- **A golden-set gate for the deflection pipeline.** Every prospect ships a set of questions it must
+  answer and questions it must refuse; `runGoldenEval` runs each one through the exact production
+  pipeline and asserts behaviour, grounding (≥1 citation) and voice shape before a deployment is
+  trusted to answer on its own.
+- **Per-turn latency, on every deflection response.** Every `voice-answer` response returns
   `latency_ms.retrieve`, `latency_ms.first_token` and `latency_ms.total` — measured in the demo
   environment at roughly p50 3.3s / p95 5.6s across a small live sample against the shipped demo
-  Knowledge Box — so a partner can hold a real number against their voice platform's tool timeout
-  rather than guessing.
-- **Zero runtime dependencies.** Node 22.18+ runs the TypeScript sources directly with no build
-  step and no third-party package to audit at runtime.
-- **OpenAPI-first.** `src/openapi.ts` is the single source of truth for every `/api/v1` route;
-  requests are validated against it and contract tests fail the build on drift.
-- **Apache-2.0.** The full pipeline — guards, handoff, voice shaping, citations, metrics, golden
-  evaluation — is open source and inspectable, not a black box behind an API key.
+  Knowledge Box.
+- **Zero runtime dependencies.** Node 22.18+ runs the TypeScript sources directly with no build step
+  and no third-party package to audit at runtime.
+- **OpenAPI-first.** `src/openapi.ts` is the single source of truth for every `/api/v1` route,
+  including the listen-session endpoints; requests are validated against it and contract tests fail
+  the build on drift.
+- **Apache-2.0.** The full pipeline — the listen service, the brief schema, the deflection pipeline,
+  guards, handoff, voice shaping, citations, metrics, golden evaluation — is open source and
+  inspectable, not a black box behind an API key.

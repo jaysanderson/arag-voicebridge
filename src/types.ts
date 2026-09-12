@@ -5,6 +5,8 @@
  * ARAG-facing shapes live in the platform client (`vendor/arag-platform/src/arag`).
  */
 
+import type { Branding } from "../vendor/arag-platform/src/index.ts";
+
 /** Conversation roles as ARAG expects them in `context`. */
 export type Author = "USER" | "NUCLIA";
 
@@ -103,6 +105,22 @@ export interface ProspectConfig {
   greeting: string;
   handoff_msg: string;
   golden_questions?: GoldenQuestion[];
+  /**
+   * Per-prospect white-label overrides, layered on top of the deployment's BRAND_* branding.
+   * A partner running one deployment for several of their own customers sets these per prospect.
+   */
+  brand?: ProspectBrand;
+}
+
+/** The subset of branding a prospect may override (never secrets, never behaviour). */
+export interface ProspectBrand {
+  productName?: string;
+  tagline?: string;
+  logoUrl?: string;
+  primaryColor?: string;
+  accentColor?: string;
+  footerText?: string;
+  poweredBy?: boolean;
 }
 
 /** A prospect as stored (registry key + config + store timestamps). */
@@ -127,6 +145,8 @@ export interface PublicProspect {
   golden_questions: GoldenQuestion[];
   avatar_ready: boolean;
   scribe_ready: boolean;
+  /** Branding for this prospect: the deployment's branding with its overrides applied. */
+  brand: Branding;
 }
 
 /** Where a safety guard sits in the pipeline. */

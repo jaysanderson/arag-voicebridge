@@ -51,6 +51,20 @@ after(async () => {
   await product.close();
 });
 
+describe("branding", () => {
+  it("serves the deployment branding publicly", async () => {
+    const r = await client.get("/api/v1/branding");
+    expect(r.status).toBe(200);
+    expect(r.json as Record<string, unknown>).toMatchObject({ productName: "VoiceBridge", poweredBy: true });
+  });
+
+  it("carries the effective branding on every prospect", async () => {
+    const r = await client.get("/api/v1/prospects");
+    const first = (r.json as { items: Array<{ brand: { productName: string } }> }).items[0];
+    expect(first!.brand.productName).toBe("VoiceBridge");
+  });
+});
+
 describe("health and docs", () => {
   it("serves liveness, readiness and the OpenAPI document", async () => {
     expect((await client.get("/healthz")).status).toBe(200);

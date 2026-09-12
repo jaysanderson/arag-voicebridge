@@ -257,6 +257,10 @@ export async function createProduct(
   registerJobRoutes(app, deps);
   registerAdminRoutes(app, deps);
 
+  // White-label branding: public, unauthenticated and uncached-by-default so a partner can change
+  // it with a restart. The UI kit shell fetches this at boot.
+  app.get("/api/v1/branding", () => voice.branding, { operationId: "getBranding", noRateLimit: true });
+
   // Session for the demo UI: lets same-origin browsers call API-key-protected and
   // credential-minting routes without ever holding a key.
   app.post(
@@ -270,6 +274,8 @@ export async function createProduct(
 
   // Static surfaces: UI kit, admin panel, demo console. Both UIs consume only /api/v1.
   app.static("/ui", resolve(HERE, "vendor/arag-platform/ui"), { cache: "public, max-age=300" });
+  // Partner assets (a logo dropped into DATA_DIR/branding/) are served under /branding.
+  app.static("/branding", resolve(env.dataDir, "branding"), { cache: "public, max-age=300" });
   app.static("/admin", resolve(HERE, "admin"));
   app.static("/", resolve(HERE, "public"));
 

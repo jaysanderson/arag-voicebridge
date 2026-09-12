@@ -10,6 +10,181 @@ The full machine-readable contract is [`api-reference.md`](api-reference.md) (ge
 `src/openapi.ts` — never hand-edited) and the live Redoc/Swagger UIs at `/api/v1/docs` and
 `/api/v1/swagger`.
 
+## Real-time listening
+
+The hero path. A session is opened for a prospect; conversation is appended as chunks from
+**any** source — a realtime STT stream, a telephony webhook, a meeting bot, or someone typing —
+and the server keeps the rolling transcript, throttles and de-duplicates brief refreshes, maintains
+one evolving brief, accumulates citations across the call, and tracks per-session latency. Clients
+read the brief over SSE or by polling. See
+[`../architecture/architecture.md`](../architecture/architecture.md) for the throttle policy and
+[`../architecture/data-flow.md`](../architecture/data-flow.md) for the full session lifecycle.
+
+### Create a session
+
+```bash
+SESSION=$(curl -s $BASE/api/v1/listen/sessions \
+  -H 'Content-Type: application/json' \
+  -d '{"prospect": "progress", "metadata": {"queue": "sales", "call_id": "abc123"}}' | jq -r '.id')
+```
+
+`metadata` is opaque and kept with the session (call id, queue, agent id — whatever the caller
+wants back later); `generative_model` and `locale` are also accepted and default to the prospect's
+own settings.
+
+### Append conversation
+
+```bash
+curl -s $BASE/api/v1/listen/sessions/$SESSION/transcript \
+  -H 'Content-Type: application/json' \
+  -d '{"chunks": [
+        {"speaker": "caller", "text": "we run a machine shop and need stainless steel parts fast"},
+        {"speaker": "agent", "text": "have you looked at binder jetting for that volume"}
+      ]}'
+```
+
+```json
+{ "session": { "...": "..." }, "refresh": "started", "reason": "ok" }
+```
+
+`refresh` is what the server-side throttle decided to do with *this* append, so a client can show
+useful status without guessing:
+
+| `refresh` | `reason` | Meaning |
+|---|---|---|
+| `started` | `ok` | Enough new, distinct words arrived — a brief refresh (one ARAG call) is running now. |
+| `scheduled` | `too-soon` | Inside the minimum gap (1.5 s) since the last refresh; a refresh is queued to fire once the gap elapses, so the update is coalesced rather than dropped. |
+| `skipped` | `too-few-words` | The rolling window (last ~28 words) is under 4 words — not enough to ask about yet. |
+| `skipped` | `unchanged` | The window is byte-identical to the last one refreshed. |
+| `skipped` | `too-similar` | The window is >0.85 Jaccard-similar to the last one — "the same sentence again", e.g. a re-sent STT hypothesis. |
+
+A chatty client — one line every 200 ms — cannot turn every word into an LLM call; the throttle
+lives on the server so every client (web console, softphone plugin, telephony bridge) gets the same
+behaviour and the same cost profile. Send an **interim** hypothesis with `"final": false`; the next
+chunk (final or interim) for that session replaces it rather than accumulating duplicates:
+
+```bash
+curl -s $BASE/api/v1/listen/sessions/$SESSION/transcript \
+  -H 'Content-Type: application/json' \
+  -d '{"chunks": [{"speaker": "caller", "text": "we need stain", "final": false}]}'
+curl -s $BASE/api/v1/listen/sessions/$SESSION/transcript \
+  -H 'Content-Type: application/json' \
+  -d '{"chunks": [{"speaker": "caller", "text": "we need stainless steel", "final": true}]}'
+```
+
+Interim chunks never reach the brief prompt — only `final` transcript text is sent to ARAG
+(`ListenService.transcriptText()`), so a half-formed hypothesis cannot pollute the grounded context.
+`chunks` accepts up to 50 entries per call (`text` up to 4000 characters each), so a burst of
+buffered STT output can be flushed in one request.
+
+### Read the session
+
+```bash
+curl -s "$BASE/api/v1/listen/sessions/$SESSION?transcript_tail=20" | jq '{status, briefVersion, brief, citations, stats, transcriptTotal}'
+```
+
+`stats` carries `chunks`, `words`, `refreshes` (usable brief updates), `skipped` (throttled),
+`failures` (a refresh that errored or returned nothing usable — the previous brief stays on screen
+either way), and `lastLatencyMs`/`p50LatencyMs`/`p95LatencyMs` over the session's refreshes.
+`transcript_tail` (default 50, max 400) bounds how much transcript comes back; `transcriptTotal` is
+the full count so a client can tell there is more.
+
+### Consume the brief over SSE
+
+```bash
+curl -N $BASE/api/v1/listen/sessions/$SESSION/events
+# event: brief      data: {"brief":{...},"version":1,"citations":[...],"stats":{...}}
+# event: status     data: {"status":"live"}
+# event: transcript data: {"entries":[...],"stats":{...}}
+# event: status     data: {"status":"refreshing"}
+# event: brief      data: {"brief":{...},"version":2,...}
+```
+
+The stream sends the session's *current* state (`brief`, then `status`) the moment it connects, so a
+late subscriber is not staring at an empty pane, then streams `transcript`/`brief`/`status` events
+as they happen. `status` is `refreshing` while a brief call is in flight, `skipped` with a `reason`
+when a refresh ran but returned nothing usable, and `ended` when the session closes (the server then
+closes the stream itself).
+
+```js
+const es = new EventSource(`${BASE}/api/v1/listen/sessions/${sessionId}/events`, {
+  withCredentials: true, // same-origin session cookie — EventSource cannot send X-API-Key
+});
+es.addEventListener("brief", (e) => {
+  const { brief, version, citations, stats } = JSON.parse(e.data);
+  renderBrief(brief, citations, version, stats);
+});
+es.addEventListener("transcript", (e) => appendTranscript(JSON.parse(e.data).entries));
+es.addEventListener("status", (e) => {
+  const { status, reason } = JSON.parse(e.data);
+  if (status === "ended") es.close();
+});
+```
+
+Because the browser `EventSource` API cannot set custom request headers, a browser client must
+authenticate the SSE connection with the same-origin `arag_session` cookie from
+`POST /api/v1/session` (what the console does) rather than `X-API-Key` — a server-to-server client
+(a telephony bridge, say) can instead pass `X-API-Key` on a plain `fetch`/`curl` request since it
+is not bound by that restriction.
+
+### Poll as a fallback
+
+A brief can land in the gap between opening a session and an event stream attaching (or a proxy can
+drop long-lived connections), so the shipped console also polls every three seconds while a session
+is live, in addition to its SSE subscription, and only renders a poll's brief if its `briefVersion`
+is newer than what SSE already rendered:
+
+```js
+setInterval(async () => {
+  const s = await fetch(`${BASE}/api/v1/listen/sessions/${sessionId}?transcript_tail=30`).then((r) => r.json());
+  if (s.brief && s.briefVersion > renderedVersion) renderBrief(s.brief, s.citations, s.briefVersion);
+}, 3000);
+```
+
+A pure-polling client (no SSE at all) works too — poll a little faster than the throttle's 1.5 s
+minimum gap and you will not miss a refresh for long.
+
+### End a session, list sessions
+
+```bash
+curl -s -X DELETE $BASE/api/v1/listen/sessions/$SESSION | jq '{status, briefVersion}'
+curl -s "$BASE/api/v1/listen/sessions?prospect=progress&limit=10" | jq '.items[] | {id, status, stats}'
+```
+
+Ending a session keeps its final brief, citations and stats (for review); it stops accepting new
+transcript (`409 Conflict` on a further append) and closes any open SSE stream.
+
+### Driving it from a telephony webhook
+
+A telephony platform's transcription webhook typically delivers one final utterance at a time, from
+a server, so it is the simple case: create the session when the call starts, `POST` one `chunks`
+entry per webhook delivery with `X-API-Key` (or an admin token) since it is a server-to-server call,
+and `DELETE` the session when the call ends. There is nothing telephony-specific in the API to
+configure — `speaker` is a free-form string, so use whatever the webhook calls the two legs (e.g.
+`"caller"`/`"agent"`).
+
+### Driving it from a browser's own speech recognition
+
+A browser running its own STT (the Web Speech API, or a vendor's realtime WebSocket like ElevenLabs
+Scribe) typically produces a stream of interim hypotheses followed by a final one per utterance:
+send each interim as `{"text": "...", "final": false}` for live-typing feedback in the UI, and the
+committed/final text as `{"final": true}` (the default) once the vendor confirms it — that is
+exactly the shape the console's own microphone path uses (`connectScribe()` in `public/app.js`),
+except the shipped console currently only forwards the *final* transcript to the session and shows
+interim text locally rather than sending it — sending interims too is supported by the API and
+would make the brief able to react a little earlier, at the cost of the throttle seeing (and
+discarding) more near-duplicate windows.
+
+### The admin view
+
+```bash
+curl -s -b admin.txt "$BASE/api/v1/admin/listen-sessions?limit=25" | jq '.items[] | {id, prospect, status, stats, briefHistory}'
+```
+
+Same session projection as the public API, plus `briefHistory` — every usable refresh this session
+has produced (capped at the most recent 20), each with its own `version`, timestamp and latency, so
+an operator can see how the brief evolved over the call rather than only its current state.
+
 ## Voice turns
 
 ### `POST /api/v1/voice-answer`
@@ -51,11 +226,15 @@ instead of ARAG ever being called).
 
 `generative_model` is an optional per-request override (what the console's model dropdown sends).
 
-### `POST /api/v1/brief` — the ambient Listen-mode copilot
+### `POST /api/v1/brief` — the stateless brief primitive
 
-Fires roughly every 1.5 s while Listen mode is active; rate-limited separately from
-`/voice-answer` because of that (`VOICE_BRIEF_RATE_RPS`, default 1 rps with a burst of 5 — see
-`src/services/ratelimit.ts`).
+This is the primitive a listen session calls internally on every refresh (`ListenService.refresh()`
+→ `runBrief()`) — the session API above manages the throttling, the transcript and `prev` for you.
+Call it directly when you want a single, one-off structured brief with no session to open or close:
+you pass `prev`/`transcript` yourself and decide yourself how often to call it. Rate-limited
+separately from `/voice-answer` (`VOICE_BRIEF_RATE_RPS`, default 1 rps with a burst of 5 — the
+platform's per-route limiter in `vendor/arag-platform/src/http/app.ts`) because each call is a full
+LLM generation and a listening client can otherwise fire it continuously.
 
 ```bash
 curl -s $BASE/api/v1/brief \

@@ -8,6 +8,12 @@ Real-time listening becomes the product's hero capability (workspace decision D-
 now ingests a live conversation and streams back an evolving, grounded, cited brief.
 
 ### Added
+- **White-label branding**: `BRAND_PRODUCT_NAME`, `BRAND_TAGLINE`, `BRAND_LOGO_URL`,
+  `BRAND_PRIMARY_COLOR`, `BRAND_ACCENT_COLOR`, `BRAND_POWERED_BY`, `BRAND_FOOTER_TEXT`,
+  `BRAND_DOCS_URL` and `BRAND_SUPPORT_URL` rebrand a deployment without a fork; `GET
+  /api/v1/branding` is public and both UIs apply it at boot; the registry gains an optional
+  per-prospect `brand` block that layers on top; partner logos are served from
+  `DATA_DIR/branding/`. See `docs/developer/white-label.md` and `docs/developer/build-your-own.md`.
 - **Listening sessions** (`src/services/listen.ts`): rolling transcript (final and interim chunks),
   server-side throttling and de-duplication of brief refreshes, one evolving brief per session,
   citations accumulated across the call, and per-session latency statistics. Sessions are persisted

@@ -42,6 +42,8 @@ export interface RouteOptions {
   body?: "auto" | "json" | "multipart" | "raw" | "none";
   /** Skip the rate limiter for this route. */
   noRateLimit?: boolean;
+  /** Per-route limit (separate bucket per client and route), e.g. { rps: 1, burst: 5 } for expensive endpoints. */
+  rateLimit?: { rps: number; burst: number };
   /** OpenAPI operationId, used by contract tests to map routes to spec paths. */
   operationId?: string;
 }
@@ -512,11 +514,12 @@ export class App {
 
   // ───────────────────────────── rate limit ─────────────────────────────
 
-  private rateLimited(ctx: Ctx): number | null {
-    const rps = this.env.rateLimitRps;
+  private rateLimited(ctx: Ctx, route?: { rps: number; burst: number; key: string }): number | null {
+    const rps = route ? route.rps : this.env.rateLimitRps;
     if (rps <= 0) return null;
-    const burst = Math.max(1, this.env.rateLimitBurst);
-    const key = ctx.auth.apiKey ? `k:${ctx.auth.apiKey}` : `ip:${ctx.ip}`;
+    const burst = Math.max(1, route ? route.burst : this.env.rateLimitBurst);
+    const who = ctx.auth.apiKey ? `k:${ctx.auth.apiKey}` : `ip:${ctx.ip}`;
+    const key = route ? `${route.key}|${who}` : who;
     const now = Date.now();
     let b = this.buckets.get(key);
     if (!b) {
@@ -549,7 +552,8 @@ export class App {
   private async parseBody(ctx: Ctx, opts: RouteOptions): Promise<void> {
     const mode = opts.body ?? "auto";
     if (mode === "none" || ctx.method === "GET" || ctx.method === "HEAD") return;
-    const ct = (ctx.header("content-type") ?? "").toLowerCase();
+    const rawCt = ctx.header("content-type") ?? "";
+    const ct = rawCt.toLowerCase(); // for type checks only — the multipart boundary is case-sensitive
     const limit = opts.bodyLimit ?? this.env.maxBodyBytes;
     if (
       mode === "raw" ||
@@ -564,7 +568,7 @@ export class App {
     const raw = await this.readBody(ctx, limit);
     ctx.rawBody = raw;
     if (mode === "multipart" || ct.startsWith("multipart/form-data")) {
-      const parsed = parseMultipart(raw, ct);
+      const parsed = parseMultipart(raw, rawCt);
       ctx.files = parsed.files;
       ctx.body = parsed.fields;
       return;
@@ -699,6 +703,13 @@ export class App {
       if (!route.opts.noRateLimit && !ctx.auth.admin) {
         const retry = this.rateLimited(ctx);
         if (retry !== null) throw tooManyRequests(retry);
+        if (route.opts.rateLimit) {
+          const r2 = this.rateLimited(ctx, {
+            ...route.opts.rateLimit,
+            key: `${route.method} ${route.pattern}`,
+          });
+          if (r2 !== null) throw tooManyRequests(r2);
+        }
       }
       await this.parseBody(ctx, route.opts);
       this.applyValidation(ctx, route.opts);

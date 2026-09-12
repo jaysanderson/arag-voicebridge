@@ -99,20 +99,38 @@ a retrieval call if it reached ARAG at all (only guard trips are entirely free �
 ARAG); a `sentinel`/`not-found-phrase` handoff still paid for one full generation, since the model
 had to run in order to decide it couldn't answer.
 
-**Per brief refresh** (`POST /api/v1/brief`, Listen mode only): this is the more dangerous cost
-driver, because it does not scale with conversation *turns* — it scales with **wall-clock time
-spent listening**. The console throttles refreshes to roughly every 1.5 seconds while actively
-listening (`MIN_GAP_MS` in `public/app.js`, matching the ~1.5 s figure in `DECISIONS.md` V-05), so
-a single 5-minute Listen session generates on the order of 200 brief calls, each requesting up to
-600 output tokens (`buildBriefRequest`'s `max_tokens: 600` in `src/services/brief.ts`) — noticeably
-more expensive, per unit of engagement time, than the turn-based cost above. `brief_model`
-defaults to a fast/cheap tier (`gemini-2.5-flash-lite` in the shipped `progress` example) precisely
-to control this; check that any customer prospect using Listen mode has an explicit, cheap
-`brief_model` set, not left to fall through to the more expensive main `generative_model`
-(`buildBriefRequest`: `req.model || prospect.brief_model || prospect.generative_model`).
-`DECISIONS.md` V-05 records the two dedicated rate limits (`VOICE_BRIEF_RATE_RPS`/`BURST`,
-default 1 rps / burst 5 per IP) that exist specifically to cap this exposure — do not raise them
-without recalculating the cost model.
+**Per listen-session refresh** (real-time listening / agent-assist, `src/services/listen.ts`):
+this is the more dangerous cost driver, because it does not scale with conversation *turns* — it
+scales with **wall-clock time spent on a live call**, per session, for every session open at once.
+As of the current codebase the throttle is entirely server-side (`DECISIONS.md` V-14 — do not size
+against an older assumption of a fixed client-side cadence; that architecture was replaced and no
+longer exists in `public/app.js`): `DEFAULT_THROTTLE.minGapMs` (1500 ms) is a **ceiling** of at
+most 40 refreshes/minute/session, but the similarity and minimum-word checks
+(`jaccardMax: 0.85`, `minWords: 4`) mean a natural conversation — new, sufficiently different
+content roughly every 10–15 seconds at normal speaking pace — realistically produces on the order
+of **4–6 refreshes/minute/session** in steady state, not 40. Budget against that steady-state
+figure; treat sustained refresh rates near the ceiling as a signal of a misbehaving client
+(re-sending unchanged content as "new"), not as the expected cost.
+
+The output side is capped and constant — up to 600 output tokens per refresh
+(`buildBriefRequest`'s `max_tokens: 600` in `src/services/brief.ts`) — but the **input** side is
+not: every refresh sends the entire running transcript so far (`transcriptText()`, capped at
+`MAX_TRANSCRIPT_CHARS` = 20,000 characters, roughly 5,000 tokens at the ceiling), not just the new
+window. A 20-minute call's refresh near the end of the call costs meaningfully more input tokens
+than its first refresh did — size a customer's cost estimate off their **longest** expected call
+duration, not an average one, and multiply by however many sessions are concurrently open, not by
+call *count* for the day. `brief_model` defaults to a fast/cheap tier (`gemini-2.5-flash-lite` in
+the shipped `progress` example) precisely to control this; check that any customer prospect using
+listening has an explicit, cheap `brief_model` set, not left to fall through to the more expensive
+main `generative_model` (`buildBriefRequest`: `req.model || prospect.brief_model ||
+prospect.generative_model`). `POST /api/v1/listen/sessions` (opening a session) carries the same
+dedicated rate limit as `POST /api/v1/brief` (`VOICE_BRIEF_RATE_RPS`/`BURST`, default 1 rps /
+burst 5 per IP, applied as a platform route budget per `DECISIONS.md` V-15) — but note this limits
+how fast **sessions can be opened**, not how fast transcript can be appended to one already open;
+`POST .../transcript` carries no route-specific rate limit of its own (`src/routes/listen.ts`),
+because the refresh *cost* is already capped by the throttle described above, not by request rate.
+Do not assume raising `VOICE_BRIEF_RATE_RPS` changes listening's cost exposure at all — it only
+changes how fast new sessions can be created.
 
 **Golden-set runs** are a smaller, bursty cost: every question in a prospect's `golden_questions`
 array fires one real turn (`runGoldenEval` uses the exact same `runTurn` pipeline, `src/services/
@@ -125,7 +143,7 @@ API.
 
 ## Volume sizing for `DATA_DIR`
 
-`DATA_DIR` holds four JSON files, each a full in-memory `Collection` flushed as one file
+`DATA_DIR` holds five JSON files, each a full in-memory `Collection` flushed as one file
 (`vendor/arag-platform/src/store/jsonstore.ts` — see `WORKSHOP.md` §4 for the single-writer
 implication):
 
@@ -135,17 +153,63 @@ implication):
 | `turns.json` | `VOICE_TURN_LOG_LIMIT`, default 500 | Small, bounded — oldest evicted on overflow |
 | `golden-evals.json` | 50 (hardcoded in `GoldenEvalStore`, not env-configurable) | Small, bounded |
 | `jobs.json` | 500 (platform default) | Small, bounded |
+| `listen-sessions.json` | 200 (`ListenService`'s `cap`, hardcoded — not wired to an env var) | The largest of the five by far — see below |
+
+`listen-sessions.json` is a different order of magnitude from the other four, because a listen
+session carries far more state than a turn record: up to 400 transcript entries
+(`MAX_TRANSCRIPT_ENTRIES`), up to 20 full brief snapshots (`MAX_BRIEF_HISTORY`, each a complete
+structured object — `topic`, `summary`, `key_points`, `suggested_answers` and the rest), and up to
+12 accumulated citations. A realistic session (a handful of minutes of natural conversation, short
+transcript entries) lands somewhere in the 10–40 KB range; a long call pushed toward the caps
+(400 entries, 20 brief versions) can reach several hundred KB. At the 200-session cap, that puts
+`listen-sessions.json` anywhere from a couple of MB to tens of MB in the worst case — still well
+inside the shipped 1 GB volume, but no longer "trivially small" the way the other four collections
+are, and **the write-amplification cost matters more here than the storage cost**: every single
+append and every single refresh completion triggers a debounced rewrite of the *entire file*
+(§ "Per listen-session refresh" above put a live session's steady-state refresh rate at roughly
+4–6/minute — that's 4–6 whole-file rewrites/minute *per active session*, all sharing one flush
+queue). `WORKSHOP.md` §7 covers the correctness risk of the 200-session cap itself (it evicts the
+oldest record regardless of live/ended status); this section is only about the size and
+write-frequency consequence of that same cap.
 
 The shipped `fly.toml` provisions a 1 GB volume for all of this, which is orders of magnitude more
-than the bounded collections above will ever use — the headroom exists for safety margin and
-future collections, not because current usage approaches it. **The one dial that matters** is
-`VOICE_TURN_LOG_LIMIT`: raising it substantially (for a customer who wants a much longer visible
-turn history in the admin panel) increases both the steady-state file size and, more importantly,
-the cost of every single flush, since the whole collection is rewritten on every write, not
-appended to. For the shipped default (500), this is not worth worrying about; if a customer asks
-for 50,000, revisit whether the JSON-file store is still the right choice for that collection
-before just raising the number (see `WORKSHOP.md` §4's note that this store is explicitly meant to
-be swappable at GA).
+than the four small collections will ever use, and still generous headroom for
+`listen-sessions.json` at its worst case — the volume size is not the constraint a customer running
+agent-assist at real volume needs to worry about; the write-amplification above, and the
+200-session cap's eviction behaviour (`WORKSHOP.md` §7), are. **The one dial that matters for the
+turn log** is `VOICE_TURN_LOG_LIMIT`: raising it substantially (for a customer who wants a much
+longer visible turn history in the admin panel) increases both the steady-state file size and,
+more importantly, the cost of every single flush, since the whole collection is rewritten on every
+write, not appended to. For the shipped default (500), this is not worth worrying about; if a
+customer asks for 50,000, revisit whether the JSON-file store is still the right choice for that
+collection before just raising the number (see `WORKSHOP.md` §4's note that this store is
+explicitly meant to be swappable at GA) — the same caution applies even more strongly to raising
+the listen-sessions cap, given its already-larger per-record size.
+
+---
+
+## SSE connections per machine
+
+`GET /api/v1/listen/sessions/{id}/events` is registered with `noRateLimit: true`
+(`src/routes/listen.ts`) — there is no product-level cap on how many of these a client, or all
+clients combined, can hold open. Each one is a long-lived HTTP request that does not resolve until
+the viewer disconnects or the session ends, and Fly's `[http_service.concurrency]` admission
+control (soft 40 / hard 60 on the shipped `shared-cpu-1x` machine — § "Concurrency and memory per
+machine" above) counts it exactly like any other in-flight request, for its entire open duration.
+
+That gives a concrete, if approximate, formula for how many simultaneous listening viewers one
+machine can hold before turning away *ordinary* traffic: **available SSE budget ≈ concurrency
+limit − expected concurrent `voice-answer`/`brief`/`transcript` requests at peak.** Against the
+shipped soft limit of 40, a deployment expecting, say, 15 concurrent ordinary requests at peak has
+roughly 25 SSE connections of headroom before it starts competing with them — and every one of
+those 25 is consumed for as long as a viewer's browser tab stays open, not just for the duration of
+a single turn. A supervisor dashboard that opens one SSE connection per agent it displays is the
+fastest way to exhaust this budget: 25 monitored agents from one dashboard, plus each agent's own
+console *also* watching its own session, is 50 connections against a 40/60 limit designed with
+short-lived turns in mind. Size this explicitly for any customer whose design includes a
+supervisor or monitoring view, and prefer polling `GET /api/v1/listen/sessions/{id}` on a longer
+interval over an SSE subscription for a dashboard that does not need sub-second updates — it trades
+freshness for a request that actually completes and frees its slot.
 
 ---
 

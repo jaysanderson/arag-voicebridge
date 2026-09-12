@@ -11,8 +11,8 @@ Enter the deployment's `ADMIN_TOKEN` in the sign-in card. It is exchanged for an
 cookie rather than re-reading anything from browser storage. A wrong token shows an inline error
 without revealing whether the token was merely wrong or something else was misconfigured.
 
-Once signed in, six tabs are available: **Overview**, **Prospects**, **Turn log**, **Golden evals**,
-**Configuration**, **Logs**.
+Once signed in, seven tabs are available, in the order they're presented: **Overview**,
+**Listen sessions**, **Prospects**, **Turn log**, **Golden evals**, **Configuration**, **Logs**.
 
 ## Overview
 
@@ -24,6 +24,27 @@ prospect's Knowledge Box — including through the mock in a mock-backed deploym
 explicit "mock" chip so nobody mistakes a demo environment for a live one). Alongside it, a **Usage**
 panel shows raw counters: total requests, ARAG calls and errors, job counts by status, and the
 current metrics snapshot.
+
+## Listen sessions
+
+Recent real-time listening sessions across every prospect, newest first. The left-hand table lists
+each session's start time, prospect, status (**live** or **ended**), and, from its stats, how many
+brief refreshes it produced, how many the server-side throttle skipped, and its p50 refresh latency.
+Press **Reload** to refresh the table with `GET /api/v1/admin/listen-sessions`; the console does not
+push updates here, so reload after a session you're watching changes.
+
+Clicking a row (the most recent session loads automatically) fills the **brief history** panel on
+the right with every refresh that produced a usable brief for that session, newest first: its
+version number, the time it happened and how long it took, a short excerpt of the summary at that
+point, and its key points if there were any. This is the practical way to answer "how did the brief
+evolve through this call" after the fact, not just "what does it look like now" — and, alongside a
+session's accumulated citations (visible via `GET /api/v1/listen/sessions/{id}`), it is today's
+substitute for an automated brief-quality gate: there isn't one, so this history is what a reviewer
+reads to judge whether a session's brief was actually useful.
+
+A session that was left "live" by a server restart is closed automatically the next time the service
+starts — the table will show it as **ended** rather than a session that's live forever with nobody
+listening to it.
 
 ## Prospects — the registry, and the onboarding ritual
 

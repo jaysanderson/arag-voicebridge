@@ -40,7 +40,7 @@ test is worse than one that fails loudly.
 ## Never edit `vendor/`
 
 `vendor/arag-platform/` is a vendored copy of the shared platform toolkit (`App`, `AragClient`,
-`Store`, `JobManager`, the mock ARAG server, the UI kit) — see `../../STANDARDS.md` §9. It is
+`Store`, `JobManager`, the mock ARAG server, the UI kit) — see the platform repository's `STANDARDS.md` §9. It is
 synced with `make sync-platform` from the platform repo and is never hand-edited in place: a local
 edit here would be silently overwritten by the next sync and would not benefit any other product
 built on the same platform. If you find a bug or a missing capability in the platform layer while

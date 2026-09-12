@@ -1,15 +1,25 @@
 # Integrations
 
+The real-time listening API (`POST /api/v1/listen/sessions` and its transcript/events/end routes,
+see [`examples.md`](examples.md#real-time-listening)) is deliberately transcription-source-agnostic
+— it accepts conversation chunks from anywhere, and nothing in its request or response shapes
+(`TranscriptChunk`, `ListenSession`) names a vendor. Everything in this page is about the *optional*
+integrations layered on top of that core: ElevenLabs Scribe is one way to get a live transcript into
+a session (used by the console's own microphone button), not a requirement of the API itself — a
+telephony platform's own transcription webhook, a meeting bot, or a customer's existing STT vendor
+can feed the same session with a plain HTTP `POST`.
+
 VoiceBridge has exactly one required upstream — ARAG — and three optional ones. Each optional
 integration is fully dormant until its environment variables are set: the routes it powers return
 `503` with a message naming the missing variable, and the console hides or degrades the
-corresponding tab instead of erroring. This is deliberate — a clone with no ElevenLabs account
-still demos the whole grounded-answer story through the Ask tab.
+corresponding control instead of erroring. This is deliberate — a clone with no ElevenLabs account
+still demos the whole real-time-listening and grounded-answer story through the sample/typed
+conversation and the Ask tab.
 
 | Integration | Env vars | Powers | Degrades to when unset |
 |---|---|---|---|
 | ARAG | `ARAG_KB_ID`, `ARAG_API_KEY`, `ARAG_REGION` (or `ARAG_BASE_URL`), or `ARAG_MOCK=1` | Everything | Boot fails (`assertAragEnv()`) unless `ARAG_MOCK=1` |
-| ElevenLabs | `ELEVENLABS_API_KEY` | Call tab (voice), Listen tab (Scribe STT), voice list | Ask tab still works fully; `/api/v1/scribe-token` and `/api/v1/voices` return 503 |
+| ElevenLabs | `ELEVENLABS_API_KEY` | Call tab (voice), Listen's microphone button (Scribe STT feeding a session), voice list | The listen-session API, the Ask tab and the golden-set runner still work fully via the sample/typed conversation; `/api/v1/scribe-token` and `/api/v1/voices` return 503 |
 | LiveAvatar + LiveKit | `LIVEAVATAR_API_KEY`, `LIVEKIT_URL`, `LIVEKIT_API_KEY`, `LIVEKIT_API_SECRET` (+ ElevenLabs key/secret) | Avatar pane | `/api/v1/avatar/sessions` returns 503; the avatar toggle stays hidden |
 
 ## ElevenLabs Conversational AI (the Call tab)
@@ -66,14 +76,15 @@ agent's voice/greeting/locale — nothing in VoiceBridge itself changes (see
   [`../architecture/security-model.md`](../architecture/security-model.md) for what that does and
   does not expose, and set `API_KEYS` if the deployment needs to close that off.
 
-## Scribe / Listen mode
+## ElevenLabs Scribe — one way to feed a listen session
 
-Listen mode is the ambient copilot: the browser streams microphone audio to ElevenLabs' Scribe v2
-Realtime speech-to-text over a direct browser→ElevenLabs WebSocket, and periodically posts the most
-recent words plus the running transcript to `POST /api/v1/brief`, which returns a structured,
-evolving brief (who the other person is, what they want, suggested things to say) grounded in the
-Knowledge Box via ARAG's `answer_json_schema` (see
-[`../architecture/arag-integration.md`](../architecture/arag-integration.md)).
+Listen's microphone button is one concrete transcription source among many: the browser streams
+microphone audio to ElevenLabs' Scribe v2 Realtime speech-to-text over a direct
+browser→ElevenLabs WebSocket, and as each partial/committed transcript arrives it is appended to the
+open listen session with `POST /api/v1/listen/sessions/{id}/transcript`
+(`connectScribe()`/`sendChunks()` in `public/app.js`) — exactly the same call a telephony webhook or
+a meeting bot would make. VoiceBridge itself never sees or touches audio; Scribe's job ends the
+moment it hands back text.
 
 The browser must never hold the ElevenLabs API key, so VoiceBridge mints a **single-use, 15-minute**
 Scribe token server-side (`src/services/scribe.ts`, `POST /api/v1/scribe-token`) that the browser
@@ -83,7 +94,9 @@ never anonymous, `DECISIONS.md` V-06) and is rate-limited on its own budget
 (`VOICE_SCRIBE_RATE_RPS`, default 0.2 rps) because each token spends ElevenLabs quota.
 
 Requires only `ELEVENLABS_API_KEY`. Without it, `/api/v1/scribe-token` and `/api/v1/voices` both
-503 and the Listen tab's mic button fails cleanly with the 503's message rather than hanging.
+503 and Listen's microphone button fails cleanly with the 503's message rather than hanging — the
+session API underneath it is entirely unaffected, so the sample conversation, typed/pasted
+conversation, and any external caller posting transcript chunks keep working.
 
 ## LiveAvatar (HeyGen) + LiveKit — the video avatar pane
 

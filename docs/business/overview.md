@@ -1,47 +1,53 @@
 # Overview
 
-VoiceBridge connects a voice agent to Progress Agentic RAG (ARAG) so that a spoken conversation can
-be answered from a governed knowledge base rather than a model's general knowledge. It exists
-because a voice agent that can say anything will eventually say something wrong — VoiceBridge is
-the layer that makes sure every spoken answer traces back to retrieved content, that anything the
-knowledge base cannot support is handed to a human by a fixed rule rather than a judgement call,
-and that every turn is measured.
+VoiceBridge listens to a live conversation and keeps one evolving, cited brief in front of whoever
+is handling it — who the other person is, what they want, and what to say next — grounded in
+Progress Agentic RAG (ARAG) rather than a model's general knowledge or memory. It exists because a
+person on a live call needs to know what's true right now, not after the call: VoiceBridge is the
+layer that listens as the conversation moves, keeps the brief current, and traces everything
+factual in it back to retrieved content. The same grounding is also available as a follow-on,
+answering a caller directly when nobody's available, and handing off to a human by a fixed rule
+rather than a judgement call when the knowledge base can't support an answer.
 
 ## What it is
 
-A small, API-first service with one endpoint that matters: `POST /api/v1/voice-answer`. Any voice
-platform whose agent can call an HTTP tool can use it — the shipped demo happens to use ElevenLabs
-Conversational AI, but nothing about the contract is ElevenLabs-specific (see
-[`../developer/extension-points.md`](../developer/extension-points.md)). Given a question and a
-little conversation history, it returns a spoken-shaped answer, the sources it drew on, a flag
-saying whether the turn must escalate to a person, and a latency breakdown.
+A small, API-first service built around one capability that matters most: a **listen session**.
+`POST /api/v1/listen/sessions` opens one for a prospect; conversation is appended to it as it
+happens, from any source — a realtime speech-to-text stream, a telephony webhook, a meeting bot, or
+someone typing — and the evolving brief is read back over Server-Sent Events or by polling. Nothing
+about the session API assumes a particular voice platform or transcription vendor.
 
-Alongside the voice path, VoiceBridge ships:
+Alongside the listening path, VoiceBridge ships:
 
-- A **demo console** for trying the whole thing with no phone call involved — type a question and
-  see exactly what the agent would say, click through to a real voice call once credentials are
-  configured, or watch an ambient copilot build a live brief while it listens.
+- A **demo console** that opens on the Listen tab: press **Play sample conversation** to watch a
+  scripted discovery call build a live brief with no credentials at all, paste or type your own
+  conversation, or (with an ElevenLabs key configured) listen to a real microphone feed. The same
+  console also has an Ask tab for the deflection pipeline as a text turn, a Call tab for a real voice
+  round-trip, and a Golden set tab for the deflection quality gate.
 - An **admin panel** for managing the prospects (customers/demo targets) a deployment serves,
-  testing each one's Knowledge Box connection, and reviewing the turn log and golden-set history.
-- A **golden-set gate**: a per-prospect set of test questions that runs through the exact same
-  pipeline the live agent uses, so "this prospect is ready to demo" is a pass/fail fact rather than
-  a feeling.
+  reviewing recent listen sessions and how their briefs evolved, testing each prospect's Knowledge
+  Box connection, and reviewing the turn log and golden-set history for the deflection path.
+- A **golden-set gate** for the deflection follow-on: a per-prospect set of test questions that runs
+  through the exact same pipeline the live agent uses, so "this prospect is ready to answer on its
+  own" is a pass/fail fact rather than a feeling.
 
-## What makes an answer trustworthy
+## What makes a brief — or an answer — trustworthy
 
 Three things, all visible rather than asserted:
 
-1. **Grounding.** The model is instructed to answer only from retrieved content and to say so
-   explicitly, with a fixed phrase, when the retrieved content does not cover the question. The
-   bridge detects that phrase deterministically and treats it as a handoff — this is a contract
-   between the prompt and the code, not a heuristic guess at whether an answer "sounds confident."
-2. **Citations.** Every substantive answer carries the sources it drew on. They are never spoken —
-   you cannot usefully say a URL out loud — but they are always available as data, shown as chips
-   in the console and in the admin turn log.
-3. **A clean handoff.** When the knowledge base cannot answer, the caller hears the prospect's own
-   configured handoff line, not a guess, an apology-shaped non-answer, or dead air. The same applies
-   when the upstream knowledge base is slow or erroring — VoiceBridge always resolves within the
-   voice agent's own tool timeout.
+1. **Grounding.** The brief's factual fields (key points, suggested answers, recommended products)
+   are drawn only from retrieved content, and the schema is written so the model leaves a field
+   empty rather than invent something to fill it. The deflection pipeline applies the same
+   discipline to a spoken answer, with a fixed phrase the model uses explicitly when the retrieved
+   content doesn't cover the question.
+2. **Citations.** Every brief and every substantive deflection answer carries the sources it drew
+   on. They are never spoken — you cannot usefully say a URL out loud — but they are always
+   available as data: chips in the console, and the full accumulated list in the admin panel.
+3. **A clean handoff, or an honest "not yet".** When a refresh finds nothing usable, the brief simply
+   stays as it was rather than flashing something invented. When the deflection pipeline can't
+   answer, the caller hears the prospect's own configured handoff line rather than a guess, an
+   apology-shaped non-answer, or dead air — including when the upstream knowledge base is slow or
+   erroring, since VoiceBridge always resolves within the voice agent's own tool timeout.
 
 ## What makes it repeatable across customers/prospects
 
@@ -57,7 +63,7 @@ ritual.
 - [`when-to-use.md`](when-to-use.md) — the shape of problem this fits, and where it doesn't.
 - [`walkthrough-demo.md`](walkthrough-demo.md) — a click-by-click tour of the console.
 - [`walkthrough-admin.md`](walkthrough-admin.md) — a click-by-click tour of the admin panel,
-  including onboarding a new prospect.
+  including reviewing listen sessions and onboarding a new prospect.
 - [`faq.md`](faq.md) — the questions this document doesn't already answer.
 - [`../architecture/architecture.md`](../architecture/architecture.md) — how it actually works,
   for a technical audience.

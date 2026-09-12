@@ -1,6 +1,9 @@
 export * from "./arag/index.ts";
+export * as mockFixtures from "./arag/mock/fixtures.ts";
+export { SAMPLE_CALL_TRANSCRIPT, SAMPLE_DOCS } from "./arag/mock/fixtures.ts";
 export type { MockAragServer, MockOptions, MockResource } from "./arag/mock/server.ts";
 export { MockArag, startMockArag } from "./arag/mock/server.ts";
+export * from "./config/branding.ts";
 export * from "./config/env.ts";
 export * from "./http/index.ts";
 export * from "./log/logger.ts";
@@ -8,4 +11,4 @@ export * from "./openapi/builder.ts";
 export * from "./store/index.ts";
 export * as testing from "./testing/index.ts";
 export * from "./validation/jsonschema.ts";
-export const PLATFORM_VERSION = "0.1.3";
+export const PLATFORM_VERSION = "0.1.6";
