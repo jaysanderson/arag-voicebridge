@@ -292,11 +292,21 @@ export class AragClient {
     throw new AragError(`resource ${rid} not processed within deadline`, "timeout", "waitProcessed");
   }
 
-  /** Is the resource retrievable yet? (cheap keyword /find). PROCESSED can precede searchability by seconds. */
-  async isSearchable(rid: string, opts: { signal?: AbortSignal } = {}): Promise<boolean> {
+  /**
+   * Is the resource retrievable yet? PROCESSED can precede searchability by seconds. Pass a `query`
+   * taken from the document's own text (e.g. its first words) for a reliable keyword hit; the default
+   * probe uses keyword + semantic retrieval with a generic query, which is less reliable on very short texts.
+   */
+  async isSearchable(rid: string, opts: { query?: string; signal?: AbortSignal } = {}): Promise<boolean> {
     try {
       const r = await this.find(
-        { query: "document", features: ["keyword"], resource_filters: [rid], top_k: 1 },
+        {
+          query: opts.query?.trim() || "document contents",
+          features: opts.query ? ["keyword", "semantic"] : ["semantic", "keyword"],
+          resource_filters: [rid],
+          top_k: 3,
+          min_score: 0,
+        },
         opts,
       );
       return Boolean(r.resources && rid in r.resources);
@@ -308,6 +318,7 @@ export class AragClient {
   async waitSearchable(
     rid: string,
     opts: {
+      query?: string;
       timeoutMs?: number;
       intervalMs?: number;
       onPoll?: (attempt: number) => void;
@@ -319,7 +330,7 @@ export class AragClient {
     while (Date.now() < deadline) {
       attempt++;
       opts.onPoll?.(attempt);
-      if (await this.isSearchable(rid, opts)) return true;
+      if (await this.isSearchable(rid, { query: opts.query, signal: opts.signal })) return true;
       await sleep(opts.intervalMs ?? 2_000, opts.signal);
     }
     return false;

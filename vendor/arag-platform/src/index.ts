@@ -8,4 +8,4 @@ export * from "./openapi/builder.ts";
 export * from "./store/index.ts";
 export * as testing from "./testing/index.ts";
 export * from "./validation/jsonschema.ts";
-export const PLATFORM_VERSION = "0.1.2";
+export const PLATFORM_VERSION = "0.1.3";
