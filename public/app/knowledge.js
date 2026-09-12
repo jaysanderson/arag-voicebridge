@@ -126,7 +126,11 @@ function kbCard(k) {
         <dt>Answer model</dt><dd>${esc(k.kb.generative_model ?? "Knowledge Box default")}</dd>
         <dt>Brief model</dt><dd>${esc(k.kb.brief_model ?? "fast default")}</dd>
         <dt>Reranker</dt><dd>${esc(k.kb.reranker ?? "noop")}</dd>
-        <dt>Stored search config</dt><dd>${k.kb.ask_config ? `<span class="vb-mono">${esc(k.kb.ask_config)}</span>` : "inline (not provisioned)"}</dd>
+        <dt>Retrieval config</dt><dd>${
+          k.kb.provisioned
+            ? 'a stored search configuration <span class="vb-sub">(named under Prospects)</span>'
+            : "inline — not provisioned"
+        }</dd>
       </dl>
       <p class="muted small" style="margin:14px 0 0">The Knowledge Box itself is managed in Progress
         Agentic RAG. This deployment only reads from it — it never writes, and never answers from
