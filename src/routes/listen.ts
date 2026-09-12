@@ -175,6 +175,22 @@ export function registerListenRoutes(app: App, deps: ProductDeps): void {
     },
   );
 
+  app.post(
+    "/api/v1/listen/sessions/:id/refresh",
+    async (ctx) => {
+      const session = deps.listen.require(ctx.params.id!);
+      if (session.status === "ended") throw conflict(`Listen session "${session.id}" has ended`);
+      const view = await deps.listen.refresh(session.id);
+      return view ?? deps.listen.view(deps.listen.require(session.id));
+    },
+    {
+      auth: "api",
+      operationId: "refreshListenSession",
+      body: "none",
+      rateLimit: briefBudget,
+    },
+  );
+
   app.get(
     "/api/v1/listen/sessions/:id/events",
     (ctx) => {

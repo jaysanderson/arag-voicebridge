@@ -835,6 +835,28 @@ export const openapi = buildOpenApi({
         security: publicSecurity,
       },
     },
+    "/api/v1/listen/sessions/{id}/refresh": {
+      parameters: [pathId],
+      post: {
+        operationId: "refreshListenSession",
+        tags: ["listen"],
+        summary: "Ask for one more brief refresh now",
+        description:
+          "The deliberate retry behind a stale brief. Without it the only way to provoke a refresh " +
+          "is to append transcript, which would fabricate conversation that was never said. The " +
+          "throttle's minimum gap still applies, and a refresh that finds nothing leaves the " +
+          "previous brief exactly where it is.",
+        responses: {
+          200: jsonResponse({ $ref: "#/components/schemas/ListenSession" }, "The session after the refresh"),
+          409: {
+            description: "The session has ended",
+            content: { "application/problem+json": { schema: { $ref: "#/components/schemas/Problem" } } },
+          },
+          ...standardResponses,
+        },
+        security: publicSecurity,
+      },
+    },
     "/api/v1/listen/sessions/{id}/events": {
       parameters: [pathId],
       get: {

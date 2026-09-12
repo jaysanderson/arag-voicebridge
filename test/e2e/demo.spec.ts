@@ -92,6 +92,70 @@ test.describe("Live", () => {
     await expect(page.locator("#vbBrief .vb-brief")).toBeVisible();
   });
 
+  test("a degraded refresh leaves the last good brief on screen", async ({ page }) => {
+    await returning(page);
+    await page.fill(
+      "#vbTyped",
+      "caller: we run a machine shop and we print stainless steel brackets\n" +
+        "caller: the sintering step with the PureSinter furnace is what we need to understand",
+    );
+    await page.click("#vbSend");
+    await expect(page.locator("#vbBrief .vb-brief")).toBeVisible({ timeout: 20_000 });
+    const good = (await page.locator("#vbBrief .vb-brief").innerText()).trim();
+    expect(good.length).toBeGreaterThan(0);
+
+    // Degrade every subsequent read of the session: no brief, version 0. The promise is that the
+    // pane keeps showing the last good brief rather than blanking — no error, no toast, no red.
+    await page.route("**/api/v1/listen/sessions/*?transcript_tail=*", async (route) => {
+      const res = await route.fetch();
+      const body = await res.json();
+      await route.fulfill({
+        response: res,
+        json: { ...body, brief: null, briefVersion: 0, citations: [] },
+      });
+    });
+    // Drive the page's own reconciliation, then let its poll run at least once.
+    await page.fill("#vbTyped", "caller: and we also print a few titanium parts");
+    await page.click("#vbSend");
+    await page.waitForTimeout(4000);
+
+    await expect(page.locator("#vbBrief .vb-brief")).toBeVisible();
+    expect((await page.locator("#vbBrief .vb-brief").innerText()).trim()).toBe(good);
+    await expect(page.locator("#vbSources .arag-cite").first()).toBeVisible();
+    await expect(page.locator(".arag-alert.error")).toHaveCount(0);
+    await expect(page.locator(".arag-toast")).toHaveCount(0);
+  });
+
+  test("a failed refresh reads as staleness with a retry, not as an error", async ({ page }) => {
+    await returning(page);
+    // Stand in for the server's own "that refresh found nothing" signal. Everything else — the
+    // session, the brief, the citations — is real and arrives over the polling path.
+    await page.route("**/api/v1/listen/sessions/*/events", (route) =>
+      route.fulfill({
+        status: 200,
+        headers: { "content-type": "text/event-stream", "cache-control": "no-cache" },
+        body: 'event: status\ndata: {"type":"status","status":"skipped","reason":"refresh-failed"}\n\n',
+      }),
+    );
+    await page.fill("#vbTyped", "caller: we print stainless steel brackets and need a sintering furnace");
+    await page.click("#vbSend");
+
+    await expect(page.locator("#vbBrief .vb-brief")).toBeVisible({ timeout: 20_000 });
+    await expect(page.locator(".vb-stale")).toBeVisible({ timeout: 20_000 });
+    await expect(page.locator(".vb-stale")).toContainText("showing the last good brief");
+    await expect(page.locator(".arag-alert.error")).toHaveCount(0);
+
+    // The retry is offered, never taken automatically: appending transcript to force a refresh
+    // would fabricate words nobody said.
+    const retry = page.locator("#vbRetry");
+    await expect(retry).toBeVisible();
+    const before = await page.locator("#vbTranscript .line").count();
+    await retry.click();
+    await expect(page.locator("#vbBrief .vb-brief")).toBeVisible();
+    await page.waitForTimeout(800);
+    expect(await page.locator("#vbTranscript .line").count()).toBe(before);
+  });
+
   test("the throttle tells the client what it did with an append", async ({ page }) => {
     await returning(page);
     await page.fill("#vbTyped", "caller: we print stainless steel brackets and manifolds every week");

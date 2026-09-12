@@ -17,15 +17,15 @@ this — see [Verifying it worked](#verifying-it-worked) below.
 
 | Variable | Default | Effect |
 |---|---|---|
-| `BRAND_PRODUCT_NAME` | `VoiceBridge` (`BRAND_DEFAULTS.productName`, `src/config.ts`) | Header wordmark (`[data-brand-name]`), browser tab title, and the `productName` field of `GET /api/v1/branding`. |
-| `BRAND_TAGLINE` | `live, grounded call context` | The small tagline next to the product name (`[data-brand-tagline]`); hidden entirely when empty. |
-| `BRAND_LOGO_URL` | *(empty — wordmark only)* | `<img>` `src` for the header logo (`[data-brand-logo]`). Either an absolute URL, or a path served by VoiceBridge itself — see [The logo](#the-logo) below. Left empty, the logo `<img>` stays `display:none` and only the text wordmark shows. |
+| `BRAND_PRODUCT_NAME` | `VoiceBridge` (`BRAND_DEFAULTS.productName`, `src/config.ts`) | Rail wordmark text (`[data-brand-name]`), top-bar breadcrumb (`[data-brand-name-crumb]`), browser tab title, and the `productName` field of `GET /api/v1/branding`. |
+| `BRAND_TAGLINE` | `live, grounded call context` | The small tagline under the product name on the rail (`[data-brand-tagline]`); hidden entirely when empty. |
+| `BRAND_LOGO_URL` | *(empty — the Progress Agentic RAG wordmark)* | `<img>` `src` for the rail's logo mark (`[data-brand-mark]`). Either an absolute URL, or a path served by VoiceBridge itself — see [The logo](#the-logo) below. Left empty, the default identity shows: the official "Progress Agentic RAG" wordmark, vendored at `public/brand/`. |
 | `BRAND_PRIMARY_COLOR` | *(empty — platform default)* | Sets `--arag-brand-600`, `--arag-brand-500` and `--arag-brand-700` on `document.documentElement`, i.e. the primary accent used throughout the shared UI kit (buttons, active nav, etc). Any CSS colour (`#rgb`, `#rrggbb`, `rgb(...)`, `hsl(...)`, or a CSS colour keyword) validated by `COLOR_RE` in `branding.ts`; an invalid value is silently ignored and the default is kept. |
-| `BRAND_ACCENT_COLOR` | *(empty)* | Sets `--arag-accent-500` and `--arag-accent-400`. Same validation as the primary colour. |
-| `BRAND_POWERED_BY` | `1` (true) | `0`/`false`/`no`/`off` hides the "Built on Progress Agentic RAG" band and footer credit (`[data-powered-by]`, `[data-powered-by-credit]`). **Hiding the credit is a UI change only** — see [What hiding the credit does *not* do](#what-hiding-the-credit-does-not-do). |
+| `BRAND_ACCENT_COLOR` | *(empty — Progress green `#5ce500`)* | Sets `--arag-accent-500` and `--arag-accent-400` (platform UI kit), and `--vb-accent` (`public/app/shell.js`'s own `applyBrand()`) — the accent used for the live-session dot, focus rings and a handful of VoiceBridge-specific controls. Same validation as the primary colour. |
+| `BRAND_POWERED_BY` | `1` (true) | `0`/`false`/`no`/`off` hides the "Built on Progress Agentic RAG" credit line in the rail footer (`[data-powered-by]`). With no `BRAND_LOGO_URL` set, it also replaces the Progress wordmark image with a plain text wordmark of `BRAND_PRODUCT_NAME` — a white-labelled deployment shows no Progress mark at all. **Hiding the credit is a UI change only** — see [What hiding the credit does *not* do](#what-hiding-the-credit-does-not-do). |
 | `BRAND_FOOTER_TEXT` | `Open source · Apache-2.0` | Replaces the footer text (`[data-brand-footer]`) — e.g. a partner's own copyright line. |
-| `BRAND_DOCS_URL` | `/api/v1/docs` | Where the shell's "API docs" link (`[data-docs-link]`) points. Set this to a partner-hosted docs site instead of the built-in Swagger UI. |
-| `BRAND_SUPPORT_URL` | *(empty)* | Carried through the `Branding` payload as `supportUrl`; nothing in the shipped UI kit renders it yet (see [What is not brandable today](#what-is-not-brandable-today)) — it exists for a partner's own console/admin fork to read `GET /api/v1/branding` and show its own support link. |
+| `BRAND_DOCS_URL` | `/api/v1/docs` | Where the rail's "API docs" link (`[data-docs-link]`) points. Set this to a partner-hosted docs site instead of the built-in Swagger UI. |
+| `BRAND_SUPPORT_URL` | *(empty)* | Carried through the `Branding` payload as `supportUrl`; nothing in the shipped workspace renders it yet (see [What is not brandable today](#what-is-not-brandable-today)) — it exists for a partner's own front end to read `GET /api/v1/branding` and show its own support link. |
 
 All defaults above are VoiceBridge's own (`BRAND_DEFAULTS` in `src/config.ts`); the platform's
 own fallback, used only if a product sets no default, is `productName: "ARAG Product"`,

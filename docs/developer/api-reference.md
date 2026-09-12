@@ -176,6 +176,30 @@ Responses:
 Auth: ApiKey or Bearer
 
 
+### `POST /api/v1/listen/sessions/{id}/refresh`
+
+**Ask for one more brief refresh now** — The deliberate retry behind a stale brief. Without it the only way to provoke a refresh is to append transcript, which would fabricate conversation that was never said. The throttle's minimum gap still applies, and a refresh that finds nothing leaves the previous brief exactly where it is.
+
+Parameters:
+
+| Name | In | Type | Required | Description |
+|---|---|---|---|---|
+| `id` | path | string | yes |  |
+
+Responses:
+
+- `200` The session after the refresh — `application/json` [ListenSession](#listensession)
+- `400` Validation failed — `application/problem+json` [Problem](#problem)
+- `401` Authentication required — `application/problem+json` [Problem](#problem)
+- `403` Forbidden — `application/problem+json` [Problem](#problem)
+- `404` Not found — `application/problem+json` [Problem](#problem)
+- `409` The session has ended — `application/problem+json` [Problem](#problem)
+- `429` Rate limited — `application/problem+json` [Problem](#problem)
+- `502` Upstream (ARAG) error — `application/problem+json` [Problem](#problem)
+
+Auth: ApiKey or Bearer
+
+
 ### `GET /api/v1/listen/sessions/{id}/events`
 
 **Server-sent events for a session (event: brief | transcript | status)**

@@ -110,6 +110,8 @@ describe("responses validate against the spec", () => {
       200,
       (await client.get(`/api/v1/listen/sessions/${id}/export`)).json,
     );
+    const refreshed = await client.post(`/api/v1/listen/sessions/${id}/refresh`);
+    check("/api/v1/listen/sessions/{id}/refresh", "post", 200, refreshed.json);
     const md = await client.get(`/api/v1/listen/sessions/${id}/export?format=markdown`);
     expect(md.status).toBe(200);
     expect(String(md.text)).toContain("# Conversation");

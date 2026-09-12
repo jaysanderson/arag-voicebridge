@@ -379,17 +379,44 @@ function renderBriefPane(brief, citations, version) {
   void speakCue(brief, live.version);
 }
 
+/**
+ * The freshness line beside the brief. A refresh that found nothing, or failed, is staleness —
+ * never an error, never a toast, and never an empty pane. The retry is offered rather than taken
+ * automatically, because the alternative (appending transcript) would fabricate words nobody said.
+ */
 function setBriefMeta(note = "") {
   const meta = $("#vbBriefMeta");
   if (!meta) return;
   const v = live.version ? `<span class="version">v${live.version}</span>` : "";
-  meta.innerHTML = live.stale
-    ? `<span class="vb-stale">${icon("clock", 12)} showing the last good brief</span>${v ? ` ${v}` : ""}`
-    : note
-      ? `${esc(note)}${v ? ` · ${v}` : ""}`
-      : v
-        ? `updated live · ${v}`
-        : "";
+  if (live.stale) {
+    meta.innerHTML =
+      `<span class="vb-stale">${icon("clock", 12)} showing the last good brief</span>` +
+      `<button class="arag-btn ghost sm" id="vbRetry" type="button">Retry now</button>${v ? ` ${v}` : ""}`;
+    $("#vbRetry")?.addEventListener("click", retryRefresh);
+    return;
+  }
+  meta.innerHTML = note ? `${esc(note)}${v ? ` · ${v}` : ""}` : v ? `updated live · ${v}` : "";
+}
+
+/** Ask the server for one more refresh of the same conversation. */
+async function retryRefresh() {
+  if (!live.sessionId) return;
+  const btn = $("#vbRetry");
+  if (btn) btn.disabled = true;
+  setBriefMeta("refreshing…");
+  try {
+    const s = await api(`/api/v1/listen/sessions/${live.sessionId}/refresh`, { method: "POST" });
+    live.session = s;
+    renderStats(s);
+    if (s.brief && s.briefVersion > live.version) renderBriefPane(s.brief, s.citations, s.briefVersion);
+    else {
+      live.stale = live.version > 0;
+      setBriefMeta();
+    }
+  } catch {
+    live.stale = live.version > 0;
+    setBriefMeta();
+  }
 }
 
 /** The main pane while a session is open but has produced nothing yet. */

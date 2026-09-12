@@ -673,6 +673,9 @@ table.vb-table .vb-sub {
 }
 
 /* "Still showing the last good brief" — a quiet state, never an error mid-conversation. */
+.vb-brief-card > header #vbRetry {
+  margin-left: 6px;
+}
 .vb-stale {
   display: inline-flex;
   align-items: center;

@@ -482,6 +482,33 @@ describe("the workspace surfaces", () => {
     expect((await client.get("/api/v1/listen/sessions/nope/export")).status).toBe(404);
   });
 
+  it("refreshes a brief on demand without fabricating conversation, and refuses once ended", async () => {
+    const created = await client.post("/api/v1/listen/sessions", { prospect: "progress" });
+    const id = (created.json as { id: string }).id;
+    await client.post(`/api/v1/listen/sessions/${id}/transcript`, {
+      chunks: [{ speaker: "caller", text: "we print stainless steel brackets and need a sintering furnace" }],
+    });
+    for (let i = 0; i < 100; i++) {
+      const s = (await client.get(`/api/v1/listen/sessions/${id}`)).json as { briefVersion: number };
+      if (s.briefVersion > 0) break;
+      await new Promise((r) => setTimeout(r, 25));
+    }
+    const before = (await client.get(`/api/v1/listen/sessions/${id}`)).json as {
+      briefVersion: number;
+      transcriptTotal: number;
+    };
+    const r = await client.post(`/api/v1/listen/sessions/${id}/refresh`);
+    expect(r.status).toBe(200);
+    // A retry must not put words in anyone's mouth: the transcript is untouched.
+    const after = r.json as { transcriptTotal: number; briefVersion: number };
+    expect(after.transcriptTotal).toBe(before.transcriptTotal);
+    expect(after.briefVersion).toBeGreaterThanOrEqual(before.briefVersion);
+
+    await client.request("DELETE", `/api/v1/listen/sessions/${id}`);
+    expect((await client.post(`/api/v1/listen/sessions/${id}/refresh`)).status).toBe(409);
+    expect((await client.post("/api/v1/listen/sessions/nope/refresh")).status).toBe(404);
+  });
+
   it("serves the turn log with outcome filters and a reason ranking", async () => {
     await client.post("/api/v1/voice-answer", { prospect: "progress", question: "What is binder jetting?" });
     await client.post("/api/v1/voice-answer", {
