@@ -1,0 +1,52 @@
+# Fly.io deployment for VoiceBridge. Set secrets out of band, never in this file:
+#   fly secrets set ARAG_KB_ID=… ARAG_API_KEY=… ADMIN_TOKEN=… ELEVENLABS_API_KEY=… VOICE_DEFAULT_AGENT_ID=…
+app = "arag-voice-bridge"
+primary_region = "iad"   # co-locate with the ARAG zone (aws-us-east-2-1 ⇒ iad) to cut the extra hop
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  NODE_ENV = "production"
+  PORT = "8080"
+  DATA_DIR = "/data"
+  LOG_LEVEL = "info"
+  ARAG_REGION = "aws-us-east-2-1"
+  ARAG_REGION_DEFAULT = "aws-us-east-2-1"
+  VOICE_TURN_TIMEOUT_MS = "6000"
+  AGENT_TOOL_TIMEOUT_MS = "8000"
+  VOICE_BRIEF_TIMEOUT_MS = "12000"
+  MAX_HISTORY_TURNS = "6"
+  RATE_LIMIT_RPS = "5"
+  RATE_LIMIT_BURST = "20"
+  VOICE_BRIEF_RATE_RPS = "1"
+  VOICE_BRIEF_RATE_BURST = "5"
+  TRUST_PROXY = "fly"
+
+# The prospect registry, turn log, jobs and golden-eval history live in DATA_DIR.
+[[mounts]]
+  source = "data"
+  destination = "/data"
+  initial_size = "1gb"
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  auto_stop_machines = "suspend"
+  auto_start_machines = true
+  min_machines_running = 1   # keep one warm so the first demo turn isn't a cold start
+  [http_service.concurrency]
+    type = "requests"
+    soft_limit = 40
+    hard_limit = 60
+
+[[http_service.checks]]
+  interval = "15s"
+  timeout = "3s"
+  grace_period = "10s"
+  method = "GET"
+  path = "/healthz"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "512mb"

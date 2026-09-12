@@ -1,43 +1,78 @@
-# ARAG Voice — task runner. npm is NOT used anywhere in this project; everything runs on
-# bare Node (TypeScript executed natively) plus Python's stdlib http.server for the client.
-# There are zero dependencies to install.
-#
-# Usage:
-#   make test                 run the bridge test suite
-#   make dev                  run the bridge with --watch (hot reload)
-#   make start                run the bridge (production mode)
-#   make ui                   the bridge serves the web UI itself — just run `make dev`
-#                             and open http://localhost:8080 (or the deployed URL)
-#   make eval P=tangerine     run a prospect's golden set against a running bridge
-#   make provision P=tangerine ARGS="--reranker noop --model <m>"   provision ARAG config
-#   make provision P=tangerine ARGS="--dry-run"                     preview without sending
+# VoiceBridge — task runner. bun installs dev tooling only; npm is never used.
+BUN ?= bun
+NODE ?= node
+PORT ?= 8080
 
-NODE := node --experimental-transform-types
-BRIDGE := bridge
-
-.PHONY: help install test dev start eval provision
+.PHONY: help install dev start test coverage e2e lint typecheck check docs showcase smoke eval provision docker fly-validate mock
 
 help:
-	@grep -E '^#   make' Makefile | sed 's/^# //'
+	@echo "make install       bun install (dev tooling, exact pins)"
+	@echo "make dev           run with --watch on :$(PORT) (ARAG_MOCK=1 unless .env has credentials)"
+	@echo "make start         run in production mode"
+	@echo "make test          unit + integration + contract tests (node:test, mock ARAG)"
+	@echo "make coverage      tests with the 80% line gate on src/"
+	@echo "make e2e           Playwright (console + admin) against a mock-backed server"
+	@echo "make lint          biome check"
+	@echo "make typecheck     tsc --noEmit"
+	@echo "make check         lint + typecheck + coverage"
+	@echo "make docs          regenerate docs/developer/api-reference.md from the running server"
+	@echo "make showcase      record the showcase walkthrough (video + screenshots) into showcase/out"
+	@echo "make smoke         OPT-IN live test: 3 golden questions against the real KB using .env"
+	@echo "make eval P=<key>  run a prospect's golden set against a running server"
+	@echo "make provision P=<key> [ARGS=--dry-run]  write the stored ARAG search configuration"
+	@echo "make docker        build the container image"
+	@echo "make fly-validate  validate fly.toml"
+	@echo "make mock          run the mock ARAG server standalone on :8790"
 
-# Explicit no-op so muscle-memory `make install` doesn't fail or reach for npm.
 install:
-	@echo "Nothing to install — ask-bridge is dependency-free (Node stdlib + native TS)."
-	@echo "Requires Node >= 22.6. Run 'make test' to verify."
-
-test:
-	cd $(BRIDGE) && $(NODE) --test test/*.test.ts
+	$(BUN) install --frozen-lockfile || $(BUN) install
 
 dev:
-	cd $(BRIDGE) && $(NODE) --watch src/index.ts
+	@test -f .env || cp .env.example .env
+	@grep -q "^ARAG_API_KEY=.\+" .env 2>/dev/null && $(NODE) --watch src/index.ts || ARAG_MOCK=1 $(NODE) --watch src/index.ts
 
 start:
-	cd $(BRIDGE) && $(NODE) src/index.ts
+	$(NODE) src/index.ts
+
+test:
+	$(NODE) --test --test-reporter=spec 'test/*.test.ts'
+
+coverage:
+	$(NODE) --test --experimental-test-coverage --test-coverage-include='src/**' --test-coverage-lines=80 'test/*.test.ts'
+
+e2e:
+	PW_DISABLE_TS_ESM=1 $(BUN)x playwright test
+
+lint:
+	$(BUN)x biome check .
+
+typecheck:
+	$(BUN)x tsc --noEmit -p tsconfig.json
+
+check: lint typecheck coverage
+
+docs:
+	$(NODE) vendor/arag-platform/scripts/openapi-to-md.ts http://localhost:$(PORT)/api/v1/openapi.json docs/developer/api-reference.md
+
+showcase:
+	SHOWCASE=1 PW_DISABLE_TS_ESM=1 $(BUN)x playwright test showcase/record.spec.ts --config playwright.config.ts
+
+smoke:
+	$(NODE) scripts/smoke.ts $(ARGS)
 
 eval:
-	@test -n "$(P)" || (echo "Usage: make eval P=<prospect>"; exit 1)
-	$(NODE) scripts/golden-eval.ts $(P)
+	@test -n "$(P)" || (echo "Usage: make eval P=<prospect> [BASE_URL=http://localhost:8080]"; exit 1)
+	$(NODE) scripts/eval.ts $(P)
 
 provision:
-	@test -n "$(P)" || (echo "Usage: make provision P=<prospect> [ARGS=...]"; exit 1)
-	$(NODE) scripts/create-search-config.ts $(P) $(ARGS)
+	@test -n "$(P)" || (echo "Usage: make provision P=<prospect> [ARGS=--dry-run]"; exit 1)
+	$(NODE) scripts/provision.ts $(P) $(ARGS)
+
+docker:
+	docker build -t arag-voice-bridge:local .
+
+fly-validate:
+	fly config validate -c fly.toml
+
+mock:
+	$(NODE) vendor/arag-platform/src/arag/mock/cli.ts

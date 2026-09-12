@@ -1,9 +1,4 @@
-# dependencies
 node_modules/
-.pnp
-.pnp.js
-
-# build output
 dist/
 build/
 *.tsbuildinfo
@@ -15,20 +10,13 @@ build/
 *.pem
 *.key
 
-# logs
+# runtime state
+data/
 logs/
 *.log
-npm-debug.log*
 
-# test / coverage
+# test / coverage / e2e artefacts
 coverage/
-.nyc_output/
-
-# editor / OS
-.DS_Store
-.idea/
-.vscode/
-*.swp
-
-# golden-eval output
-scripts/out/
+test-results/
+playwright-report/
+showcase/out/

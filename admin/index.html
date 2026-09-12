@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>VoiceBridge · admin</title>
+  <link rel="stylesheet" href="/ui/arag-ui.css" />
+  <link rel="stylesheet" href="/console.css" />
+  <script type="module" src="/ui/arag-ui.js"></script>
+  <script type="module" src="/admin/admin.js"></script>
+</head>
+<body class="arag">
+  <arag-shell product="VoiceBridge" tagline="admin" nav="Console=/,Admin=/admin/" docs-href="/api/v1/docs">
+    <div id="login" class="arag-card pad" style="max-width:460px" hidden>
+      <h2>Admin sign-in</h2>
+      <p class="muted small">Enter the <code>ADMIN_TOKEN</code> configured for this deployment. It is exchanged
+        for an HttpOnly cookie and never stored in the page.</p>
+      <div class="arag-row"><input id="token" class="arag-input" type="password" placeholder="admin token" /><button id="signin" class="arag-btn">Sign in</button></div>
+      <p id="loginError" class="arag-alert error" hidden></p>
+    </div>
+
+    <div id="panel" hidden>
+      <div class="arag-tabs" role="tablist">
+        <button role="tab" aria-selected="true" data-tab="overview">Overview</button>
+        <button role="tab" data-tab="prospects">Prospects</button>
+        <button role="tab" data-tab="turns">Turn log</button>
+        <button role="tab" data-tab="evals">Golden evals</button>
+        <button role="tab" data-tab="config">Configuration</button>
+        <button role="tab" data-tab="logs">Logs</button>
+      </div>
+
+      <section data-panel="overview" class="vb-panel arag-grid split">
+        <div class="arag-card">
+          <div class="head"><h3>Knowledge Box health</h3><button id="reloadHealth" class="arag-btn ghost sm">Test connections</button></div>
+          <div class="body"><table class="arag-table" id="healthTable"><thead><tr><th>Prospect</th><th>KB</th><th>Status</th><th class="num">ms</th></tr></thead><tbody></tbody></table></div>
+        </div>
+        <div class="arag-card pad"><h3>Usage</h3><arag-json id="usage" src="/api/v1/admin/usage"></arag-json></div>
+      </section>
+
+      <section data-panel="prospects" hidden class="vb-panel arag-grid split">
+        <div class="arag-card">
+          <div class="head"><h3>Registry</h3><button id="newProspect" class="arag-btn sm">New</button></div>
+          <div class="body"><table class="arag-table" id="prospectTable"><thead><tr><th>Key</th><th>Name</th><th>Region</th><th>Stored config</th><th></th></tr></thead><tbody></tbody></table></div>
+        </div>
+        <div class="arag-card">
+          <div class="head"><h3 id="editorTitle">Editor</h3><span id="editorState" class="muted small"></span></div>
+          <div class="body arag-stack">
+            <div class="arag-field"><label for="pKey">Key</label><input id="pKey" class="arag-input" placeholder="acme" /><span class="arag-help">lowercase letters, digits, - and _</span></div>
+            <div class="arag-field"><label for="pJson">Configuration (JSON)</label><textarea id="pJson" class="arag-textarea" rows="18" spellcheck="false"></textarea></div>
+            <div class="arag-row">
+              <button id="saveProspect" class="arag-btn">Save</button>
+              <button id="provisionProspect" class="arag-btn secondary">Provision search config</button>
+              <button id="deleteProspect" class="arag-btn ghost danger">Delete</button>
+            </div>
+            <p id="editorError" class="arag-alert error" hidden></p>
+            <arag-json id="provisionResult"></arag-json>
+          </div>
+        </div>
+      </section>
+
+      <section data-panel="turns" hidden class="vb-panel">
+        <div class="arag-card">
+          <div class="head"><h3>Recent turns</h3><div class="arag-row"><select id="turnProspect" class="arag-select" style="width:auto"><option value="">all prospects</option></select><button id="reloadTurns" class="arag-btn ghost sm">Reload</button></div></div>
+          <div class="body">
+            <p class="muted small">The question text is stored only for turns that passed the input guard — an
+              unsafe or injected prompt is recorded as a reason, never as text.</p>
+            <table class="arag-table" id="turnTable"><thead><tr><th>Time</th><th>Prospect</th><th>Question</th><th>Result</th><th class="num">total</th><th class="num">1st token</th><th class="num">cites</th></tr></thead><tbody></tbody></table>
+          </div>
+        </div>
+      </section>
+
+      <section data-panel="evals" hidden class="vb-panel arag-grid split">
+        <div class="arag-card">
+          <div class="head"><h3>Golden-eval history</h3><button id="reloadEvals" class="arag-btn ghost sm">Reload</button></div>
+          <div class="body"><table class="arag-table" id="evalTable"><thead><tr><th>When</th><th>Prospect</th><th>Result</th><th class="num">p50</th></tr></thead><tbody></tbody></table></div>
+        </div>
+        <div class="arag-card">
+          <div class="head"><h3>Detail</h3><span id="evalMeta" class="muted small"></span></div>
+          <div class="body"><table class="arag-table" id="evalDetail"><thead><tr><th>Question</th><th>Expected</th><th>Result</th><th class="num">ms</th></tr></thead><tbody></tbody></table></div>
+        </div>
+      </section>
+
+      <section data-panel="config" hidden class="vb-panel"><div class="arag-card pad"><h3>Effective configuration (secrets redacted)</h3><arag-json src="/api/v1/admin/config"></arag-json></div></section>
+
+      <section data-panel="logs" hidden class="vb-panel"><div class="arag-card">
+        <div class="head"><h3>Logs</h3><div class="arag-row"><select id="level" class="arag-select" style="width:auto"><option value="">all</option><option>info</option><option>warn</option><option>error</option></select><input id="contains" class="arag-input" placeholder="filter…" style="width:200px" /></div></div>
+        <div class="body"><arag-log id="log" src="/api/v1/admin/logs" limit="200" refresh="5000"></arag-log></div>
+      </div></section>
+    </div>
+  </arag-shell>
+</body>
+</html>

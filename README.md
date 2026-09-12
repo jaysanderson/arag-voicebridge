@@ -1,109 +1,87 @@
-# ARAG × ElevenAgents — Voice Demo
+# VoiceBridge
 
-A repeatable, world-class **conversational voice demo** over **Progress Agentic RAG (ARAG)**.
+**Grounded, cited and governed voice answers over Progress Agentic RAG (ARAG).**
 
-> Voice → grounded, cited, governed ARAG answer → voice — plus a control panel that
-> re-points the whole thing at a new prospect with a **config change, not a code change**.
+A voice agent that can say anything will eventually say something wrong. VoiceBridge is the
+service between a voice agent and a Knowledge Box that makes sure it doesn't: every spoken answer
+comes from retrieved content, anything the knowledge base cannot support is handed to a human by a
+deterministic rule rather than a model's judgement, and every turn is measured.
 
-This repo is a **demo factory**. Standing up a cited, governed, interruptible voice agent over
-any prospect's knowledge box should take a junior SE **under an hour**.
+- **API-first.** One endpoint answers a turn: `POST /api/v1/voice-answer`. Any voice platform that
+  can call an HTTP tool can use it (the shipped demo uses ElevenLabs Conversational AI).
+- **Never dead air.** Upstream timeouts, errors and empty retrievals all degrade to the prospect's
+  configured handoff line inside the agent's tool timeout.
+- **Speakable by construction.** Answers are shaped for text-to-speech: ≤ 3 sentences, no URLs, no
+  markdown, no citation markers. Citations are returned as data and shown on screen, never read out.
+- **Multi-tenant.** A prospect registry maps each caller-facing brand to its own Knowledge Box,
+  prompt, voice and golden set. Adding one is an admin API call, not a redeploy.
+- **Provable.** A golden set per prospect runs through the same pipeline and gates the demo.
 
----
+Zero runtime dependencies. Node 22.18+ runs the TypeScript sources directly — no build step.
 
-## Architecture (one paragraph)
-
-A **cascade voice pipeline**: ElevenAgents owns the voice transport (STT, turn-taking, TTS);
-**ARAG owns the retrieval-and-answer slot**, reached through a thin streaming **webhook**
-(`ask-bridge`) that calls ARAG's `/ask` endpoint. This is deliberately **not** an MCP
-integration — ARAG's MCP server exposes retrieval only, and we want ARAG's *composed, cited,
-governed* answer. See [docs/SPEC.md](docs/SPEC.md) for the full specification and the ADRs
-behind every decision.
-
-```
-User  ──audio──▶  ElevenAgent  ──POST /v1/voice-answer──▶  ask-bridge  ──POST /ask──▶  ARAG
-      ◀──audio──               ◀──{answer,citations,…}──               ◀──NDJSON───
-```
-
----
-
-## Repo layout
-
-| Path | What it is |
-|---|---|
-| [`bridge/`](bridge) | **`ask-bridge`** — the stateless Node/TypeScript service. The only meaningful code we write. |
-| [`bridge/config/prospects.json`](bridge/config/prospects.json) | The **config registry** — one entry per prospect. The only thing that changes per prospect. |
-| [`bridge/public/`](bridge/public) | Static **control panel + voice console** (prospect selector, transcript, citation chips, latency strip). Served by the bridge at `/`. |
-| [`scripts/`](scripts) | `create-search-config` (provision an ARAG stored `ask` config) and `golden-eval` (the golden-question gate). |
-| [`docs/`](docs) | [SPEC](docs/SPEC.md), [ONBOARDING](docs/ONBOARDING.md), [voice-answer prompt](docs/voice-answer-prompt.md), [ElevenAgent template](docs/elevenagent-template.md), [ElevenLabs setup](docs/ELEVENLABS_SETUP.md), [LiveAvatar (HeyGen) setup](docs/LIVEAVATAR_SETUP.md), [implementation notes](docs/IMPLEMENTATION.md). |
-| [`Makefile`](Makefile) | The npm-free task runner: `make test`, `make dev`, `make client`, `make eval`, `make provision`. |
-
----
-
-## Quick start
-
-> **No install step. No npm.** The bridge is dependency-free — it runs on the Node standard
-> library with TypeScript executed natively (`node --experimental-transform-types`). You only
-> need **Node ≥ 22.6** and (for the client) Python 3. A `Makefile` wraps every command.
+## Quick start (no credentials needed)
 
 ```bash
-# 1. Configure secrets (server-side only; never committed)
-cp .env.example bridge/.env        # fill in ARAG_TOKEN etc.
-
-# 2. Verify it works — runs the full test suite (43 tests, zero deps)
-make test
-
-# 3. Run the bridge (it also serves the web UI at /)
-make dev                           # http://localhost:8080  ← open this in a browser
-
-# 4. Smoke-test the bridge directly
-curl -s localhost:8080/v1/voice-answer \
-  -H 'content-type: application/json' \
-  -d '{"prospect":"tangerine","question":"How do I change my plan?","conversation_id":"c1","history":[]}'
+make install         # bun installs dev tooling only (never npm)
+make dev             # starts on :8080 with the in-process mock ARAG + a small demo corpus
+open http://localhost:8080
 ```
 
-Other targets: `make start` (production), `make eval P=progress` (golden-set gate),
-`make provision P=progress ARGS="--dry-run"` (provision an ARAG stored config). Run `make help`
-for the full list. Everything also works as plain `node --experimental-transform-types …` if you
-prefer not to use `make`.
+The console opens on the **Ask** tab: type a question (or click a suggestion) and you get the exact
+line the agent would speak, its citations, the latency breakdown and whether it handed off. Press
+**Run golden set** to watch all ten golden questions go through the pipeline.
 
-### Live deployment
+With real credentials, copy `.env.example` to `.env`, fill in `ARAG_KB_ID`, `ARAG_API_KEY` and
+`ARAG_REGION`, then `make dev` again. Add `ELEVENLABS_API_KEY` and an agent id to enable the Call
+and Listen tabs.
 
-The bridge is deployed on Fly and **serves the web UI at its own URL**:
+| Surface | URL | Notes |
+|---|---|---|
+| Demo console | `/` | Ask · Call · Listen · Golden set; consumes only `/api/v1` |
+| Admin panel | `/admin/` | Sign in with `ADMIN_TOKEN` |
+| API reference | `/api/v1/docs` · `/api/v1/swagger` | Generated from `src/openapi.ts` |
+| OpenAPI document | `/api/v1/openapi.json` | Source of truth for validation and contract tests |
+| Health | `/healthz` · `/readyz` | Readiness includes an ARAG connection check |
 
-- **Web interface:** <https://arag-voice-bridge.fly.dev>
-- It's wired to a live KB (the `progress` prospect) and passes its golden-set gate 10/10.
-- To add **voice** (ElevenLabs), follow [docs/ELEVENLABS_SETUP.md](docs/ELEVENLABS_SETUP.md).
+## How a turn works
 
-See [docs/ONBOARDING.md](docs/ONBOARDING.md) for the ~30–60 min per-prospect ritual.
+```
+voice agent ──POST /api/v1/voice-answer──▶ input guard ─▶ ARAG /ask (stream) ─▶ handoff decision
+                                                                                      │
+        spoken line ◀── output guard ◀── citations ◀── voice shaping ◀─────────────────┘
+```
 
----
+1. **Input guard** — length, prompt-injection and out-of-scope checks, before anything leaves the box.
+2. **Request build** — the voice prompt (or the prospect's stored ARAG search configuration),
+   conversation context clamped to `MAX_HISTORY_TURNS`, reranker and token limits.
+3. **ARAG `/ask`** — streamed NDJSON; retrieval, answer chunks and citations.
+4. **Handoff decision** — the prompt is contracted to answer `HANDOFF: …` when the context does not
+   cover the question; an empty answer or empty retrieval also hands off. This is a string check,
+   not a judgement call.
+5. **Voice shaping** — strip markup, URLs and citation markers; clamp to three sentences.
+6. **Citations** — deduped, scored, capped at four; returned as data.
+7. **Output guard** — last line of defence before text-to-speech.
+8. **Metrics** — latency, handoff reason, citation count and guard trips land in the turn log.
 
-## The contract that makes this work
+## Common tasks
 
-1. **The agent speaks ARAG's answer verbatim.** No agent-side re-summarisation (that re-introduces
-   hallucination and doubles latency). The agent is a router + voice persona; the *answer* is ARAG's.
-2. **Voice-shaped answers.** ≤ 3 sentences, no URLs, no markdown. Citations are returned as **data**
-   and rendered in the UI — never spoken.
-3. **Deterministic handoff.** A contract between the voice-answer prompt and the bridge (a sentinel),
-   not a fuzzy heuristic. When the KB doesn't cover a question, the agent hands off — on purpose.
-4. **Governance is the north star.** Citations + security-filtered retrieval + clean handoff are the
-   reason a prospect picks ARAG over a generic voice bot. If the demo doesn't make those three
-   *audible and visible*, we're demoing against a free feature and we lose.
+```bash
+make check                     # biome + tsc + tests with the 80% coverage gate
+make e2e                       # Playwright: console + admin against the mock
+make eval P=progress           # run a prospect's golden set against a running server
+make provision P=progress      # write the prospect's stored ARAG search configuration
+make smoke                     # OPT-IN live check: 3 golden questions against the real KB
+make docker && make fly-validate
+```
 
----
+## Documentation
 
-## Status
+Start at [`docs/README.md`](docs/README.md): developer (quickstart, API reference, examples,
+extension points, local dev), architecture (diagram, ARAG integration, data flow, deployment,
+security model, scaling, limits), business (overview, when to use, walkthroughs, FAQ) and
+product marketing. Hands-on material is in [`enablement/`](enablement/), and the demo script and
+recording live in [`showcase/`](showcase/).
 
-Build complete and **locally verified** against `docs/SPEC.md` v1.0:
+## Licence
 
-- **43/43 unit tests pass** (`make test`) — voice-shaping, citations, handoff, safety, NDJSON
-  parsing, and the full turn pipeline with an injected ARAG stub.
-- Live server smoke-tested: every route, the input/output guards, and the ARAG-unreachable →
-  graceful-handoff degradation path (no dead air).
-- **Dependency-free** — no `npm install`, no build step. Runs on Node ≥ 22.6 (native TypeScript).
-  See [docs/IMPLEMENTATION.md](docs/IMPLEMENTATION.md) for the deviations from the spec brief and why.
-
-The one thing left for M0 (needs a live KB): confirm exact NDJSON item-type names and
-`search_configurations` key paths against
-<https://docs.rag.progress.cloud/docs/rag/advanced/ask> — the request/response **shapes** are
-correct; field-name drift is isolated in [`bridge/src/arag.ts`](bridge/src/arag.ts).
+Apache-2.0. See `LICENSE` and `THIRD_PARTY_NOTICES.md`.

@@ -1,18 +1,25 @@
 {
-  "name": "arag-voice",
-  "version": "1.0.0",
-  "private": true,
-  "description": "ARAG × ElevenAgents voice demo factory — cascade voice pipeline over Progress Agentic RAG. Dependency-free: runs on bare Node (native TypeScript), no npm install.",
+  "name": "arag-voice-bridge",
+  "version": "0.1.0",
+  "description": "VoiceBridge — grounded, cited, governed voice answers over Progress Agentic RAG (ARAG). API-first, zero runtime dependencies.",
+  "license": "Apache-2.0",
   "type": "module",
-  "engines": {
-    "node": ">=22.6"
-  },
-  "comment": "npm is intentionally NOT used. Prefer the Makefile (`make test`, `make dev`, …). These script aliases call Node directly so `node --run <name>` works without npm.",
+  "private": true,
+  "engines": { "node": ">=22.18" },
   "scripts": {
-    "test": "node --experimental-transform-types --test bridge/test/*.test.ts",
-    "dev": "node --experimental-transform-types --watch bridge/src/index.ts",
-    "start": "node --experimental-transform-types bridge/src/index.ts",
-    "provision": "node --experimental-transform-types scripts/create-search-config.ts",
-    "eval": "node --experimental-transform-types scripts/golden-eval.ts"
+    "dev": "node --watch src/index.ts",
+    "start": "node src/index.ts",
+    "test": "node --test --test-reporter=spec 'test/*.test.ts'",
+    "coverage": "node --test --experimental-test-coverage --test-coverage-include='src/**' --test-coverage-lines=80 'test/*.test.ts'",
+    "e2e": "playwright test",
+    "lint": "biome check .",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "docs": "node vendor/arag-platform/scripts/openapi-to-md.ts http://localhost:8080/api/v1/openapi.json docs/developer/api-reference.md"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "2.0.0",
+    "@playwright/test": "1.52.0",
+    "@types/node": "22.10.0",
+    "typescript": "5.9.2"
   }
 }

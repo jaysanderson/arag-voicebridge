@@ -1,0 +1,144 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>VoiceBridge · voice console</title>
+  <link rel="stylesheet" href="/ui/arag-ui.css" />
+  <link rel="stylesheet" href="/console.css" />
+  <script type="module" src="/ui/arag-ui.js"></script>
+  <script type="module" src="/app.js"></script>
+</head>
+<body class="arag">
+  <arag-shell product="VoiceBridge" tagline="voice console" nav="Console=/,Admin=/admin/" admin-href="/admin/" docs-href="/api/v1/docs">
+    <div class="arag-card pad vb-bar">
+      <div class="arag-row">
+        <label class="arag-label" for="prospect">Prospect</label>
+        <select id="prospect" class="arag-select" style="width:auto;min-width:180px"></select>
+        <span id="prospectGreeting" class="muted small"></span>
+        <span class="arag-header-spacer" style="flex:1"></span>
+        <button id="runGolden" class="arag-btn secondary sm" title="Run this prospect's golden set through the live pipeline">Run golden set</button>
+      </div>
+    </div>
+
+    <div class="arag-tabs" role="tablist" id="modeTabs">
+      <button role="tab" aria-selected="true" data-tab="ask">Ask (text)</button>
+      <button role="tab" data-tab="call">Call</button>
+      <button role="tab" data-tab="listen">Listen</button>
+      <button role="tab" data-tab="golden">Golden set</button>
+    </div>
+
+    <!-- ── ASK: the mock-friendly path — type a question, hear what the agent would say ── -->
+    <section data-panel="ask" class="arag-grid split vb-panel">
+      <div class="arag-card">
+        <div class="head"><h2>Ask a question</h2><span class="arag-chip info">same pipeline as the phone call</span></div>
+        <div class="body arag-stack">
+          <div class="arag-row">
+            <input id="question" class="arag-input" placeholder="Ask something the knowledge base can answer…" />
+            <button id="ask" class="arag-btn">Ask</button>
+          </div>
+          <div id="suggestions" class="arag-row vb-suggestions"></div>
+          <div id="answers" class="arag-chat vb-answers"></div>
+        </div>
+      </div>
+      <div class="arag-card">
+        <div class="head"><h2>What just happened</h2></div>
+        <div class="body">
+          <ol class="vb-steps" id="pipelineSteps">
+            <li data-step="guard-in"><span class="ic"></span>Input safety guard</li>
+            <li data-step="ask"><span class="ic"></span>ARAG ask (retrieval + generation)</li>
+            <li data-step="handoff"><span class="ic"></span>Deterministic handoff check</li>
+            <li data-step="shape"><span class="ic"></span>Voice shaping</li>
+            <li data-step="cite"><span class="ic"></span>Citations</li>
+            <li data-step="guard-out"><span class="ic"></span>Output safety guard</li>
+          </ol>
+          <dl class="arag-kv" id="turnFacts" style="margin-top:12px">
+            <dt>Handoff</dt><dd id="factHandoff">—</dd>
+            <dt>Citations</dt><dd id="factCitations">—</dd>
+            <dt>Retrieve</dt><dd id="factRetrieve">—</dd>
+            <dt>First token</dt><dd id="factFirst">—</dd>
+            <dt>Total</dt><dd id="factTotal">—</dd>
+          </dl>
+        </div>
+      </div>
+    </section>
+
+    <!-- ── CALL: real voice, via the vendored ElevenLabs client ── -->
+    <section data-panel="call" hidden class="arag-grid split vb-panel">
+      <div class="arag-card">
+        <div class="head"><h2>Voice call</h2><span id="callChip" class="arag-chip neutral">idle</span></div>
+        <div class="body arag-stack">
+          <p class="muted small">Speak to the agent and hear grounded answers back. The agent calls this
+            service's <code>/api/v1/voice-answer</code> as a custom tool, so every spoken answer comes from
+            the knowledge base.</p>
+          <div class="arag-row">
+            <button id="callBtn" class="arag-btn lg">Start call</button>
+            <button id="muteBtn" class="arag-btn ghost" hidden>Mute</button>
+          </div>
+          <p class="status muted small" id="callStatus">Ready.</p>
+          <div class="arag-field">
+            <label for="voice">Voice</label>
+            <select id="voice" class="arag-select"><option value="">Agent default</option></select>
+            <span class="arag-help" id="voiceHelp">Needs an ElevenLabs key on the server.</span>
+          </div>
+        </div>
+      </div>
+      <div class="arag-card">
+        <div class="head"><h2>Call transcript</h2><button id="clearCall" class="arag-btn ghost sm">Clear</button></div>
+        <div class="body"><div id="callLog" class="arag-chat"></div></div>
+      </div>
+    </section>
+
+    <!-- ── LISTEN: silent copilot ── -->
+    <section data-panel="listen" hidden class="arag-grid split vb-panel">
+      <div class="arag-card">
+        <div class="head"><h2>Listen</h2><span id="listenChip" class="arag-chip neutral">idle</span></div>
+        <div class="body arag-stack">
+          <p class="muted small">The bridge listens and stays silent; the brief on the right keeps evolving
+            with who you are speaking to, what they want, and what to say next.</p>
+          <div class="arag-row"><button id="listenBtn" class="arag-btn lg">Start listening</button></div>
+          <p class="status muted small" id="listenStatus">Idle.</p>
+          <div class="vb-hearing"><span class="arag-chip outline">hearing</span><span id="listenInterim" class="muted small">…</span></div>
+          <div class="arag-field">
+            <label for="model">Brief model <span class="arag-help">⚡ speed · ★ quality · $ price</span></label>
+            <select id="model" class="arag-select"><option value="">Auto — fast default</option></select>
+          </div>
+        </div>
+      </div>
+      <div class="arag-card">
+        <div class="head"><h2>Live brief</h2><span id="briefMeta" class="muted small"></span></div>
+        <div class="body">
+          <div id="briefBody" class="vb-brief muted">Start listening — this pane fills with the most relevant
+            knowledge, who you are speaking to, what they want and what to say next.</div>
+          <div id="briefSources" class="arag-row vb-cites"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ── GOLDEN SET ── -->
+    <section data-panel="golden" hidden class="vb-panel">
+      <div class="arag-card">
+        <div class="head"><h2>Golden set</h2><span id="goldenChip" class="arag-chip neutral">not run</span></div>
+        <div class="body arag-stack">
+          <p class="muted small">The demo gate: every golden question runs through the same pipeline and must
+            behave — answer questions answer with a citation in ≤3 spoken sentences; out-of-scope questions
+            hand off.</p>
+          <div class="arag-row"><button id="runGolden2" class="arag-btn">Run golden set</button><span id="goldenSummary" class="muted small"></span></div>
+          <arag-job-timeline id="goldenTimeline"></arag-job-timeline>
+          <table class="arag-table" id="goldenTable"><thead><tr><th>Question</th><th>Expected</th><th>Result</th><th class="num">ms</th></tr></thead><tbody></tbody></table>
+        </div>
+      </div>
+    </section>
+
+    <footer class="vb-metrics" id="metricsStrip">
+      <div class="metric"><span class="k">turns</span><span class="v" id="mTurns">—</span></div>
+      <div class="metric"><span class="k">p50 total</span><span class="v" id="mP50">—</span></div>
+      <div class="metric"><span class="k">p95 total</span><span class="v" id="mP95">—</span></div>
+      <div class="metric"><span class="k">p50 first token</span><span class="v" id="mFt">—</span></div>
+      <div class="metric"><span class="k">handoff rate</span><span class="v" id="mHo">—</span></div>
+      <div class="metric"><span class="k">citation coverage</span><span class="v" id="mCov">—</span></div>
+      <div class="metric"><span class="k">service</span><span class="v" id="mBridge">—</span></div>
+    </footer>
+  </arag-shell>
+</body>
+</html>
