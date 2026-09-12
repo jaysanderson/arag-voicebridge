@@ -293,6 +293,41 @@ describe("ListenService", () => {
     expect(seen).toContain("brief");
   });
 
+  it("signals a skipped refresh instead of blanking the brief, and says why", async () => {
+    // The contract the Live view's "showing the last good brief" indicator reads: a refresh that
+    // comes back with nothing usable, or fails outright, emits status:skipped and leaves the brief.
+    const { service, setBrief, setNow } = harness();
+    const s = service.create({ prospect: "acme" });
+    service.append(s.id, [{ speaker: "caller", text: "we print stainless steel brackets every week" }]);
+    await flush();
+    const good = service.view(service.require(s.id));
+    expect(good.briefVersion).toBe(1);
+
+    const seen: string[] = [];
+    const off = service.subscribe(s.id, (e) => {
+      if (e.type === "status") seen.push(`${e.status}:${e.reason ?? ""}`);
+    });
+    setBrief(async () => briefResult({ brief: null }));
+    setNow(1_100_000);
+    service.append(s.id, [{ speaker: "caller", text: "and titanium parts for an aerospace customer" }]);
+    await flush();
+
+    setBrief(async () => {
+      throw new Error("upstream is down");
+    });
+    setNow(1_200_000);
+    service.append(s.id, [{ speaker: "caller", text: "what does the sintering furnace cost to run" }]);
+    await flush();
+    off();
+
+    expect(seen).toContain("skipped:nothing-relevant-yet");
+    expect(seen).toContain("skipped:refresh-failed");
+    const after = service.view(service.require(s.id));
+    expect(after.brief).toEqual(good.brief);
+    expect(after.briefVersion).toBe(1);
+    expect(after.stats.failures).toBe(2);
+  });
+
   it("ends a session, keeps the summary and refuses further transcript", async () => {
     const { service } = harness();
     const s = service.create({ prospect: "acme" });

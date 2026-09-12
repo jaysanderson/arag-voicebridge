@@ -40,6 +40,7 @@ phone.
 8. [The guided demo path](#8-the-guided-demo-path)
 9. [API gaps](#9-api-gaps)
 10. [Admin / operator IA](#10-admin--operator-ia)
+11. [ElevenLabs as a first-class integration](#11-elevenlabs-as-a-first-class-integration)
 
 ---
 
@@ -512,7 +513,7 @@ exception is `SOURCES`, which always renders its heading and count, including `S
 the absence of sources is itself the compliance signal.
 
 **Version-change feedback.** When `briefVersion` increments, the brief card's left edge shows a
-2 px `--vb-live` rail that fades out over 600 ms, and any section whose content changed gets a
+2 px `--vb-accent` rail that fades out over 600 ms, and any section whose content changed gets a
 one-shot 400 ms background wash at 8 % `--arag-brand-50`. No motion beyond that: the reader is
 mid-conversation and content must not jump. Content is replaced in place; the pane never
 re-scrolls to the top. Respects `prefers-reduced-motion` by dropping both effects and showing only
@@ -1026,7 +1027,7 @@ it"*. It is a **staleness indicator, not an error**.
 
 | State | Trigger | Brief pane | Indicator (top-right of the brief header) | Colour |
 |---|---|---|---|---|
-| **Waiting** | Session open, `briefVersion === 0` | Empty state: "Listening. The brief appears once there is enough conversation." | `● listening` | `--vb-live` |
+| **Waiting** | Session open, `briefVersion === 0` | Empty state: "Listening. The brief appears once there is enough conversation." | `● listening` | `--vb-accent` |
 | **Fresh** | `brief` event received < 20 s ago | Brief, fully opaque | `Updated 3 s ago` with a `--vb-accent` dot | green |
 | **Refreshing** | `status:refreshing` | Brief, unchanged, **not dimmed** | `Refreshing` with a pulsing `--arag-brand-500` dot | blue |
 | **Throttled** | `status:skipped`, reason `nothing-relevant-yet`, or the append response says `refresh:"skipped"` | Brief, unchanged | `Waiting for new conversation` | muted, no dot |
@@ -1539,24 +1540,23 @@ summary.
 ---
 
 #### 1. `.vb-app` / `.vb-rail` / `.vb-nav` / `.vb-topbar` — rail application shell
-Custom element `<vb-app>` in `public/app/shell.js` today; proposed upstream as `<arag-app>`.
+Rendered by `mountShell()` in `public/app/shell.js` — a function, not a custom element, so a page
+can await branding before painting and there is no upgrade flash. Proposed upstream as `arag-app`.
 
-```html
-<vb-app
-  area="workspace|operator"
-  active="live"
-  title="Live"
-  breadcrumb="Conversations=/conversations/"
-  prospect-scope>
-  <span slot="actions"> … page actions … </span>
-  … page content …
-</vb-app>
+```js
+const { content, setTitle, setActions } = await mountShell({
+  area: "workspace",           // or "operator"
+  active: "live",
+  title: "Live",
+  breadcrumb: [{ label: "Conversations", href: "/conversations/" }],
+  prospectScope: true,
+});
 ```
 
-Renders: `.vb-app` grid → `.vb-rail (top strip)`, `.vb-rail`, `.vb-topbar`,
-`.vb-main`. Reads `GET /api/v1/branding` once and calls `applyBranding()` (kit function,
-unchanged), reads `GET /api/v1/prospects` for the scope selector, applies the persisted theme
-before first paint.
+Renders `.vb-app` (grid) → `.vb-rail` (`.brand`, `.product`, prospect `<select>`, `.vb-nav`,
+`.vb-rail-foot`) and `.vb-content` → `.vb-topbar` + `.vb-main`. Fetches `GET /api/v1/branding`
+once, calls the kit's `applyBranding()` unchanged, fetches `GET /api/v1/prospects` for the scope
+selector, and applies the persisted theme before first paint.
 
 **States:** `expanded` (≥1280), `rail` (1100–1280, `[data-nav="rail"]`), `offcanvas`
 (<1100, `[data-nav="off"]` + `[data-open]`), `poweredBy=false` (band removed, actions relocated).
@@ -1885,6 +1885,8 @@ outcome from the append response inline and briefly: "Queued", "Refreshing", "Wa
 conversation".
 
 ### 6.4 Summary table
+
+The full inventory as shipped, grouped by file rather than by the §6.2 / §6.3 narrative order.
 
 | # | Shipped class / helper | Home | Propose upstream |
 |---|---|---|---|
@@ -2561,6 +2563,198 @@ Every row is a fact the service can prove. No row is a promise.
 
 ---
 
+## 11. ElevenLabs as a first-class integration
+
+**Owner direction, recorded here as the governing rule for this product's experience.** ElevenLabs
+is not an optional footnote in GroundLine. The **API contract stays vendor-neutral** — the listen
+session API ingests transcript chunks from anything, and that neutrality is a differentiator we do
+not trade away (`voicebridge.json → capabilities`, "No client is coupled to one transcription
+vendor") — but the **default out-of-the-box experience is ElevenLabs-powered** when
+`ELEVENLABS_API_KEY` is set, degrading gracefully to the sample, typed and webhook paths when it
+is not.
+
+The distinction the UI must hold, everywhere:
+
+| Layer | Rule |
+|---|---|
+| The API | Vendor-neutral. `POST /api/v1/listen/sessions/{id}/transcript` never mentions a vendor; the webhook snippet in §3.2 never mentions one either. |
+| The shipped experience | ElevenLabs first. When the key is present, the microphone, the voice channel and the spoken line are ElevenLabs, named on screen. |
+| Absent the key | Everything that is not ElevenLabs still works, and the UI says which capability is unavailable and why — never a dead control, never a hidden feature with no explanation. |
+
+"Powered by ElevenLabs" is permitted in-product copy on the components below, rendered as the
+`.vb-powered` attribution line (11 px, `--arag-text-subtle`, no logo, no link styling beyond a
+normal link).
+
+### 11.1 What changes in the IA
+
+Nothing structural. ElevenLabs surfaces in four places already in the IA:
+
+1. **Live → Microphone source** — Scribe v2 Realtime capture (§11.2).
+2. **Live → voice tool** — Conversational AI (§11.3).
+3. **Live → Read the next line aloud** — text-to-speech (§11.4).
+4. **Settings → Integrations** — ElevenLabs promoted to a **Primary** integration with
+   per-capability status and the paste-ready agent wiring (§11.5).
+
+Plus one statement of scope in **Quality** (§11.6).
+
+### 11.2 Live → Microphone: ElevenLabs Scribe v2 Realtime
+
+The microphone source is named, not generic. The `.vb-scribe` panel replaces the anonymous level
+meter in the Live left rail whenever the microphone source is active.
+
+```
+┌──────────────────────────────────┐
+│ Transcription: ElevenLabs Scribe │   .vb-scribe-head
+│ ● connected · scribe_v2_realtime │
+│                                  │
+│ ▌▌▌▌▌▌▌▁▁▁                       │   level meter, --vb-accent
+│ "…and the budget matters"        │   interim hypothesis, italic 60 %
+│                                  │
+│ Language   English (detected)    │
+│ Last final 340 ms                │
+│                                  │
+│ [ Pause ]                        │
+│ Powered by ElevenLabs            │   .vb-powered
+└──────────────────────────────────┘
+```
+
+| Region | Source |
+|---|---|
+| Connection state | The Scribe WebSocket: `connecting` → `● connected` → `reconnecting` → `closed`. Dot colours follow §4.2's palette: `--vb-accent` connected, brand-blue pulsing connecting, amber reconnecting. |
+| Model | `scribe_v2_realtime`, from `GET /api/v1/integrations → items[id="elevenlabs"].capabilities[id="scribe"].detail.model`. |
+| Detected language | The language field on Scribe's own messages; shown as `English (detected)`, or the configured locale with `(set)` when detection is off. |
+| Last final | Milliseconds between the last audio frame sent and the final transcript for it — **the honest STT latency**, separate from the brief's refresh latency, so the two are never confused. |
+| Token flow | `POST /api/v1/scribe-token` → single-use token. The browser never holds `ELEVENLABS_API_KEY`; the panel's help text says so once. |
+| Unconfigured | 503 from `/api/v1/scribe-token`, or `integrations` says not configured → the microphone source card stays visible and greyed with `err.scribeMissing`, and the other two sources are untouched. |
+
+### 11.3 Live → voice tool: ElevenLabs Conversational AI
+
+The Voice agent drawer (§3.4) is explicit about what it is and where the agent lives.
+
+```
+│ Voice agent — ElevenLabs Conversational AI                    │
+│ The agent runs in ElevenLabs. It calls this service's          │
+│ /api/v1/voice-answer as a custom server tool, so every         │
+│ spoken answer still comes from the Knowledge Box.              │
+│                                                                │
+│ Agent id      elevenagent_7f3a…            [ ⧉ ]               │
+│ Tool endpoint https://…/api/v1/voice-answer  [ ⧉ ]             │
+│ Voice         [ Agent default             ▾ ]                  │
+│                                                                │
+│ [ Start a voice call ]          ○ idle                         │
+│ …call transcript…                                              │
+│ ☑ Feed this call into the listen session                       │
+│                                                                │
+│ Wiring → Settings · Integrations       Powered by ElevenLabs   │
+```
+
+| Region | Source |
+|---|---|
+| Agent id | `GET /api/v1/prospects/{key} → agent_id`, with `GET /api/v1/voice-agent?prospect=` as the authority for the full configuration. Copyable. |
+| Tool endpoint | `location.origin + "/api/v1/voice-answer"`. Copyable. |
+| Voice | `GET /api/v1/voices → voices[]`; 503 → disabled with `err.voicesMissing`. |
+| Wiring link | Jumps to Settings → Integrations → ElevenLabs → Agent wiring (§11.5), where the paste-ready definitions live. |
+
+### 11.4 Live → "Read the next line aloud" (text-to-speech)
+
+An **opt-in** toggle in the brief card's header, beside the freshness indicator.
+
+```
+BRIEF                       v4 · 2.8 s   [ 🔈 Read aloud ]  Updated 3 s ago
+```
+
+| Property | Behaviour |
+|---|---|
+| Default | **Off.** Persisted per browser in `localStorage["vb.readaloud"]`. |
+| What it speaks | The **first** entry of `brief.suggested_answers` for the current version, and nothing else. Never the summary, never the transcript, never automatically on every version — a `[ Speak ]` control also appears on each `.vb-say` block for on-demand playback. |
+| Where it goes | `POST /api/v1/speech {text, prospect}` → `audio/mpeg`, played through the browser's own output. **It is never injected into the call.** The toggle's help text states this in one line: "Plays in your own ear. Nothing is added to the call." |
+| Visibility | The toggle is **hidden entirely** when `POST /api/v1/speech` would 503 (detected from `GET /api/v1/integrations → elevenlabs.capabilities[id="tts"].configured`). A hidden control is correct here: an unavailable "speak" button on a product whose first trust claim is "it never speaks" is worse than no button. |
+| While speaking | The toggle shows a stop control; a new brief version does not interrupt playback in progress, it queues at most one line and drops the rest. |
+| Accessibility | The toggle is a real `<button aria-pressed>`; audio playback is announced via a polite live region ("Speaking the suggested line"). |
+| Attribution | `.vb-powered` beneath the toggle's help text in Settings, not in the Live header. |
+
+This capability is the one place where the product makes a sound, and the design treats that as a
+constraint to be defended rather than a feature to be promoted: off by default, one line at a time,
+into the handler's own ear, with the "nothing is added to the call" sentence adjacent to the
+control every time it is shown.
+
+### 11.5 Settings → Integrations: ElevenLabs as Primary
+
+```
+┌────────────────────────────────────────────────────────────────────────────────────────────┐
+│ INTEGRATIONS                                                                                │
+│                                                                                             │
+│ ┌─────────────────────────────────────────────────────────────────────────────────────────┐ │
+│ │ ElevenLabs                                                       PRIMARY   ● configured │ │
+│ │ The default speech layer: live transcription, the voice channel and the spoken line.    │ │
+│ │                                                                                          │ │
+│ │ CAPABILITY          STATUS          DETAIL                                              │ │
+│ │ Scribe (realtime)   ● configured    scribe_v2_realtime · single-use browser tokens      │ │
+│ │ Conversational AI   ● configured    default agent elevenagent_7f3a…                     │ │
+│ │ Text-to-speech      ● configured    eleven_flash_v2_5 · voice “Rachel”                  │ │
+│ │ Voice library       ● configured    31 voices available                                 │ │
+│ │                                                                                          │ │
+│ │ API base            https://api.elevenlabs.io                                            │ │
+│ │ Key                 set in the environment · never sent to a browser                     │ │
+│ │                                                                                          │ │
+│ │ ── AGENT WIRING ───────────────────────────────── prospect: Progress ▾ ───────────────  │ │
+│ │ Paste these into the ElevenLabs dashboard for this agent.                                │ │
+│ │                                                                                          │ │
+│ │ Custom server tool                                                            [ Copy ]  │ │
+│ │ { "name": "voice_answer", "description": "…", "api_schema": { … } }                      │ │
+│ │                                                                                          │ │
+│ │ Router system prompt                                                          [ Copy ]  │ │
+│ │ You answer only from the voice_answer tool. …                                            │ │
+│ │                                                                          Powered by      │ │
+│ │                                                                          ElevenLabs      │ │
+│ └─────────────────────────────────────────────────────────────────────────────────────────┘ │
+│                                                                                             │
+│ LiveKit             ○ not set    LIVEKIT_URL, LIVEKIT_API_KEY, LIVEKIT_API_SECRET           │
+│ LiveAvatar          ○ not set    needs LiveKit                                    Docs →    │
+└────────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+| Region | Source |
+|---|---|
+| Card, capabilities | `GET /api/v1/integrations → items[]`; the ElevenLabs item carries `capabilities[]` with `{id, label, configured, detail}` for `scribe`, `agents`, `tts`, `voices`. |
+| Non-secret config | `apiBase`, `scribeModel`, `ttsModel`, `voiceId`, `defaultAgentId` from the same payload. **No key, no token, no partial key, ever** — the Key row states the fact, not the value. |
+| Agent wiring | `GET /api/v1/voice-agent?prospect={key}` → `VoiceAgentConfig`: the custom server tool definition and the router system prompt, rendered in two `.vb-snippet` blocks with copy buttons. This endpoint is the machine-readable twin of `docs/developer/examples.md` — the documentation and the UI cannot drift, because they read the same source. |
+| Prospect selector | Scopes the wiring block; the tool endpoint and the agent id change with it. |
+| PRIMARY chip | A neutral chip, `--arag-brand-50` fill, not green — "primary" is a role, not a status. Only ElevenLabs carries it. |
+| Unconfigured | The card still renders, with every capability `○ not set`, the environment variable names, and a link to the integrations guide. The Agent wiring block still renders — it is useful *before* you have a key, because it tells you what to set up. |
+
+LiveKit and LiveAvatar render below as ordinary secondary integrations, single-row, with their
+environment variable names and a docs link.
+
+### 11.6 Quality: what our gate covers, and what ElevenLabs testing covers
+
+A one-paragraph statement rendered above the Quality stat strip, because the boundary is a real
+question a partner will ask:
+
+> **The golden set is the source of truth.** It runs every question through this service's own
+> pipeline — retrieval, generation, the deterministic handoff rule and the safety guards — and is
+> the gate a prospect has to pass before it is trusted to answer alone. ElevenLabs' agent testing
+> and simulated conversations cover the voice layer above it: turn-taking, interruption, tone and
+> tool invocation. The two are complementary and run in that order — open the gate here first,
+> then exercise the voice layer there.
+
+Rendering: `.arag-alert` in the neutral (`info`) variant, dismissible, persisted dismissed in
+`localStorage["vb.qualityNote"]`, with a "Show again" item in Settings → About. Never a modal,
+never repeated on another screen.
+
+### 11.7 Degradation matrix
+
+| `ELEVENLABS_API_KEY` | Live microphone | Voice tool | Read aloud | Sample / typed / webhook | Settings |
+|---|---|---|---|---|---|
+| Set | Scribe capture, named, with connection state and language | Available, agent id shown | Toggle visible, off by default | Unaffected | Primary card, all capabilities green |
+| Not set | Card visible, greyed, `err.scribeMissing` | Drawer action hidden from the Live header; the capability is described in Settings | Toggle **hidden** | Unaffected — this is the whole point of transport neutrality | Primary card visible, capabilities `○ not set`, env var names and wiring still shown |
+
+The rule: **transport neutrality is never compromised to make ElevenLabs look required.** A
+deployment with no ElevenLabs key must still reach the hero moment — sample conversation, evolving
+brief, citations, staleness behaviour — in the guided demo path without a single dead end.
+
+---
+
 ## Appendix A — implementation checklist
 
 - [ ] `public/ui-ext.css` contains all 28 components from §6, tokens from §7.1–7.3, dark-mode
@@ -2587,6 +2781,12 @@ Every row is a fact the service can prove. No row is a promise.
 - [ ] Accessibility: axe clean on every screen; keyboard-only pass through the §8 path; focus
       visible everywhere; `prefers-reduced-motion` honoured.
 - [ ] Responsive: no horizontal page scroll at 1440, 1200, 1024, 768 and 390 px on every screen.
+- [ ] §11 implemented: Scribe panel named with connection state, language and last-final latency;
+      voice tool naming Conversational AI with the agent id; Read-aloud toggle off by default and
+      hidden when unconfigured; Settings → Integrations with ElevenLabs as Primary and the
+      paste-ready wiring from `GET /api/v1/voice-agent`; the Quality scope note.
+- [ ] Degradation verified with `ELEVENLABS_API_KEY` unset: the full §8 demo path completes with no
+      dead control and no hidden-without-explanation feature.
 
 ## Appendix B — decisions this document makes
 
@@ -2601,4 +2801,9 @@ Every row is a fact the service can prove. No row is a promise.
 | B-7 | A failed refresh is an amber staleness qualifier, never an error, and never blanks the brief | §4.2 — this is the promise the product is sold on |
 | B-8 | Quality's turn log is public (`GET /api/v1/turns`); the full ring stays operator-gated | §3.10 — the reviewer persona needs reasons without holding the admin token |
 | B-9 | Prospects degrades to a read-only public list when signed out rather than blocking the page | §4.6 — a locked door with a window |
-| B-10 | Two table densities, one global setting; no drag-resizable panes | §7.8, §6.2 #16 — designed sizes, fewer things to break on touch |
+| B-10 | Two table densities, one global setting; no drag-resizable panes | §7.8 — designed sizes, fewer things to break on touch |
+| B-11 | New components ship as `vb-*`, with fourteen recommended for promotion to the kit | §6.2 — an `arag-` class outside `arag-ui.css` reads as kit API and collides the moment the kit grows one |
+| B-12 | The operator area is one document with hash sub-routes, the single exception to B-1 | §2.2 — one auth handshake, one token lifecycle, and the whole area is the size of one workspace screen |
+| B-13 | Green is split into three tokens: `--vb-accent` `#5ce500` for signals, `--vb-accent-ink` `#2f6b00` for green text, `--vb-accent-soft` for washes | §7.3 — `#5ce500` cannot be read on white at any size, and pretending otherwise is how an accent colour becomes an accessibility defect |
+| B-14 | ElevenLabs is named and first-class in the experience while the API stays vendor-neutral | §11 — owner direction; the neutrality is the differentiator, the default experience is the product |
+| B-15 | Read-aloud is off by default, one line, into the handler's ear, and the control is hidden when unconfigured | §11.4 — the product's first trust claim is "it never speaks"; the exception has to be visibly narrow |

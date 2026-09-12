@@ -9,12 +9,16 @@ src/
   server.ts        createProduct(): wires stores, clients, jobs and every route module
   openapi.ts       the OpenAPI 3.1 document — source of truth, written before routes
   types.ts         the public request/response contract + registry shapes
-  routes/          one module per resource (voice, prospects, realtime, quality, jobs, admin)
+  routes/          one module per resource (listen, voice, prospects, realtime, quality, jobs, admin)
   services/        domain logic, no HTTP types — pipeline, handoff, voiceShape, safety, citations,
-                    brief, registry, clientPool, goldenEval, provision, metrics, seed, models,
-                    voices, scribe, liveavatar, livekit, ratelimit, voicePrompt
-public/            demo console (static, framework-free) — consumes only /api/v1
-admin/             admin panel (static) — consumes only /api/v1 (+ /api/v1/admin)
+                    brief, listen, registry, clientPool, goldenEval, provision, metrics, seed, models,
+                    voices, scribe, tts, voiceAgent, liveavatar, livekit, ratelimit, voicePrompt
+public/            the workspace (static, framework-free) — consumes only /api/v1. One directory per
+                    section (conversations/, knowledge/, prospects/, quality/, settings/) each with
+                    its own index.html + entry script under app/ (live.js, conversations.js, …);
+                    shell.js is the shared rail/nav/topbar every entry script mounts first.
+admin/             Operator (static) — same shell as public/, hash-routed — consumes only /api/v1
+                   (+ /api/v1/admin)
 vendor/arag-platform/  vendored platform (App, AragClient, Store, JobManager, …) — never edited here
 test/              unit, integration (mock ARAG), contract, e2e (Playwright)
 scripts/           eval.ts, provision.ts, smoke.ts — thin clients over the running server's API

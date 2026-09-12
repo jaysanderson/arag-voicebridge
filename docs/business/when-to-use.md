@@ -14,15 +14,17 @@
   handoff answers the second question the same way — built specifically to survive that question,
   not just to demo well once.
 - **A pilot needs to start before any telephony or STT integration exists.** The session API is
-  transport-agnostic: a pilot can begin with someone pasting or typing a transcript into the console
-  and watching the brief build, then add a real speech-to-text feed once the core idea is proven.
+  transport-agnostic: a pilot can begin with someone pasting or typing a transcript into Live and
+  watching the brief build, then add a real speech-to-text feed once the core idea is proven —
+  ElevenLabs Scribe out of the box if a key is configured, or any other STT feeding the same session.
 - **Multiple customers/demo targets share one deployment**, each with its own Knowledge Box, voice,
   greeting and test questions. The prospect registry exists precisely so onboarding the fifth
   prospect costs the same as the second — a configuration change, not a code change.
 - **Self-serve deflection is wanted as a second step, once listening is trusted.** The same grounded
   pipeline that feeds the brief can answer a caller directly over `POST /api/v1/voice-answer` when
   nobody's available, gated by a golden set before it's ever demoed or deployed. A text-first proof
-  of concept works here too — the console's Ask tab runs the identical pipeline as a live call.
+  of concept works here too — the "ask it something" tester on Knowledge runs the identical pipeline
+  as a live call.
 
 ## Poor fit
 
@@ -37,7 +39,8 @@
   implementation — see [`../architecture/limits.md`](../architecture/limits.md).
 - **A scored, automated quality gate for the live brief, equivalent to the golden set.** That gate
   exists for the deflection pipeline only; judging whether a brief was useful on a given call is, for
-  now, a manual read of the session's brief history in the admin panel.
+  now, a manual read of the session's brief history in Conversations or Operator's Listen sessions
+  view.
 - **Sub-second brief updates with no tolerance for a throttled or deferred refresh.** The listen
   service deliberately throttles refreshes (a minimum word count, a minimum gap, a similarity check)
   so a fast-talking or noisy transcript doesn't turn every word into an LLM call; a refresh can be

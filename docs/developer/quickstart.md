@@ -17,28 +17,31 @@ make dev             # copies .env.example to .env if missing, then starts on :8
 additive manufacturing (`src/services/seed.ts`) — enough for the `progress` prospect's ten-question
 golden set to pass with no external calls at all.
 
-Open <http://localhost:8080>. The console opens on the **Listen** tab — real-time listening
-(agent-assist) is the product's hero capability, so it is what you see first:
+Open <http://localhost:8080>. The workspace opens on **Live** — real-time listening (agent-assist) is
+the product's hero capability, so it is what you see first:
 
-1. Press **Play sample conversation**. A scripted ten-line discovery call is fed into a listen
-   session one line at a time (`SAMPLE_CONVERSATION` in `public/app.js`), exactly as a live caller's
-   words would arrive.
+1. Press **Play sample conversation**. A scripted nine-line discovery call is fed into a listen
+   session one line at a time (`SAMPLE` in `public/app/live.js`), exactly as a live caller's words
+   would arrive.
 2. Watch the transcript fill in on one side and the brief — a caller profile, their inferred goal,
    key points, suggested questions and answers, all grounded in the mock Knowledge Box — build up
    and refine itself on the other, over Server-Sent Events.
-3. The stats row (chunks / refreshes / skipped / latency) shows the server-side throttle at work:
-   not every line triggers a fresh LLM call — see
+3. The session card (turns heard / refreshes / skipped / latency) shows the server-side throttle at
+   work: not every line triggers a fresh LLM call — see
    [`../architecture/architecture.md`](../architecture/architecture.md) for why.
-4. Switch to the **Ask** tab to fire a single question instead (you get back the exact line the
-   agent would speak, its citations, the latency breakdown, and whether the turn handed off), or
-   press **Run golden set** to fire all ten golden questions for the current prospect through the
-   turn pipeline and watch the demo gate open or close live.
+4. Press **End and save**, then open **Conversations** to see the same session: its final brief, how
+   the brief evolved version by version, the full transcript and its citations. Open **Knowledge** to
+   fire a single question through the **Ask it something** tester instead (you get back the exact
+   line the agent would speak, its citations, the latency breakdown, and whether the turn handed
+   off), or press **Run golden set** to fire all ten golden questions for the current prospect
+   through the turn pipeline and watch the gate open or close live.
 
-Nothing here needs an ElevenLabs key: Listen's sample conversation and typed-conversation paths, the
-Ask tab, and the golden-set runner all exercise the full pipeline as text. The **Call** tab and
-Listen's own **microphone** button are visible but degrade politely — Call reports "No ElevenLabs
-agent configured", the microphone button works but minting a Scribe token 503s (typing or pasting a
-conversation into Listen still works with no credentials at all).
+Nothing here needs an ElevenLabs key: Live's sample conversation and typed-conversation paths, the
+Knowledge "ask it something" tester, and the golden-set runner all exercise the full pipeline as
+text. Live's **Microphone** starter and its **Voice agent call** drawer are visible but degrade
+politely — the microphone stays disabled with "Needs an ElevenLabs key on this deployment," and the
+voice-agent drawer explains what to configure — while typing or pasting a conversation into Live
+still works with no credentials at all.
 
 ## 2. Live credentials
 
@@ -57,18 +60,19 @@ The shipped `config/prospects.example.json` carries placeholders rather than any
 identifiers (`DECISIONS.md` V-12). On the **first** boot with an empty `DATA_DIR`, the seeder
 substitutes your `ARAG_KB_ID` — and `VOICE_DEFAULT_AGENT_ID`, if you set one — into the first
 prospect, so it answers from your own Knowledge Box with no file edits. If the registry has
-already been seeded, change it through the admin panel instead (see
-[`../business/walkthrough-admin.md`](../business/walkthrough-admin.md)) or add a new prospect.
+already been seeded, change it through `/prospects/` instead (unlock editing with `ADMIN_TOKEN` —
+see [`../business/walkthrough-admin.md`](../business/walkthrough-admin.md)) or add a new prospect.
 
-To light up **Call** (real voice) and Listen's **microphone** button (transcribing you live via
-ElevenLabs Scribe, instead of the sample or typed conversation), add:
+To light up Live's **microphone** starter (transcribing you via ElevenLabs Scribe v2 Realtime,
+instead of the sample or typed conversation), the optional spoken cue (ElevenLabs text-to-speech),
+and the **voice agent call** drawer (ElevenLabs Conversational AI), add:
 
 ```bash
 ELEVENLABS_API_KEY=<server-side only — never sent to the browser>
 ```
 
-and give the prospect a real `agent_id` in the registry. See
-[`integrations.md`](integrations.md) for the full ElevenLabs agent setup and what each optional
+and give the prospect a real `agent_id` in the registry for the voice-agent call specifically. See
+[`integrations.md`](integrations.md) for the full ElevenLabs setup and what each optional
 integration needs — none of it is required for the listen-session API itself, which accepts
 conversation text from any source.
 
@@ -176,7 +180,7 @@ That is the stateless half of the product contract in one call. From here:
 - [`../architecture/architecture.md`](../architecture/architecture.md) — the nine-step pipeline
   and the ADRs behind it.
 - [`../business/walkthrough-demo.md`](../business/walkthrough-demo.md) — a click-by-click tour of
-  the console, including the golden-set runner.
+  the workspace, including the golden-set runner.
 - [`extension-points.md`](extension-points.md) — the onboarding ritual for a new prospect, and
   where to slot in a real moderation classifier or another voice platform.
 

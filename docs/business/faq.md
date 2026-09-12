@@ -27,10 +27,16 @@ every request is filtered identically. This distinction matters and should be st
 anyone asking; see [`../architecture/security-model.md`](../architecture/security-model.md).
 
 **Is this locked into ElevenLabs?**
-No. The public contract (`POST /api/v1/voice-answer`) is plain JSON with no ElevenLabs-specific
-shape — any voice platform whose agent can call an HTTP tool and speak back a JSON string field can
-front it. ElevenLabs-specific code (Scribe token minting, the voice list, the vendored browser SDK)
-is isolated in its own modules. See [`../developer/extension-points.md`](../developer/extension-points.md).
+No, though it is the default and the shipped experience when `ELEVENLABS_API_KEY` is set: Scribe v2
+Realtime transcribes the microphone in Live, Conversational AI is the default voice channel, and the
+optional spoken cue uses ElevenLabs text-to-speech. The public contract underneath all three
+(`POST /api/v1/listen/sessions/*/transcript`, `POST /api/v1/voice-answer`) is plain, vendor-neutral
+JSON — any voice platform whose agent can call an HTTP tool and speak back a JSON string field can
+front it, and any transcription source can feed a listen session. ElevenLabs-specific code (Scribe
+token minting, text-to-speech, the voice list, the vendored browser SDK) is isolated in its own
+modules, and with no key set the product still works end to end via the sample conversation, typed
+text and the telephony webhook. See
+[`../developer/extension-points.md`](../developer/extension-points.md).
 
 **How long does it take to add a new prospect (customer/demo target)?**
 No code change and no redeploy: a registry entry, a provisioning call, a golden set, and a pass
@@ -61,8 +67,11 @@ The citation still appears (title and score), just without a clickable link — 
 require a URL to surface a source, only a usable title. See
 [`../architecture/arag-integration.md`](../architecture/arag-integration.md).
 
-**Can the ambient "Listen" brief leak information across calls?**
-No — the evolving brief's state (the running transcript and the previous brief) lives entirely in
-the browser tab running Listen mode and is discarded when that tab stops listening or closes;
-nothing about it is persisted server-side or shared across sessions. See
+**Can the ambient Live brief leak information across calls?**
+No — each listen session's state (the running transcript, the evolving brief and its history) is
+scoped to that session's own record in `DATA_DIR/listen-sessions.json`; nothing from one session's
+transcript or brief is read into another session's prompt or retrieval. A session's record is kept
+after it ends specifically so it can be reviewed afterwards — in Conversations, in Operator's Listen
+sessions view, or via `GET /api/v1/listen/sessions/{id}/export` — and that record is scoped to the
+prospect it belongs to, filtered the same way a live turn's retrieval is. See
 [`../architecture/data-flow.md`](../architecture/data-flow.md).
