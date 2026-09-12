@@ -22,7 +22,7 @@ import {
   startMockArag,
   validationError,
 } from "../vendor/arag-platform/src/index.ts";
-import { assertVoiceConfig, type VoiceConfig } from "./config.ts";
+import { assertVoiceConfig, avatarEnabled, scribeEnabled, type VoiceConfig } from "./config.ts";
 import { openapi, VERSION } from "./openapi.ts";
 import { registerAdminRoutes } from "./routes/admin.ts";
 import { registerJobRoutes } from "./routes/jobs.ts";
@@ -260,6 +260,49 @@ export async function createProduct(
   // White-label branding: public, unauthenticated and uncached-by-default so a partner can change
   // it with a restart. The UI kit shell fetches this at boot.
   app.get("/api/v1/branding", () => voice.branding, { operationId: "getBranding", noRateLimit: true });
+
+  // Which optional integrations are switched on. Booleans and non-secret detail only — this tells
+  // the Settings view why the microphone or the avatar pane is unavailable, without leaking a key.
+  app.get(
+    "/api/v1/integrations",
+    () => ({
+      items: [
+        {
+          id: "arag",
+          name: "Progress Agentic RAG",
+          configured: true,
+          purpose: "Retrieval and generation behind every brief and answer",
+          detail: env.arag.mock ? "mock Knowledge Box (no credentials)" : env.arag.baseUrl,
+          setup: "ARAG_KB_ID, ARAG_API_KEY, ARAG_REGION",
+        },
+        {
+          id: "elevenlabs",
+          name: "ElevenLabs",
+          configured: scribeEnabled(voice),
+          purpose: "Microphone transcription in Live, and the voice-agent call tool",
+          detail: voice.elevenLabsApiBase,
+          setup: "ELEVENLABS_API_KEY",
+        },
+        {
+          id: "livekit",
+          name: "LiveKit",
+          configured: Boolean(voice.livekitUrl && voice.livekitApiKey && voice.livekitApiSecret),
+          purpose: "Media transport for the video avatar pane",
+          detail: voice.livekitUrl || undefined,
+          setup: "LIVEKIT_URL, LIVEKIT_API_KEY, LIVEKIT_API_SECRET",
+        },
+        {
+          id: "liveavatar",
+          name: "LiveAvatar",
+          configured: avatarEnabled(voice),
+          purpose: "The video avatar for the call tool",
+          detail: voice.liveAvatarApiBase,
+          setup: "LIVEAVATAR_API_KEY (plus LiveKit and ElevenLabs)",
+        },
+      ],
+    }),
+    { auth: "api", operationId: "listIntegrations" },
+  );
 
   // Session for the demo UI: lets same-origin browsers call API-key-protected and
   // credential-minting routes without ever holding a key.

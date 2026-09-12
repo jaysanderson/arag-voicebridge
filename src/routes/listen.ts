@@ -9,7 +9,59 @@
 import { type App, conflict, operationSchemas } from "../../vendor/arag-platform/src/index.ts";
 import { openapi } from "../openapi.ts";
 import type { ProductDeps } from "../server.ts";
-import { ListenSessionEnded, type TranscriptChunk } from "../services/listen.ts";
+import {
+  ListenSessionEnded,
+  type ListenSessionExport,
+  type ListenSortKey,
+  type TranscriptChunk,
+} from "../services/listen.ts";
+
+/** The Markdown handover note: the final brief, how it got there, the sources and the transcript. */
+export function exportMarkdown(s: ListenSessionExport, displayName: string): string {
+  const b = (s.brief ?? {}) as Record<string, unknown>;
+  const str = (k: string) => (typeof b[k] === "string" ? (b[k] as string).trim() : "");
+  const bullets = (k: string) =>
+    (Array.isArray(b[k]) ? (b[k] as unknown[]) : [])
+      .map((x) => String(x ?? "").trim())
+      .filter(Boolean)
+      .map((x) => `- ${x}`)
+      .join("\n");
+  const section = (heading: string, body: string) => (body ? `\n## ${heading}\n\n${body}\n` : "");
+
+  const header =
+    `# Conversation ${s.id.slice(0, 8)} — ${displayName}\n\n` +
+    `- Started: ${s.createdAt}\n` +
+    `- ${s.status === "ended" ? `Ended: ${s.endedAt ?? s.updatedAt}` : "Status: live"}\n` +
+    `- Duration: ${s.durationSec}s\n` +
+    `- Brief versions: ${s.briefVersion}\n` +
+    `- Refreshes: ${s.stats.refreshes} (skipped ${s.stats.skipped}, failed ${s.stats.failures})\n` +
+    `- Refresh latency: p50 ${s.stats.p50LatencyMs} ms · p95 ${s.stats.p95LatencyMs} ms\n`;
+
+  const brief =
+    section("Brief", [str("topic") && `**${str("topic")}**`, str("summary")].filter(Boolean).join("\n\n")) +
+    section(
+      "Who and what they want",
+      [str("caller_profile"), str("their_goal")].filter(Boolean).join("\n\n"),
+    ) +
+    section("Key points", bullets("key_points")) +
+    section("Ask them", bullets("suggested_questions")) +
+    section("You could say", bullets("suggested_answers")) +
+    section("Recommend", bullets("recommended_products"));
+
+  const sources = section(
+    "Sources",
+    s.citations.map((c) => `- ${c.title}${c.url ? ` — ${c.url}` : ""}`).join("\n"),
+  );
+  const history = section(
+    "How the brief evolved",
+    s.briefHistory.map((h) => `- v${h.version} at ${h.at} (${h.latencyMs} ms)`).join("\n"),
+  );
+  const transcript = section(
+    "Transcript",
+    s.transcript.map((t) => `**${t.speaker}:** ${t.text}`).join("\n\n"),
+  );
+  return `${header}${brief}${sources}${history}${transcript}`;
+}
 
 export function registerListenRoutes(app: App, deps: ProductDeps): void {
   // The brief behind a session costs an LLM call per refresh, so sessions carry the same
@@ -38,16 +90,50 @@ export function registerListenRoutes(app: App, deps: ProductDeps): void {
 
   app.get(
     "/api/v1/listen/sessions",
-    (ctx) => ({
-      items: deps.listen.list({
-        prospect: ctx.queryObj.prospect as string | undefined,
-        limit: (ctx.queryObj.limit as number | undefined) ?? 25,
-      }),
-    }),
+    (ctx) => {
+      const q = ctx.queryObj as Record<string, unknown>;
+      const limit = (q.limit as number | undefined) ?? 25;
+      const offset = (q.offset as number | undefined) ?? 0;
+      const { items, total } = deps.listen.query({
+        prospect: q.prospect as string | undefined,
+        status: q.status as "live" | "ended" | undefined,
+        q: q.q as string | undefined,
+        from: q.from as string | undefined,
+        to: q.to as string | undefined,
+        sort: q.sort as ListenSortKey | undefined,
+        order: q.order as "asc" | "desc" | undefined,
+        limit,
+        offset,
+      });
+      return { items, total, limit, offset };
+    },
     {
       auth: "api",
       validate: operationSchemas(openapi, "/api/v1/listen/sessions", "get"),
       operationId: "listListenSessions",
+    },
+  );
+
+  app.get(
+    "/api/v1/listen/sessions/:id/export",
+    (ctx) => {
+      const record = deps.listen.exportSession(ctx.params.id!);
+      if (ctx.queryObj.format === "markdown") {
+        const prospect = deps.registry.get(record.prospect);
+        ctx.text(
+          200,
+          exportMarkdown(record, prospect?.display_name ?? record.prospect),
+          "text/markdown; charset=utf-8",
+          { "Content-Disposition": `attachment; filename="conversation-${record.id.slice(0, 8)}.md"` },
+        );
+        return;
+      }
+      return record;
+    },
+    {
+      auth: "api",
+      validate: operationSchemas(openapi, "/api/v1/listen/sessions/{id}/export", "get"),
+      operationId: "exportListenSession",
     },
   );
 

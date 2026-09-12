@@ -8,7 +8,7 @@ const port = Number(process.env.PW_PORT ?? 8281);
 const brandedPort = port + 1;
 export const BRANDED_URL = `http://127.0.0.1:${brandedPort}`;
 export default defineConfig({
-  testDir: process.env.SHOWCASE ? "showcase" : "test/e2e",
+  testDir: process.env.PW_TESTDIR ?? (process.env.SHOWCASE ? "showcase" : "test/e2e"),
   timeout: 60_000,
   retries: 0,
   reporter: [["list"]],

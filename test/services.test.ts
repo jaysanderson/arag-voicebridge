@@ -235,6 +235,38 @@ describe("MetricsService", () => {
     expect(s.turns).toBe(0);
     expect(s.citation_coverage).toBe(1);
   });
+
+  it("filters the turn log by outcome so an operator can go straight to the failures", () => {
+    const m = new MetricsService({ store: store() });
+    m.record(turn());
+    m.record(turn({ handoff: true, reason: "sentinel" }));
+    m.record(turn({ handoff: true, guard_trip: true, reason: "prompt-injection" }));
+    expect(m.query({ outcome: "answered" }).total).toBe(1);
+    expect(m.query({ outcome: "handoff" }).total).toBe(2);
+    expect(m.query({ outcome: "guard" }).total).toBe(1);
+    expect(m.query({ reason: "sentinel" }).total).toBe(1);
+    expect(m.query({ prospect: "nobody" }).total).toBe(0);
+  });
+
+  it("pages the turn log and reports the unpaged total", () => {
+    const m = new MetricsService({ store: store() });
+    for (let i = 0; i < 5; i++) m.record(turn({ total: i }));
+    const page = m.query({ limit: 2, offset: 2 });
+    expect(page.total).toBe(5);
+    expect(page.items).toHaveLength(2);
+    expect(m.query({ limit: 10_000 }).items).toHaveLength(5);
+  });
+
+  it("ranks handoff and guard reasons by frequency", () => {
+    const m = new MetricsService({ store: store() });
+    m.record(turn({ handoff: true, reason: "sentinel" }));
+    m.record(turn({ handoff: true, reason: "sentinel" }));
+    m.record(turn({ handoff: true, guard_trip: true, reason: "prompt-injection" }));
+    const reasons = m.reasons();
+    expect(reasons[0]!.reason).toBe("sentinel");
+    expect(reasons[0]!.count).toBe(2);
+    expect(reasons[1]!.guard).toBe(true);
+  });
 });
 
 describe("models", () => {

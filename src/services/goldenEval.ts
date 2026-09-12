@@ -184,4 +184,55 @@ export class GoldenEvalStore {
       limit: opts.limit ?? 25,
     });
   }
+
+  /**
+   * History for the Knowledge view: summaries only (the per-question detail is fetched by id
+   * when a row is opened), paged, newest first.
+   */
+  query(opts: { prospect?: string; limit?: number; offset?: number } = {}): {
+    items: GoldenEvalSummary[];
+    total: number;
+  } {
+    const matches = this.col.list().filter((r) => !opts.prospect || r.prospect === opts.prospect);
+    const offset = Math.max(0, opts.offset ?? 0);
+    const limit = Math.max(1, Math.min(opts.limit ?? 25, 100));
+    return { total: matches.length, items: matches.slice(offset, offset + limit).map(summarise) };
+  }
+
+  /** The most recent run for a prospect, as the Knowledge view's gate indicator. */
+  latest(prospect: string): GoldenEvalSummary | null {
+    const [first] = this.col.list({ filter: (r) => r.prospect === prospect, limit: 1 });
+    return first ? summarise(first) : null;
+  }
+}
+
+/** A golden run without the per-question detail. */
+export interface GoldenEvalSummary {
+  id: string;
+  createdAt: string;
+  prospect: string;
+  display_name: string;
+  ok: boolean;
+  total: number;
+  passed: number;
+  failed: number;
+  latency_ms: { p50: number; p95: number };
+  startedAt: string;
+  finishedAt: string;
+}
+
+function summarise(r: GoldenEvalResult): GoldenEvalSummary {
+  return {
+    id: r.id,
+    createdAt: r.createdAt,
+    prospect: r.prospect,
+    display_name: r.display_name,
+    ok: r.ok,
+    total: r.total,
+    passed: r.passed,
+    failed: r.failed,
+    latency_ms: r.latency_ms,
+    startedAt: r.startedAt,
+    finishedAt: r.finishedAt,
+  };
 }

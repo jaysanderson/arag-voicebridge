@@ -6,6 +6,7 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { readVoiceEnv } from "../src/config.ts";
+import { exportMarkdown } from "../src/routes/listen.ts";
 import type { BriefResult } from "../src/services/brief.ts";
 import {
   DEFAULT_THROTTLE,
@@ -368,5 +369,146 @@ describe("ListenService", () => {
     const { service } = harness();
     const s = service.create({ prospect: "acme" });
     expect(JSON.stringify(s)).not.toContain("lastFireAt");
+  });
+});
+
+describe("conversations query", () => {
+  /** Three sessions with distinct prospects, transcripts and states, to filter and sort over. */
+  async function seeded() {
+    const h = harness();
+    const a = h.service.create({ prospect: "acme" });
+    h.service.append(a.id, [{ speaker: "caller", text: "we print stainless steel brackets every week" }]);
+    await flush();
+    h.setNow(1_100_000);
+    const b = h.service.create({ prospect: "acme" });
+    h.service.append(b.id, [{ speaker: "caller", text: "titanium aerospace parts and a sintering furnace" }]);
+    await flush();
+    h.service.end(b.id);
+    h.setNow(1_200_000);
+    const c = h.service.create({ prospect: "acme" });
+    return { ...h, a, b, c };
+  }
+
+  it("returns newest first with a total independent of the page", async () => {
+    const { service } = await seeded();
+    const page = service.query({ limit: 2 });
+    expect(page.total).toBe(3);
+    expect(page.items.length).toBe(2);
+    const all = service.query({ limit: 50 });
+    expect(all.items[0]!.createdAt >= all.items[1]!.createdAt).toBe(true);
+  });
+
+  it("pages with offset without dropping or repeating a session", async () => {
+    const { service } = await seeded();
+    const first = service.query({ limit: 2, offset: 0 }).items.map((s) => s.id);
+    const second = service.query({ limit: 2, offset: 2 }).items.map((s) => s.id);
+    expect(second.length).toBe(1);
+    expect(first.includes(second[0]!)).toBe(false);
+  });
+
+  it("filters by status", async () => {
+    const { service, b } = await seeded();
+    const ended = service.query({ status: "ended" });
+    expect(ended.total).toBe(1);
+    expect(ended.items[0]!.id).toBe(b.id);
+    expect(service.query({ status: "live" }).total).toBe(2);
+  });
+
+  it("searches the transcript, not just the id", async () => {
+    const { service, a } = await seeded();
+    const hit = service.query({ q: "brackets" });
+    expect(hit.total).toBe(1);
+    expect(hit.items[0]!.id).toBe(a.id);
+    expect(service.query({ q: "TITANIUM" }).total).toBe(1);
+    expect(service.query({ q: "nothing said like this" }).total).toBe(0);
+  });
+
+  it("bounds the window by start time", async () => {
+    const { service, c } = await seeded();
+    const all = service.query({ limit: 50 }).items;
+    const cutoff = all.find((s) => s.id === c.id)!.createdAt;
+    expect(service.query({ from: cutoff }).total).toBe(1);
+    expect(service.query({ to: cutoff }).total).toBe(3);
+  });
+
+  it("sorts ascending when asked", async () => {
+    const { service } = await seeded();
+    const asc = service.query({ sort: "started", order: "asc", limit: 50 }).items;
+    expect(asc[0]!.createdAt <= asc[asc.length - 1]!.createdAt).toBe(true);
+  });
+
+  it("caps a greedy limit rather than returning the whole store", async () => {
+    const { service } = await seeded();
+    expect(service.query({ limit: 100_000 }).items.length).toBe(3);
+  });
+});
+
+describe("session export", () => {
+  it("carries every brief version, the whole transcript and the sources", async () => {
+    const { service } = harness();
+    const s = service.create({ prospect: "acme" });
+    service.append(s.id, [{ speaker: "caller", text: "we print stainless steel brackets every week" }]);
+    await flush();
+    const record = service.exportSession(s.id);
+    expect(record.briefHistory.length).toBe(1);
+    expect(record.transcript.length).toBe(1);
+    expect(record.citations.length).toBe(1);
+    expect(record.durationSec >= 0).toBe(true);
+    // The export is a record, not a live view: throttle bookkeeping stays server-side.
+    expect(JSON.stringify(record)).not.toContain("lastFireAt");
+  });
+
+  it("refuses an unknown session the same way the rest of the API does", () => {
+    const { service } = harness();
+    let threw = false;
+    try {
+      service.exportSession("nope");
+    } catch (err) {
+      threw = err instanceof ListenSessionNotFound;
+    }
+    expect(threw).toBe(true);
+  });
+});
+
+describe("export as a handover note", () => {
+  it("renders the brief, its sources, how it evolved and the transcript", async () => {
+    const { service, setBrief } = harness();
+    setBrief(async () => ({
+      brief: {
+        topic: "Metal binder jetting",
+        summary: "They machine manifolds today and want to print them.",
+        caller_profile: "Operations lead",
+        their_goal: "Understand the post-print steps",
+        key_points: ["Sintering is a separate furnace", ""],
+        suggested_questions: ["What volumes per month?"],
+        suggested_answers: ["The Shop System suits mid-volume metal parts."],
+        recommended_products: ["PureSinter Furnace"],
+      },
+      citations: [{ title: "Desktop Metal Shop System", url: "https://example.test/shop", score: 0.9 }],
+      latency_ms: { retrieve: 10, first_token: 20, total: 30 },
+    }));
+    const s = service.create({ prospect: "acme" });
+    service.append(s.id, [{ speaker: "caller", text: "we machine manifolds and want to print them" }]);
+    await flush();
+    const md = exportMarkdown(service.exportSession(s.id), "Acme");
+    expect(md).toContain("# Conversation");
+    expect(md).toContain("**Metal binder jetting**");
+    expect(md).toContain("## Key points");
+    expect(md).toContain("- Sintering is a separate furnace");
+    expect(md).toContain("## Sources");
+    expect(md).toContain("https://example.test/shop");
+    expect(md).toContain("## How the brief evolved");
+    expect(md).toContain("- v1 at");
+    expect(md).toContain("**caller:** we machine manifolds");
+  });
+
+  it("omits sections the brief never filled rather than printing empty headings", () => {
+    const { service } = harness();
+    const s = service.create({ prospect: "acme" });
+    const md = exportMarkdown(service.exportSession(s.id), "Acme");
+    expect(md).toContain("# Conversation");
+    expect(md).not.toContain("## Key points");
+    expect(md).not.toContain("## Sources");
+    expect(md).toContain("Status: live");
   });
 });

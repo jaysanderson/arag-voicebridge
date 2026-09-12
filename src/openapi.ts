@@ -193,6 +193,87 @@ const ListenSession = {
   },
 };
 
+const BriefSnapshot = {
+  type: "object",
+  required: ["version", "at", "brief"],
+  properties: {
+    version: { type: "integer" },
+    at: { type: "string", format: "date-time" },
+    brief: { type: ["object", "null"], additionalProperties: true },
+    latencyMs: { type: "integer" },
+  },
+};
+
+const ListenSessionExport = {
+  type: "object",
+  description: "The complete record of one call: every brief version, the whole transcript, sources",
+  required: ["id", "prospect", "status", "brief", "briefHistory", "citations", "stats", "transcript"],
+  properties: {
+    id: { type: "string" },
+    createdAt: { type: "string", format: "date-time" },
+    updatedAt: { type: "string", format: "date-time" },
+    endedAt: { type: "string", format: "date-time" },
+    prospect: { type: "string" },
+    locale: { type: "string" },
+    generative_model: { type: "string" },
+    metadata: { type: "object", additionalProperties: true },
+    status: { type: "string", enum: ["live", "ended"] },
+    durationSec: { type: "integer" },
+    brief: { type: ["object", "null"], additionalProperties: true },
+    briefVersion: { type: "integer" },
+    briefHistory: { type: "array", items: { $ref: "#/components/schemas/BriefSnapshot" } },
+    citations: { type: "array", items: { $ref: "#/components/schemas/Citation" } },
+    stats: { $ref: "#/components/schemas/ListenStats" },
+    transcript: { type: "array", items: { $ref: "#/components/schemas/TranscriptEntry" } },
+  },
+};
+
+const KnowledgeStatus = {
+  type: "object",
+  description: "What the selected prospect is grounded in, and whether its golden gate is open",
+  required: ["prospect", "display_name", "kb", "golden_questions"],
+  properties: {
+    prospect: { type: "string" },
+    display_name: { type: "string" },
+    kb: {
+      type: "object",
+      required: ["ok", "region"],
+      properties: {
+        ok: { type: "boolean" },
+        id_masked: { type: "string", description: "Knowledge Box id, partially masked" },
+        title: { type: "string" },
+        region: { type: "string" },
+        resources: { type: ["integer", "null"], description: "Resources in the Knowledge Box" },
+        generative_model: { type: "string" },
+        reranker: { type: "string" },
+        ask_config: { type: "string", description: "Stored ask search configuration, if provisioned" },
+        brief_model: { type: "string" },
+        ms: { type: "integer" },
+        mock: { type: "boolean", description: "True when the deployment runs against the mock ARAG" },
+        error: { type: "string" },
+      },
+    },
+    golden_questions: { type: "array", items: { $ref: "#/components/schemas/GoldenQuestion" } },
+    last_eval: {
+      description: "The most recent golden run for this prospect, or null when it has never run",
+      oneOf: [{ $ref: "#/components/schemas/GoldenEvalSummary" }, { type: "null" }],
+    },
+  },
+};
+
+const IntegrationStatus = {
+  type: "object",
+  required: ["id", "name", "configured", "purpose"],
+  properties: {
+    id: { type: "string", enum: ["arag", "elevenlabs", "livekit", "liveavatar"] },
+    name: { type: "string" },
+    configured: { type: "boolean" },
+    purpose: { type: "string", description: "What this integration unlocks in the product" },
+    detail: { type: "string", description: "Non-secret endpoint or mode, never a credential" },
+    setup: { type: "string", description: "The environment variables that switch it on" },
+  },
+};
+
 const GoldenQuestion = {
   type: "object",
   required: ["q", "expect"],
@@ -370,6 +451,25 @@ const GoldenCase = {
   },
 };
 
+const GoldenEvalSummary = {
+  type: "object",
+  description: "A golden run without the per-question detail (fetch it by id to see the cases)",
+  required: ["id", "prospect", "ok", "total", "passed", "failed"],
+  properties: {
+    id: { type: "string" },
+    createdAt: { type: "string", format: "date-time" },
+    prospect: { type: "string" },
+    display_name: { type: "string" },
+    ok: { type: "boolean" },
+    total: { type: "integer" },
+    passed: { type: "integer" },
+    failed: { type: "integer" },
+    latency_ms: { type: "object", properties: { p50: { type: "integer" }, p95: { type: "integer" } } },
+    startedAt: { type: "string", format: "date-time" },
+    finishedAt: { type: "string", format: "date-time" },
+  },
+};
+
 const GoldenEval = {
   type: "object",
   required: ["id", "prospect", "ok", "total", "passed", "failed", "cases"],
@@ -453,6 +553,10 @@ export const openapi = buildOpenApi({
     TranscriptChunk,
     ListenStats,
     ListenSession,
+    BriefSnapshot,
+    ListenSessionExport,
+    KnowledgeStatus,
+    IntegrationStatus,
     LatencyMs,
     HistoryTurn,
     VoiceAnswerRequest,
@@ -469,6 +573,7 @@ export const openapi = buildOpenApi({
     TurnRecord,
     GoldenCase,
     GoldenEval,
+    GoldenEvalSummary,
   },
   paths: {
     "/api/v1/listen/sessions": {
@@ -505,17 +610,85 @@ export const openapi = buildOpenApi({
       get: {
         operationId: "listListenSessions",
         tags: ["listen"],
-        summary: "Recent listen sessions",
+        summary: "Search, filter and page past listen sessions",
+        description:
+          "Backs the Conversations list. `q` searches the prospect, the brief (topic, summary, goal, " +
+          "profile), the accumulated source titles and the transcript itself, so an operator can find " +
+          "a call by what was said in it rather than by its id.",
         parameters: [
           { name: "prospect", in: "query", schema: { type: "string", pattern: prospectKeyPattern } },
-          { name: "limit", in: "query", schema: { type: "integer", minimum: 1, maximum: 100, default: 25 } },
+          { name: "status", in: "query", schema: { type: "string", enum: ["live", "ended"] } },
+          {
+            name: "q",
+            in: "query",
+            description: "Free text over prospect, brief, source titles and transcript",
+            schema: { type: "string", maxLength: 200 },
+          },
+          {
+            name: "from",
+            in: "query",
+            description: "Only sessions started at or after this instant",
+            schema: { type: "string", format: "date-time" },
+          },
+          {
+            name: "to",
+            in: "query",
+            description: "Only sessions started at or before this instant",
+            schema: { type: "string", format: "date-time" },
+          },
+          {
+            name: "sort",
+            in: "query",
+            schema: {
+              type: "string",
+              enum: ["started", "updated", "refreshes", "duration"],
+              default: "started",
+            },
+          },
+          { name: "order", in: "query", schema: { type: "string", enum: ["asc", "desc"], default: "desc" } },
+          { name: "limit", in: "query", schema: { type: "integer", minimum: 1, maximum: 200, default: 25 } },
+          { name: "offset", in: "query", schema: { type: "integer", minimum: 0, default: 0 } },
         ],
         responses: {
           200: jsonResponse({
             type: "object",
-            required: ["items"],
-            properties: { items: { type: "array", items: { $ref: "#/components/schemas/ListenSession" } } },
+            required: ["items", "total", "limit", "offset"],
+            properties: {
+              items: { type: "array", items: { $ref: "#/components/schemas/ListenSession" } },
+              total: { type: "integer", description: "Sessions matching the filters, before paging" },
+              limit: { type: "integer" },
+              offset: { type: "integer" },
+            },
           }),
+          ...standardResponses,
+        },
+        security: publicSecurity,
+      },
+    },
+    "/api/v1/listen/sessions/{id}/export": {
+      parameters: [pathId],
+      get: {
+        operationId: "exportListenSession",
+        tags: ["listen"],
+        summary: "Export the whole record of one call",
+        description:
+          "Returns every brief version with its timestamp and latency, the full transcript, the " +
+          "accumulated citations and the session stats — as JSON, or as Markdown for a handover note.",
+        parameters: [
+          {
+            name: "format",
+            in: "query",
+            schema: { type: "string", enum: ["json", "markdown"], default: "json" },
+          },
+        ],
+        responses: {
+          200: {
+            description: "The session record",
+            content: {
+              "application/json": { schema: { $ref: "#/components/schemas/ListenSessionExport" } },
+              "text/markdown": { schema: { type: "string" } },
+            },
+          },
           ...standardResponses,
         },
         security: publicSecurity,
@@ -811,7 +984,122 @@ export const openapi = buildOpenApi({
         security: publicSecurity,
       },
     },
+    "/api/v1/turns": {
+      get: {
+        operationId: "listTurns",
+        tags: ["quality"],
+        summary: "The turn log behind the Quality view",
+        description:
+          "Recent turns, newest first, filterable by outcome so an operator can go straight to the " +
+          "turns that handed off or tripped a safety guard. Question text is stored only for turns " +
+          "that passed the input guard: a guard trip records the reason and nothing else.",
+        parameters: [
+          { name: "prospect", in: "query", schema: { type: "string", pattern: prospectKeyPattern } },
+          {
+            name: "outcome",
+            in: "query",
+            schema: { type: "string", enum: ["answered", "handoff", "guard"] },
+          },
+          { name: "source", in: "query", schema: { type: "string", enum: ["voice-answer", "golden-eval"] } },
+          { name: "reason", in: "query", schema: { type: "string", maxLength: 60 } },
+          { name: "limit", in: "query", schema: { type: "integer", minimum: 1, maximum: 500, default: 100 } },
+          { name: "offset", in: "query", schema: { type: "integer", minimum: 0, default: 0 } },
+        ],
+        responses: {
+          200: jsonResponse({
+            type: "object",
+            required: ["items", "total", "reasons"],
+            properties: {
+              items: { type: "array", items: { $ref: "#/components/schemas/TurnRecord" } },
+              total: { type: "integer" },
+              reasons: {
+                type: "array",
+                description: "Handoff and guard reasons in the window, most frequent first",
+                items: {
+                  type: "object",
+                  required: ["reason", "count", "guard"],
+                  properties: {
+                    reason: { type: "string" },
+                    count: { type: "integer" },
+                    guard: { type: "boolean" },
+                  },
+                },
+              },
+            },
+          }),
+          ...standardResponses,
+        },
+        security: publicSecurity,
+      },
+    },
+    "/api/v1/knowledge": {
+      get: {
+        operationId: "getKnowledge",
+        tags: ["quality"],
+        summary: "What a prospect is grounded in, and whether its golden gate is open",
+        description:
+          "Backs the Knowledge view: the Knowledge Box a prospect answers from (id partially masked — " +
+          "the full id is admin-only), its connectivity, the models in play, the golden set, and the " +
+          "most recent golden run.",
+        parameters: [
+          {
+            name: "prospect",
+            in: "query",
+            required: true,
+            schema: { type: "string", pattern: prospectKeyPattern },
+          },
+        ],
+        responses: {
+          200: jsonResponse({ $ref: "#/components/schemas/KnowledgeStatus" }),
+          ...standardResponses,
+        },
+        security: publicSecurity,
+      },
+    },
+    "/api/v1/integrations": {
+      get: {
+        operationId: "listIntegrations",
+        tags: ["system"],
+        summary: "Which optional integrations this deployment has configured",
+        description:
+          "Booleans and non-secret detail only — never a credential. Backs the Settings view so a " +
+          "partner can see at a glance why the microphone or the avatar pane is unavailable.",
+        responses: {
+          200: jsonResponse({
+            type: "object",
+            required: ["items"],
+            properties: {
+              items: { type: "array", items: { $ref: "#/components/schemas/IntegrationStatus" } },
+            },
+          }),
+          ...standardResponses,
+        },
+        security: publicSecurity,
+      },
+    },
     "/api/v1/golden-evals": {
+      get: {
+        operationId: "listGoldenEvals",
+        tags: ["quality"],
+        summary: "Golden-run history",
+        parameters: [
+          { name: "prospect", in: "query", schema: { type: "string", pattern: prospectKeyPattern } },
+          { name: "limit", in: "query", schema: { type: "integer", minimum: 1, maximum: 100, default: 25 } },
+          { name: "offset", in: "query", schema: { type: "integer", minimum: 0, default: 0 } },
+        ],
+        responses: {
+          200: jsonResponse({
+            type: "object",
+            required: ["items", "total"],
+            properties: {
+              items: { type: "array", items: { $ref: "#/components/schemas/GoldenEvalSummary" } },
+              total: { type: "integer" },
+            },
+          }),
+          ...standardResponses,
+        },
+        security: publicSecurity,
+      },
       post: {
         operationId: "createGoldenEval",
         tags: ["quality"],

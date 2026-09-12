@@ -95,6 +95,43 @@ export interface ListenSessionView {
   transcriptTotal: number;
 }
 
+/** The full record of one call, as `GET /api/v1/listen/sessions/{id}/export` returns it. */
+export interface ListenSessionExport {
+  id: string;
+  createdAt: string;
+  updatedAt: string;
+  endedAt?: string;
+  prospect: string;
+  locale?: string;
+  generative_model?: string;
+  metadata?: Record<string, unknown>;
+  status: "live" | "ended";
+  durationSec: number;
+  brief: unknown | null;
+  briefVersion: number;
+  briefHistory: BriefSnapshot[];
+  citations: Citation[];
+  stats: ListenStats;
+  transcript: TranscriptEntry[];
+}
+
+export type ListenSortKey = "started" | "updated" | "refreshes" | "duration";
+
+/** Filters behind the Conversations list. */
+export interface ListenQuery {
+  prospect?: string;
+  status?: "live" | "ended";
+  /** Free text over prospect, brief topic/summary and the transcript. */
+  q?: string;
+  /** ISO date-times bounding when the session started. */
+  from?: string;
+  to?: string;
+  sort?: ListenSortKey;
+  order?: "asc" | "desc";
+  limit?: number;
+  offset?: number;
+}
+
 export type ListenEvent =
   | { type: "transcript"; entries: TranscriptEntry[]; stats: ListenStats }
   | { type: "brief"; brief: unknown; version: number; citations: Citation[]; stats: ListenStats }
@@ -306,6 +343,61 @@ export class ListenService {
     return this.col
       .list({ filter: (s) => !opts.prospect || s.prospect === opts.prospect, limit: opts.limit ?? 25 })
       .map((s) => this.view(s, 0));
+  }
+
+  /**
+   * The Conversations list: filter, search, sort and page over stored sessions.
+   *
+   * Search covers what an operator actually remembers about a call — who it was for, what the
+   * brief decided the topic was, and words that were said — rather than only the id.
+   */
+  query(opts: ListenQuery = {}): { items: ListenSessionView[]; total: number } {
+    const needle = (opts.q ?? "").trim().toLowerCase();
+    const from = opts.from ? Date.parse(opts.from) : Number.NaN;
+    const to = opts.to ? Date.parse(opts.to) : Number.NaN;
+    const matches = this.col.list().filter((s) => {
+      if (opts.prospect && s.prospect !== opts.prospect) return false;
+      if (opts.status && s.status !== opts.status) return false;
+      const started = Date.parse(s.createdAt);
+      if (!Number.isNaN(from) && started < from) return false;
+      if (!Number.isNaN(to) && started > to) return false;
+      return !needle || sessionHaystack(s).includes(needle);
+    });
+    const dir = opts.order === "asc" ? 1 : -1;
+    const key = opts.sort ?? "started";
+    matches.sort((a, b) => dir * (sortValue(a, key) - sortValue(b, key)));
+    const offset = Math.max(0, opts.offset ?? 0);
+    const limit = Math.max(1, Math.min(opts.limit ?? 25, 200));
+    return {
+      total: matches.length,
+      items: matches.slice(offset, offset + limit).map((s) => this.view(s, 0)),
+    };
+  }
+
+  /** The whole record of one call — what "export the conversation" means. */
+  exportSession(id: string): ListenSessionExport {
+    const s = this.require(id);
+    return {
+      id: s.id,
+      createdAt: s.createdAt,
+      updatedAt: s.updatedAt,
+      endedAt: s.endedAt,
+      prospect: s.prospect,
+      locale: s.locale,
+      generative_model: s.generative_model,
+      metadata: s.metadata,
+      status: s.status,
+      durationSec: Math.max(
+        0,
+        Math.round((Date.parse(s.endedAt ?? s.updatedAt) - Date.parse(s.createdAt)) / 1000),
+      ),
+      brief: s.brief,
+      briefVersion: s.briefVersion,
+      briefHistory: s.briefHistory,
+      citations: s.citations,
+      stats: s.stats,
+      transcript: s.transcript,
+    };
   }
 
   /** The API projection: no throttle bookkeeping, transcript trimmed to a tail. */
@@ -546,6 +638,24 @@ export class ListenService {
     for (const t of this.timers.values()) clearTimeout(t);
     this.timers.clear();
   }
+}
+
+/** Lowercased text a Conversations search runs against: who, what the brief said, what was said. */
+export function sessionHaystack(s: ListenSession): string {
+  const b = (s.brief ?? {}) as Record<string, unknown>;
+  const briefText = ["topic", "summary", "their_goal", "caller_profile", "stage"]
+    .map((k) => (typeof b[k] === "string" ? (b[k] as string) : ""))
+    .join(" ");
+  const transcript = s.transcript.map((t) => t.text).join(" ");
+  const cites = s.citations.map((c) => c.title).join(" ");
+  return `${s.id} ${s.prospect} ${briefText} ${cites} ${transcript}`.toLowerCase();
+}
+
+function sortValue(s: ListenSession, key: ListenSortKey): number {
+  if (key === "updated") return Date.parse(s.updatedAt);
+  if (key === "refreshes") return s.stats.refreshes;
+  if (key === "duration") return Date.parse(s.endedAt ?? s.updatedAt) - Date.parse(s.createdAt);
+  return Date.parse(s.createdAt);
 }
 
 /** A brief is worth showing when it carries something a person can read. */

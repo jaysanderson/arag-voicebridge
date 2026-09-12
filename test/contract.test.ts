@@ -94,6 +94,25 @@ describe("responses validate against the spec", () => {
       (await client.get(`/api/v1/listen/sessions/${id}`)).json,
     );
     check("/api/v1/listen/sessions", "get", 200, (await client.get("/api/v1/listen/sessions")).json);
+    check(
+      "/api/v1/listen/sessions",
+      "get",
+      200,
+      (
+        await client.get(
+          "/api/v1/listen/sessions?prospect=progress&status=live&q=stainless&sort=updated&order=asc&limit=5&offset=0",
+        )
+      ).json,
+    );
+    check(
+      "/api/v1/listen/sessions/{id}/export",
+      "get",
+      200,
+      (await client.get(`/api/v1/listen/sessions/${id}/export`)).json,
+    );
+    const md = await client.get(`/api/v1/listen/sessions/${id}/export?format=markdown`);
+    expect(md.status).toBe(200);
+    expect(String(md.text)).toContain("# Conversation");
     const ended = await client.request("DELETE", `/api/v1/listen/sessions/${id}`);
     check("/api/v1/listen/sessions/{id}", "delete", 200, ended.json);
     check(
@@ -127,6 +146,20 @@ describe("responses validate against the spec", () => {
     check("/api/v1/prospects/{key}", "get", 200, (await client.get("/api/v1/prospects/progress")).json);
     check("/api/v1/models", "get", 200, (await client.get("/api/v1/models?prospect=progress")).json);
     check("/api/v1/metrics", "get", 200, (await client.get("/api/v1/metrics")).json);
+    check("/api/v1/integrations", "get", 200, (await client.get("/api/v1/integrations")).json);
+  });
+
+  it("the workspace surfaces: turn log, knowledge and golden history", async () => {
+    await client.post("/api/v1/voice-answer", { prospect: "progress", question: "What is binder jetting?" });
+    check("/api/v1/turns", "get", 200, (await client.get("/api/v1/turns")).json);
+    check(
+      "/api/v1/turns",
+      "get",
+      200,
+      (await client.get("/api/v1/turns?prospect=progress&outcome=handoff&limit=10&offset=0")).json,
+    );
+    check("/api/v1/knowledge", "get", 200, (await client.get("/api/v1/knowledge?prospect=progress")).json);
+    check("/api/v1/golden-evals", "get", 200, (await client.get("/api/v1/golden-evals")).json);
   });
 
   it("jobs and golden evaluations", async () => {
