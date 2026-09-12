@@ -54,7 +54,7 @@ or reverse proxy needs exactly two things configured correctly:
   own address (which would otherwise let every client behind the gateway share one bucket). Set
   `TRUST_PROXY=none` only when there is no reverse proxy at all and the connecting socket address
   is already the real client.
-- **`ALLOWED_ORIGINS`** — same-origin requests (the demo console and admin panel, served by
+- **`ALLOWED_ORIGINS`** — same-origin requests (the workspace and Operator, served by
   VoiceBridge itself) never send an `Origin` header on same-origin `GET`s and so are unaffected;
   cross-origin browser clients (an embedded widget on a separate marketing site, for example) need
   their origin listed explicitly, since the default is same-origin only.

@@ -108,9 +108,12 @@ customer's specific configuration" — there is no generic pass/fail for it.
       gap, but it means the turn log is not a complete conversation transcript by design.
 - [ ] Confirm who has access to this data. The operator view (`/admin/`, `GET /api/v1/admin/turns`)
       is protected only by `ADMIN_TOKEN`, a single shared secret, not per-operator accounts or
-      audit-logged access — and the same turn records are also readable via the Quality page's turn
-      log (`GET /api/v1/turns`), which is `auth: "api"`, the same posture as `voice-answer`: open to
-      anyone who can reach the host if `API_KEYS` is unset.
+      audit-logged access. The Quality page reads the same records through `GET /api/v1/turns`,
+      which is never anonymous — it requires a same-origin session, an API key or the admin token
+      even when `API_KEYS` is unset — but a session is minted by anyone who can load the page, so
+      on an internet-reachable deployment with `API_KEYS` unset that is still everyone. Set
+      `API_KEYS`, or put the deployment behind your own authentication, before real conversations
+      run through it.
 
 ## Real-time listening (agent-assist)
 

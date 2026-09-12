@@ -40,7 +40,7 @@ text and the telephony webhook. See
 
 **How long does it take to add a new prospect (customer/demo target)?**
 No code change and no redeploy: a registry entry, a provisioning call, a golden set, and a pass
-through the demo gate — all through the admin panel or a handful of API calls. See
+through the demo gate — all through `/prospects/` and Knowledge, or a handful of API calls. See
 [`../business/walkthrough-admin.md`](walkthrough-admin.md) and
 [`../developer/extension-points.md`](../developer/extension-points.md) for the full ritual.
 

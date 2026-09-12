@@ -171,13 +171,14 @@ describe("responses validate against the spec", () => {
 
   it("the workspace surfaces: turn log, knowledge and golden history", async () => {
     await client.post("/api/v1/voice-answer", { prospect: "progress", question: "What is binder jetting?" });
-    check("/api/v1/turns", "get", 200, (await client.get("/api/v1/turns")).json);
+    check("/api/v1/turns", "get", 200, (await client.get("/api/v1/turns", admin)).json);
     check(
       "/api/v1/turns",
       "get",
       200,
-      (await client.get("/api/v1/turns?prospect=progress&outcome=handoff&limit=10&offset=0")).json,
+      (await client.get("/api/v1/turns?prospect=progress&outcome=handoff&limit=10&offset=0", admin)).json,
     );
+    check("/api/v1/turns", "get", 401, (await client.get("/api/v1/turns")).json);
     check("/api/v1/knowledge", "get", 200, (await client.get("/api/v1/knowledge?prospect=progress")).json);
     check("/api/v1/golden-evals", "get", 200, (await client.get("/api/v1/golden-evals")).json);
   });

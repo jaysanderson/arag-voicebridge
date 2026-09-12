@@ -84,9 +84,10 @@ A citation in the public API (`{title, url, score}`, `src/types.ts`) is derived 
 `retrieval` item's `resources` map, not from the `citations` item — `retrievalItems()`
 (`src/services/citations.ts`) walks every resource's `fields → paragraphs`, takes the best
 (maximum) paragraph score as the resource's score, and best-effort resolves a URL from
-`origin.url`/`uri`/`metadata.url`. Citations are **data only** — they are surfaced in the console
-and the admin turn log, never spoken (see [`architecture.md`](architecture.md) and
-`shapeForVoice()`'s marker-stripping in `src/services/voiceShape.ts`).
+`origin.url`/`uri`/`metadata.url`. Citations are **data only** — they are surfaced in Live,
+Conversations and the Quality/Operator turn logs, never spoken (see
+[`architecture.md`](architecture.md) and `shapeForVoice()`'s marker-stripping in
+`src/services/voiceShape.ts`).
 
 ## The structured live brief and `answer_json_schema`
 
@@ -171,8 +172,8 @@ and why it matters for what a reviewer can be told this system guarantees.
 
 ## Models and schema endpoints
 
-`GET /api/v1/models?prospect=<key>` (`src/services/models.ts::fetchModels()`) powers the model
-picker in both the console (Listen tab) and the admin provisioning flow. It calls two ARAG
+`GET /api/v1/models?prospect=<key>` (`src/services/models.ts::fetchModels()`) powers Live's brief
+model picker. It calls two ARAG
 endpoints tolerantly, because their schema shapes vary between zones and are not something
 VoiceBridge controls:
 

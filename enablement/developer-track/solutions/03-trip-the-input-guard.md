@@ -67,8 +67,8 @@ question: guardTrip ? undefined : body.question.slice(0, 500),
 empty string or a placeholder — the field is simply never written. This matches `DECISIONS.md`
 V-08 to the letter: "the turn log stores the question text only for turns that passed the input
 guard... an injected or unsafe prompt is exactly the text you do not want to retain and re-display
-in an admin panel." The decision is made once, in the route, at write time — the admin UI's
+in an admin panel." The decision is made once, in the route, at write time — the Quality page's
 "redacted (guard trip)" label is just a friendly rendering of an absent field, not the mechanism
-that protects the data. If you only read the admin panel, you might assume the text was captured
+that protects the data. If you only read the turn log, you might assume the text was captured
 and merely hidden; reading the actual JSON (and the code) shows it never existed in the store at
 all, which is a meaningfully stronger guarantee.

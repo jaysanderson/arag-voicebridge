@@ -37,11 +37,11 @@ Three modes, checked by the platform's `App.authenticate()`/`enforceAuth()`
 | `api` | `/api/v1/listen/sessions*` (create, append, read, list, events, end), `/api/v1/voice-answer`, `/api/v1/prospects`, `/api/v1/brief`, `/api/v1/metrics`, `/api/v1/jobs/*`, realtime bootstrap | Open when `API_KEYS` is unset; requires `X-API-Key`, `Authorization: Bearer <key>`, an admin token, or a signed `arag_session` cookie once `API_KEYS` is set |
 | `admin` | every `/api/v1/admin/*` route, including `/api/v1/admin/listen-sessions` | Always requires `ADMIN_TOKEN` — `Authorization: Bearer <token>` or the `arag_admin` cookie set by `POST /api/v1/admin/login`. If `ADMIN_TOKEN` is unset, admin routes answer `403` (disabled, not "open") |
 
-The `arag_session` cookie exists so the demo console can call `auth: "api"` routes without ever
+The `arag_session` cookie exists so the workspace can call `auth: "api"` routes without ever
 holding an API key in browser JS: it calls `POST /api/v1/session` once at boot, which issues an
 HMAC-signed, 12-hour cookie (`App.issueSession()`); the secret is `ADMIN_TOKEN` if set, otherwise a
 random value generated once per process boot (so restarting the server invalidates existing
-sessions — acceptable for a demo console, not a claim of durable session security).
+sessions — acceptable for a self-hosted workspace, not a claim of durable session security).
 
 **Credential-minting routes are never anonymous, even when `API_KEYS` is unset.** `POST
 /api/v1/scribe-token` and `POST /api/v1/avatar/sessions` both call `requireIdentified()`
@@ -101,7 +101,7 @@ default), anyone who can reach the deployment and knows (or enumerates) a sessio
 transcript and brief, append to it, or end it — the same shape of exposure documented below for
 `POST /api/v1/voice-answer`, extended to conversation content rather than just spend. `GET
 /api/v1/listen/sessions` additionally lists **recent sessions for a prospect** with no id needed at
-all. Set `API_KEYS` (or rely on the console's own `arag_session` cookie, which is scoped to the
+all. Set `API_KEYS` (or rely on the workspace's own `arag_session` cookie, which is scoped to the
 browser that created it but is not a per-session credential either) before treating session content
 as anything other than shared-within-the-deployment.
 

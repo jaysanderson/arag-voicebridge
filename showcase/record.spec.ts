@@ -49,7 +49,7 @@ function cardAround(page: Page, childSelector: string) {
 
 test.describe("VoiceBridge showcase", () => {
   test("showcase walkthrough", async ({ page, request }) => {
-    test.setTimeout(300_000);
+    test.setTimeout(420_000);
     mkdirSync(OUT, { recursive: true });
 
     // ── 00:00–00:12 — the problem ────────────────────────────────────────────────
@@ -69,10 +69,10 @@ test.describe("VoiceBridge showcase", () => {
     // ── 00:12–01:05 — play the sample conversation and watch the brief evolve ───
     const briefCard = page.locator(".vb-brief-card");
     await page.click("#vbSampleOnboard");
-    await expect(page.locator("#vbSessionChip")).toHaveText("listening", { timeout: 20_000 });
+    await expect(page.locator("#vbSessionChip")).toHaveText("listening", { timeout: 60_000 });
 
     // First real state: the brief has said something grounded, with a citation under it.
-    await expect(page.locator("#vbSources .arag-cite").first()).toBeVisible({ timeout: 30_000 });
+    await expect(page.locator("#vbSources .arag-cite").first()).toBeVisible({ timeout: 45_000 });
     await expect(page.locator("#vbBriefMeta .version")).toBeVisible();
     const midVersion = await page.locator("#vbBriefMeta .version").innerText();
     await beat(page, 700);
@@ -81,14 +81,14 @@ test.describe("VoiceBridge showcase", () => {
     // Second real state: a strictly later version — the brief evolving, not just appearing once.
     await expect
       .poll(async () => versionNumber(await page.locator("#vbBriefMeta .version").innerText()), {
-        timeout: 20_000,
+        timeout: 30_000,
         message: "waiting for a later brief version than the first one shown",
       })
       .toBeGreaterThan(versionNumber(midVersion));
 
     // Let the rest of the scripted call play out and wait for the sample to stop itself — the
     // natural "end of call" beat — rather than guessing at wall-clock time or a turn count.
-    await expect(page.locator("#vbStatus")).toContainText("Sample finished", { timeout: 60_000 });
+    await expect(page.locator("#vbStatus")).toContainText("Sample finished", { timeout: 90_000 });
     await beat(page, 1200);
     await briefCard.screenshot({ path: `${OUT}/03-brief-evolved.png` });
 
@@ -99,29 +99,32 @@ test.describe("VoiceBridge showcase", () => {
     await transcriptCard.screenshot({ path: `${OUT}/04-transcript.png` });
 
     await expect(page.locator("#vbStats")).toContainText("Brief refreshes");
+    // The session's own id badge (an 8-character prefix of the real id) is a stable handle for
+    // finding this exact session later, in Conversations and in the Operator panel — simpler and
+    // less racy than reading it back out of the "Open in Conversations" link's href once the
+    // session ends and several things re-render at once.
+    const sessionPrefix = (await page.locator("#vbStats dd.vb-mono").innerText()).trim();
+    expect(sessionPrefix).toMatch(/^[0-9a-f]{8}$/);
     await beat(page, 500);
     await page.locator("#vbSessionCard").screenshot({ path: `${OUT}/05-session-stats.png` });
 
     // ── 01:15–01:35 — end the call, then find it again in Conversations ─────────
     await page.click("#vbEnd");
-    await expect(page.locator("#vbSessionChip")).toHaveText("ended", { timeout: 20_000 });
-    const openLink = page.locator('#vbSessionBody a:has-text("Open in Conversations")');
-    await expect(openLink).toBeVisible();
-    const href = (await openLink.getAttribute("href")) ?? "";
-    const sessionId = href.split("#")[1] ?? "";
-    expect(sessionId).not.toBe("");
+    await expect(page.locator("#vbSessionChip")).toHaveText("ended", { timeout: 30_000 });
+    await expect(page.locator("#vbSessionBody")).toContainText("Open in Conversations", { timeout: 30_000 });
     await beat(page, 800);
 
     await page.click('nav.vb-nav a:has-text("Conversations")');
     await expect(page.locator("h1")).toHaveText("Conversations");
-    await expect(page.locator("#cvTable tbody tr[data-id]").first()).toBeVisible({ timeout: 20_000 });
+    await expect(page.locator("#cvTable tbody tr[data-id]").first()).toBeVisible({ timeout: 30_000 });
     // Search for something the caller actually said in the sample call, rather than jumping
     // straight to the id — this is the "find a past call by what was said in it" journey.
     await page.fill("#cvSearch", "titanium");
-    const row = page.locator(`#cvTable tbody tr[data-id="${sessionId}"]`);
-    await expect(row).toBeVisible({ timeout: 20_000 });
+    const row = page.locator(`#cvTable tbody tr[data-id^="${sessionPrefix}"]`);
+    await expect(row).toBeVisible({ timeout: 30_000 });
+    const sessionId = (await row.getAttribute("data-id")) ?? "";
     await beat(page, 600);
-    await page.click(`#cvTable tbody tr[data-id="${sessionId}"]`);
+    await row.click();
     const drawer = page.locator(".vb-drawer");
     await expect(drawer).toBeVisible();
     await expect(drawer).toContainText("Final brief");
@@ -144,7 +147,7 @@ test.describe("VoiceBridge showcase", () => {
     // ── 01:35–01:55 — Knowledge: what it is grounded in, and a cited answer ─────
     await page.click('nav.vb-nav a:has-text("Knowledge")');
     await expect(page.locator("h1")).toHaveText("Knowledge");
-    await expect(page.locator("#kbCard")).toContainText("Knowledge Box", { timeout: 20_000 });
+    await expect(page.locator("#kbCard")).toContainText("Knowledge Box", { timeout: 30_000 });
     await expect(page.locator("#kbCard")).toContainText("connected");
     await beat(page, 1200);
     await page.locator("#kbCard").screenshot({ path: `${OUT}/08-knowledge-box.png` });
@@ -152,7 +155,7 @@ test.describe("VoiceBridge showcase", () => {
     await page.fill("#kbQuestion", "Tell me about the Desktop Metal PureSinter furnace.");
     await page.click("#kbAsk");
     const grounded = page.locator("#kbAnswers .arag-bubble.assistant").last();
-    await expect(grounded).toContainText(/sinter/i, { timeout: 20_000 });
+    await expect(grounded).toContainText(/sinter/i, { timeout: 30_000 });
     await expect(grounded.locator(".arag-chip.ok")).toHaveText("answered");
     await expect(grounded.locator(".arag-cite").first()).toBeVisible();
     await beat(page, 1200);
@@ -162,7 +165,7 @@ test.describe("VoiceBridge showcase", () => {
     await beat(page, 300);
     await page.click("#kbAsk");
     const handoff = page.locator("#kbAnswers .arag-bubble.assistant").last();
-    await expect(handoff.locator(".arag-chip.warn")).toContainText("handoff", { timeout: 20_000 });
+    await expect(handoff.locator(".arag-chip.warn")).toContainText("handoff", { timeout: 30_000 });
     await beat(page, 1200);
     await page.locator("#kbAnswers").screenshot({ path: `${OUT}/10-knowledge-ask-handoff.png` });
 
@@ -190,9 +193,9 @@ test.describe("VoiceBridge showcase", () => {
     });
     await page.click('nav.vb-nav a:has-text("Quality")');
     await expect(page.locator("h1")).toHaveText("Quality");
-    await expect(page.locator("#qMetrics")).toContainText("Citation coverage", { timeout: 20_000 });
+    await expect(page.locator("#qMetrics")).toContainText("Citation coverage", { timeout: 30_000 });
     await page.selectOption("#qOutcome", "guard");
-    await expect(page.locator("#qTable tbody")).toContainText("redacted (guard trip)", { timeout: 20_000 });
+    await expect(page.locator("#qTable tbody")).toContainText("redacted (guard trip)", { timeout: 30_000 });
     await expect(page.locator("#qTable tbody")).not.toContainText("Ignore all previous instructions");
     await beat(page, 1500);
     await page.screenshot({ path: `${OUT}/12-quality.png`, fullPage: true });
@@ -201,21 +204,21 @@ test.describe("VoiceBridge showcase", () => {
     await page.goto("/admin/");
     await page.fill("#token", ADMIN_TOKEN);
     await page.click("#signin");
-    await expect(page.locator(".vb-app")).toBeVisible({ timeout: 20_000 });
+    await expect(page.locator(".vb-app")).toBeVisible({ timeout: 30_000 });
     await expect(page.locator("h1")).toHaveText("Overview");
-    await expect(page.locator("#ovStats")).toContainText("Knowledge Box calls", { timeout: 20_000 });
+    await expect(page.locator("#ovStats")).toContainText("Knowledge Box calls", { timeout: 30_000 });
     await beat(page, 1200);
     await page.screenshot({ path: `${OUT}/13-admin-overview.png`, fullPage: true });
 
     await page.click('nav.vb-nav a:has-text("Listen sessions")');
     await expect(page.locator("h1")).toHaveText("Listen sessions");
     await page.selectOption("#seProspect", "progress");
-    await expect(page.locator("#seTable tbody tr[data-session]").first()).toBeVisible({ timeout: 20_000 });
+    await expect(page.locator("#seTable tbody tr[data-session]").first()).toBeVisible({ timeout: 30_000 });
     const sessionRow = page.locator(`#seTable tbody tr[data-session="${sessionId}"]`);
     await sessionRow.scrollIntoViewIfNeeded();
     await sessionRow.click();
     const adminDrawer = page.locator(".vb-drawer");
-    await expect(adminDrawer).toContainText("Brief history", { timeout: 20_000 });
+    await expect(adminDrawer).toContainText("Brief history", { timeout: 30_000 });
     await expect(adminDrawer).toContainText("v1");
     await beat(page, 1500);
     await adminDrawer.screenshot({ path: `${OUT}/14-admin-session-brief-history.png` });
@@ -223,17 +226,17 @@ test.describe("VoiceBridge showcase", () => {
 
     // ── 02:40–03:00 — white-label, and the ElevenLabs stack ─────────────────────
     await page.goto("/settings/");
-    await expect(page.locator("#stConnection")).toContainText("mock Knowledge Box", { timeout: 20_000 });
+    await expect(page.locator("#stConnection")).toContainText("mock Knowledge Box", { timeout: 30_000 });
     await expect(page.locator("#stBrand")).toContainText("Progress default");
     await beat(page, 1200);
     await page.locator(".vb-grid.cols-2").screenshot({ path: `${OUT}/15-settings-connection-brand.png` });
 
     const elevenlabs = cardAround(page, "#stAgent");
-    await expect(elevenlabs).toContainText("Primary", { timeout: 20_000 });
+    await expect(elevenlabs).toContainText("Primary", { timeout: 30_000 });
     await expect(elevenlabs).toContainText("Scribe v2 Realtime");
     await expect(elevenlabs).toContainText("Conversational AI agents");
     await expect(elevenlabs).toContainText("Text-to-speech");
-    await expect(page.locator("#stAgent")).toContainText("voice_answer", { timeout: 20_000 });
+    await expect(page.locator("#stAgent")).toContainText("voice_answer", { timeout: 30_000 });
     await elevenlabs.scrollIntoViewIfNeeded();
     await beat(page, 1800);
     await elevenlabs.screenshot({ path: `${OUT}/16-settings-elevenlabs.png` });

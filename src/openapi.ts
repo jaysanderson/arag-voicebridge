@@ -1136,7 +1136,10 @@ export const openapi = buildOpenApi({
         description:
           "Recent turns, newest first, filterable by outcome so an operator can go straight to the " +
           "turns that handed off or tripped a safety guard. Question text is stored only for turns " +
-          "that passed the input guard: a guard trip records the reason and nothing else.",
+          "that passed the input guard: a guard trip records the reason and nothing else.\n\n" +
+          "Never anonymous, even when `API_KEYS` is unset: a same-origin session (`POST " +
+          "/api/v1/session`, which the workspace calls at boot), an API key or the admin token is " +
+          "required, because the questions people asked are not public.",
         parameters: [
           { name: "prospect", in: "query", schema: { type: "string", pattern: prospectKeyPattern } },
           {

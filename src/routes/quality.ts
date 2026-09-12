@@ -1,9 +1,32 @@
 /** Quality surface: live metrics and golden-set evaluations (run as jobs). */
-import { type App, notFound, operationSchemas } from "../../vendor/arag-platform/src/index.ts";
+import {
+  type App,
+  type Ctx,
+  notFound,
+  operationSchemas,
+  unauthorized,
+} from "../../vendor/arag-platform/src/index.ts";
 import { openapi } from "../openapi.ts";
 import type { ProductDeps } from "../server.ts";
 
 export const GOLDEN_EVAL_JOB = "golden-eval";
+
+/**
+ * Reading the turn log is never anonymous, even on a deployment that leaves `/api/v1` open.
+ *
+ * Before the Quality view existed, the questions people asked were admin-only. Moving the turn log
+ * into the workspace must not turn "open API" into "anyone who can reach the host can read what
+ * callers asked". A same-origin session (which the workspace mints at boot) is enough; a passing
+ * stranger with curl is not.
+ */
+function requireIdentified(ctx: Ctx): void {
+  if (!ctx.auth.admin && !ctx.auth.apiKey && !ctx.auth.session) {
+    throw unauthorized(
+      "A session or API key is required to read the turn log. Call POST /api/v1/session first " +
+        "(the workspace does this automatically).",
+    );
+  }
+}
 
 /** Show enough of an identifier to recognise it, not enough to reuse it. */
 export function maskId(id: string): string {
@@ -23,6 +46,7 @@ export function registerQualityRoutes(app: App, deps: ProductDeps): void {
   app.get(
     "/api/v1/turns",
     (ctx) => {
+      requireIdentified(ctx);
       const q = ctx.queryObj as Record<string, unknown>;
       const prospect = q.prospect as string | undefined;
       const { items, total } = deps.metrics.query({

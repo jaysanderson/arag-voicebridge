@@ -46,8 +46,8 @@ beyond a controlled demo audience.
 `ListenService` trusts whatever `speaker` string a caller sends on each chunk (truncated to 40
 characters) — it does not distinguish voices, infer turns, or correct a mislabelled speaker itself.
 A single realtime STT stream that does not diarise its own audio (most single-channel transcription
-does not) will label every chunk with whatever the client hardcodes (`"caller"`, in the console's
-own mic path), and the brief's inferred `caller_profile`/`their_goal` fields are reasoning about
+does not) will label every chunk with whatever the client hardcodes (`"caller"`, in Live's
+own microphone path), and the brief's inferred `caller_profile`/`their_goal` fields are reasoning about
 "the other person" from conversational content, not from a verified speaker identity. A source that
 needs real diarisation must do it upstream (a diarising STT vendor, or per-channel audio in a
 telephony bridge) and send the correct label per chunk — the API has no diarisation step of its own
@@ -114,8 +114,8 @@ re-verified against the live `progress` Knowledge Box since the platform rewrite
 opt-in, credentialed, 3-question live check) exists precisely to close that gap before a real demo,
 but it is not part of `make check`/CI and is not run automatically. Treat "the golden set passes"
 as a statement about the mock corpus and the pipeline logic until `make smoke` (or a full
-`make eval` against the live KB) has actually been run for a given prospect. The Listen tab's own
-zero-credential demo (`SAMPLE_CONVERSATION` in `public/app.js`, `DECISIONS.md` V-16) was written
+`make eval` against the live KB) has actually been run for a given prospect. Live's own
+zero-credential demo (`SAMPLE` in `public/app/live.js`, `DECISIONS.md` V-16) was written
 against this same eight-document mock corpus for the same reason — the brief it produces is a
 faithful demonstration of the throttle and the evolving-brief mechanics against real ARAG semantics
 in mock mode, not evidence that a live Knowledge Box's grounding quality has been checked for a
@@ -128,9 +128,12 @@ request/response field names were written against LiveAvatar's *public documenta
 confirmed against a live, paid LiveAvatar account — the module's own header comment flags this
 explicitly (`⚠️ LIVE-VERIFY`). Endpoint paths are environment-overridable specifically so a
 mismatch can be fixed without touching any other file, but until someone with a LiveAvatar API key
-runs it end to end, treat the avatar pane as "built to spec, not yet live-verified" rather than
-"known working" — unlike the ARAG `/ask` integration, whose NDJSON item shapes *were* confirmed live
-during the original build (see [`arag-integration.md`](arag-integration.md)).
+runs it end to end, treat `POST /api/v1/avatar/sessions` as "built to spec, not yet live-verified"
+rather than "known working" — unlike the ARAG `/ask` integration, whose NDJSON item shapes *were*
+confirmed live during the original build (see [`arag-integration.md`](arag-integration.md)). The
+current workspace has no pane or toggle that calls this route at all — see
+[`../developer/integrations.md`](../developer/integrations.md) — so today it is reachable only by a
+custom client calling the API directly.
 
 ## Single-writer JSON store
 

@@ -17,10 +17,10 @@ deeper.
 - [`developer/examples.md`](developer/examples.md) — copy-pasteable curl/JS for real-time
   listening (sessions, chunks, SSE, polling, the admin view) and for every other public route, plus
   the canonical voice-answer prompt and the ElevenLabs agent tool definition.
-- [`developer/integrations.md`](developer/integrations.md) — the listen-session API is
-  transcription-source-agnostic; ElevenLabs Scribe, Conversational AI, and LiveAvatar + LiveKit are
-  the optional integrations layered on top, with exact env vars and what degrades when each is
-  missing.
+- [`developer/integrations.md`](developer/integrations.md) — the listen-session and voice-answer
+  APIs stay vendor-neutral; ElevenLabs (Scribe, Conversational AI, text-to-speech) is the default
+  voice and transcription stack layered on top, LiveAvatar + LiveKit an API-only extra, with exact
+  env vars and what degrades when each is missing.
 - [`developer/extension-points.md`](developer/extension-points.md) — where to slot in a different
   throttle policy, a different session store, per-session models, post-call summarisation hooks, a
   real moderation classifier, per-prospect credentials, another voice platform, custom golden
@@ -68,9 +68,10 @@ deeper.
 - [`business/when-to-use.md`](business/when-to-use.md) — the shape of problem this fits, and where
   it doesn't.
 - [`business/walkthrough-demo.md`](business/walkthrough-demo.md) — a click-by-click tour of the
-  console, including the golden-set runner.
+  workspace (Live, Conversations, Knowledge, Prospects, Quality, Settings), including the
+  golden-set runner.
 - [`business/walkthrough-admin.md`](business/walkthrough-admin.md) — a click-by-click tour of the
-  admin panel, including onboarding a new prospect.
+  Operator views, including onboarding a new prospect.
 - [`business/faq.md`](business/faq.md) — common questions, answered precisely rather than glossed.
 
 ## Product marketing

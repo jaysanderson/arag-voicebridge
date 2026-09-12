@@ -63,9 +63,10 @@ Three things, all visible rather than asserted:
 
 Everything that differs between one deployment target and the next — which Knowledge Box, which
 voice, which greeting, which handoff line, which test questions — lives in one registry entry, not
-in code. Adding a new one is an admin API call (or a few clicks in the admin panel), not a
-redeploy: see [`walkthrough-admin.md`](walkthrough-admin.md) for what that looks like in practice
-and [`../developer/extension-points.md`](../developer/extension-points.md) for the full onboarding
+in code. Adding a new one is an admin API call (or a few clicks under Prospects, once unlocked with
+the deployment's admin token), not a redeploy: see [`walkthrough-admin.md`](walkthrough-admin.md)
+for what that looks like in practice and
+[`../developer/extension-points.md`](../developer/extension-points.md) for the full onboarding
 ritual.
 
 ## Where to go next
