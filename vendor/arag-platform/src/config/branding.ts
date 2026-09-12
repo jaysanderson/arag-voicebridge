@@ -19,9 +19,14 @@ export interface Branding {
   supportUrl: string;
 }
 
-const COLOR_RE = /^(#[0-9a-f]{3,8}|rgb\(.*\)|hsl\(.*\)|[a-z]{3,20})$/i;
+/**
+ * Strict colour grammar: hex, `rgb()/rgba()` and `hsl()/hsla()` with numeric arguments only, or a CSS
+ * colour keyword. Values are safe to interpolate into a <style> element or `style` attribute.
+ */
+const COLOR_RE =
+  /^(#[0-9a-f]{3,8}|rgba?\(\s*\d{1,3}%?\s*[,\s]\s*\d{1,3}%?\s*[,\s]\s*\d{1,3}%?\s*(?:[,/]\s*(?:0|1|0?\.\d+|\d{1,3}%)\s*)?\)|hsla?\(\s*\d{1,3}(?:deg)?\s*[,\s]\s*\d{1,3}%\s*[,\s]\s*\d{1,3}%\s*(?:[,/]\s*(?:0|1|0?\.\d+|\d{1,3}%)\s*)?\)|[a-z]{3,20})$/i;
 
-/** Parse BRAND_* variables (falls back to `defaults`). Invalid colours are ignored. */
+/** Parse BRAND_* variables (falls back to `defaults`). Invalid colours are ignored (strict grammar, safe for CSS interpolation). */
 export function readBranding(
   src: Record<string, string | undefined> = process.env,
   defaults: Partial<Branding> = {},
@@ -50,6 +55,11 @@ export function readBranding(
 }
 
 /** OpenAPI schema for the branding payload (add under components.schemas.Branding). */
+/** True when a string is a colour the platform accepts (same grammar as readBranding). */
+export function isSafeColor(v: string): boolean {
+  return COLOR_RE.test(v);
+}
+
 export const BrandingSchema = {
   type: "object",
   required: ["productName", "poweredBy"],
