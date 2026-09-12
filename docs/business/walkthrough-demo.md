@@ -1,113 +1,187 @@
-# Walkthrough: the demo console
+# Walkthrough: the workspace
 
-The console lives at `/` and consumes only `/api/v1` — it never holds an ARAG or ElevenLabs
-credential. Everything below matches the current build; screenshots are deliberately omitted here
-(see [`../../showcase/`](../../showcase/) for a recorded walkthrough) so this page stays accurate
-as the UI evolves.
+VoiceBridge is a workspace, not a single page: a dark, Progress-branded left rail (**Live**,
+**Conversations**, **Knowledge**, **Prospects**, **Quality**, **Settings**) with one section mounted
+per view under `/`, `/conversations/`, `/knowledge/`, `/prospects/`, `/quality/` and `/settings/`.
+Every view consumes only `/api/v1` — the browser never holds an ARAG or ElevenLabs credential.
+Screenshots are deliberately omitted here (see [`../../showcase/`](../../showcase/) for a recorded
+walkthrough) so this page stays accurate as the UI evolves.
 
-## Layout
+A **prospect switcher** in the top bar (present on every section except Live's first run) is which
+Knowledge Box/persona you're driving; switching it reloads whatever the current section shows for
+that prospect. A link at the foot of the rail opens **Operator** — the same shell, with the
+deployment's own views — see [`walkthrough-admin.md`](walkthrough-admin.md).
 
-Across the top: a **prospect selector** (which Knowledge Box/persona you're driving), a greeting
-line, and a **Run golden set** button. Below that, four tabs, in the order they're presented:
-**Listen**, **Ask**, **Call**, **Golden set**. Along the bottom, a live **metrics footer** (turn
-count, p50/p95 total latency, p50 first-token latency, handoff rate, citation coverage) that
-refreshes every 5 seconds and reflects the deflection pipeline's own turns.
+## Live — the hero path
 
-Switching prospects reloads the greeting, the suggested-question chips on the Ask tab (drawn from
-that prospect's own golden questions), the model picker for Listen mode, and resets the golden-set
-tab to "not run."
+The workspace opens here (`/`). This is real-time listening: feed a conversation in from a
+microphone, a telephony webhook, or typed text, and one evolving, cited brief fills the main pane —
+who you're speaking to, what they want, the knowledge that matters right now, and what to say next.
+Live itself never speaks; it's a copilot for whoever's on the call, not a participant in it.
 
-## Listen — the hero path
+### First run
 
-The console opens here. This is real-time listening: feed a conversation in and a structured brief
-on the right keeps up with it — who you're speaking to, what they want, the knowledge that matters
-right now, and what to say next. The console itself stays silent; it's a copilot for whoever's on
-the call, not a participant in it.
+Before any session has been started, Live shows an onboarding panel: what it will do (listen as the
+conversation moves and keep one short, cited brief on screen), what it will not do (it never speaks;
+nothing is injected into the call; a failed refresh leaves the last good brief in place), and a
+**Play sample conversation** button. Press **Skip** instead and the panel is replaced by the three
+starting points described below; either way the choice is remembered in the browser, so it only
+shows once.
 
-1. Press **Play sample conversation**. No credentials are needed — this plays a scripted
-   3D-printing discovery call (a machine shop asking about metal 3D printing and post-print
-   sintering) line by line into a fresh listen session, roughly one line every 1.4 seconds, so you
-   can watch the brief build in real time rather than all at once. Press **Stop sample** to end it
-   early.
-2. Watch the **live brief** panel on the right fill in as fields become available: a topic line, a
-   goal/stage chip row, a one-line profile of the other person, a summary, key points drawn only
-   from the knowledge base, suggested questions to ask, suggested things to say, and — when
-   something in the knowledge base genuinely fits — recommended products. A running list of citation
-   chips accumulates underneath as new sources are used across the call.
-3. The **session stats** panel on the left shows the session id, chunks received, brief refreshes,
-   refreshes the server-side throttle skipped, and the latency of the last refresh — this is the
-   same throttling and the same numbers a real telephony or STT integration would produce, not a
-   demo-only shortcut.
-4. Instead of (or alongside) the sample, paste or type your own conversation into the **paste or
-   type a conversation** box — one line per turn, prefixed with `caller:` or `agent:` — and press
-   **Send to session** to feed it into the same session and watch the brief react.
-5. With an ElevenLabs key configured on the server, **Listen to microphone** opens a real realtime
-   transcription feed instead of the sample or typed text — what's said out loud appears under
-   "hearing" as an interim hypothesis, and finalised text feeds the same session API as everything
-   else on this tab.
-6. The **Brief model** dropdown lets you pick a specific fast model for the brief; the default,
-   "Auto — fast default," is exactly what a live call would use.
-7. Press **End session** when you're done. The session, its final brief, its full citation list and
-   its stats are kept for review — see [`walkthrough-admin.md`](walkthrough-admin.md#listen-sessions)
-   for where to find them afterwards.
+### Play the sample conversation
 
-## Ask (text) — the deflection pipeline, as a text turn
+No credentials are needed. Pressing **Play sample conversation** (in the onboarding panel, or later
+from the starter row) feeds a scripted nine-line discovery call — a machine shop asking about metal
+3D printing and post-print sintering — into a fresh listen session, one line roughly every 1.4
+seconds, so the brief builds in view rather than all at once. **Stop sample** ends it early.
 
-This tab runs the deflection follow-on: the identical pipeline a phone call would use
-(`DECISIONS.md` V-07), with no ElevenLabs credentials needed at all.
+### Watch the brief evolve
 
-1. Type a question, or click one of the suggested chips below the input, and press **Ask** (or hit
-   Enter).
-2. The right-hand panel, "What just happened," lights up each pipeline step as the turn completes:
-   input safety guard, ARAG ask, deterministic handoff check, voice shaping, citations, output
-   safety guard. A step shows as skipped rather than failed when it legitimately didn't run (e.g.
-   voice shaping is skipped on a handoff, since there is nothing to shape).
-3. The answer bubble shows the exact spoken line, a badge (**answered** or **handoff · reason**),
-   any citation chips (hover one to see its score), and the latency breakdown (retrieve / first
-   token / total).
-4. The facts panel on the right restates handoff status, citation count and the three latency
-   numbers for the most recent turn.
+The **Brief** card is the main pane. As lines arrive, fields appear and are refined in place rather
+than replaced from scratch: a topic line, a one-line profile of the other person, their goal and the
+stage of the call, a summary, key points drawn only from the knowledge base, suggested questions to
+ask, suggested answers to give, and — when something genuinely fits — recommended products. A
+**Sources used so far** row accumulates citation chips underneath as new material is drawn on across
+the call. The chip beside "Brief" reads **no session** → **listening** (with a live dot) → **ended**,
+and a small note under the title reads "showing the last good brief" if a refresh comes back empty —
+the brief is never blanked by a failed or throttled refresh.
 
-Try one in-scope question (e.g. "Tell me about the Desktop Metal PureSinter furnace" against the
-`progress` prospect) and one deliberately out-of-scope one (e.g. "What is the capital of France?")
-back to back — this is the fastest way to show both halves of the deflection story: grounded answers
-with citations, and a clean, honest handoff instead of a guess.
+Alongside the brief, the **Session** card shows the session id, how long ago it started, turns
+heard, brief refreshes, refreshes the server-side throttle skipped, and the latency of the last
+refresh (with a running p50/p95) — the same numbers a real telephony integration would produce. The
+**Transcript** card lists every turn heard so far, with an interim "hearing…" line while the
+microphone is live.
 
-## Call — real voice
+### The three ways to start listening
 
-Requires the selected prospect to have a real `agent_id` configured (not the shipped placeholder).
-Without one, pressing **Start call** shows "No ElevenLabs agent configured for this prospect — use
-the Ask tab, or set agent_id in Admin" rather than failing silently.
+Before a session exists, the main pane offers three starting points:
 
-With a configured agent: **Start call** connects over WebRTC via the vendored ElevenLabs client
-(`public/vendor/elevenlabs-client.js` — never a runtime CDN import, see
-[`../architecture/security-model.md`](../architecture/security-model.md)). The chip next to "Voice
-call" tracks connection state (connecting → connected → listening/agent speaking); the transcript
-panel on the right logs both sides of the conversation as the agent relays it. A **Voice** dropdown
-(populated from `GET /api/v1/voices`, which needs `ELEVENLABS_API_KEY`) lets you preview a
-different ElevenLabs voice as a session override — if the agent's own configuration doesn't allow
-voice overrides, the console detects the resulting error and falls back to the agent's default
-voice automatically rather than leaving the call broken.
+- **Microphone** — transcribed live by ElevenLabs Scribe v2 Realtime and fed straight into the
+  session. Disabled with "Needs an ElevenLabs key on this deployment" when `ELEVENLABS_API_KEY`
+  isn't set. Once connected, a small strip shows the connection state, the model, the detected
+  language and the latency of the last final transcript — the number that decides whether the brief
+  can keep up.
+- **Telephony webhook** — opens a drawer with copy-paste `curl` for the whole lifecycle (open a
+  session on connect, post transcript chunks as they're recognised, read the brief over SSE or by
+  polling, end the call) — this is the vendor-neutral path a phone system, meeting bot or any speech
+  service drives with a plain HTTP `POST`.
+- **Typed or pasted** — a text box, one line per turn, prefixed `caller:`/`agent:`. Press **Send to
+  session** (or Cmd/Ctrl+Enter) and a session starts on the first line if one isn't open yet. This is
+  the fastest way to see what the brief would have shown for a real transcript, with no
+  credentials at all.
 
-## Golden set — the deflection quality gate
+A **Brief model** dropdown (populated from the prospect's available models) lets you pick a specific
+fast model for the brief; the default, "Auto — fast default," is what a live call would use.
 
-The demo gate for the deflection pipeline: every one of the selected prospect's golden questions
-runs through the same pipeline the live agent uses, and each must behave correctly — an answerable
-question must answer with at least one citation in three spoken sentences or fewer, with no URLs or
-citation markers leaking through; an out-of-scope question must hand off. There is no equivalent
-automated gate for the Listen brief today — see [`when-to-use.md`](when-to-use.md).
+### The optional spoken cue
 
-1. Press **Run golden set** (from this tab, or the shortcut button in the top bar — either starts
-   the same job and switches to this tab automatically).
-2. A job timeline shows live progress as each question completes (this uses the same
-   Server-Sent-Events job stream a script or CI pipeline would consume — see
-   [`../developer/examples.md`](../developer/examples.md#metrics-and-golden-evaluations)).
-3. When the job finishes, the table fills in: each question, what was expected, pass/fail (a
-   failing row also lists exactly which check failed — e.g. "≤3 sentences [4]" or "no citation
-   markers"), and its latency in milliseconds.
-4. The chip at the top of the panel reads **gate open** (green) when every question passed, or
-   **gate closed** (red) otherwise, alongside a summary line (`N/M passed · p50 … ms · p95 … ms`).
+Once a session is open and the deployment has an ElevenLabs key, a **Read the next line aloud**
+toggle appears. Off by default: turning it on speaks the single most useful line of the current
+brief (a suggested answer, or failing that a suggested question) into the handler's own ear over
+ElevenLabs text-to-speech each time the brief updates — never into the call. Turning the deployment's
+key off later degrades this silently: the toggle stays available but a spoken cue simply fails
+quietly.
 
-A prospect should not be answered on its own live until its gate reads open — see
-[`../developer/extension-points.md`](../developer/extension-points.md) for the full onboarding
-ritual this gate is the last step of.
+### The voice agent, in a drawer
+
+**Voice agent call**, in the page's top-right action, opens a drawer for the follow-on capability:
+speaking to the agent directly and hearing grounded answers back, over ElevenLabs Conversational AI.
+It calls this service's `POST /api/v1/voice-answer` as a custom server tool, so every spoken answer
+still comes from the Knowledge Box, and it hands off by the deterministic rule when the content
+can't support an answer. It needs the selected prospect's `agent_id` configured (not the shipped
+placeholder) — without one, the drawer explains what to set and where (Prospects), rather than
+failing silently. This is a tool available from Live, not a destination of its own: supporting the
+person on the call is the product.
+
+### End and save
+
+Press **End and save** when you're done. The session, its final brief, its full citation list, its
+brief history and its stats are kept — **Open in Conversations** takes you straight to its detail.
+
+## Conversations — every past session
+
+`/conversations/` lists every session this deployment has listened to, newest first. A search box
+searches what was actually said — the prospect, the brief's topic/summary/goal/profile, the
+accumulated source titles, and the transcript itself — so a session can be found by its content, not
+just its id. Filter by prospect or by status (live/ended), sort any column (started, refreshes,
+duration), and page through the results; a result count and a `1–20 of N` range sit above and below
+the table.
+
+Click a row (or press Enter on it) to open its detail drawer:
+
+- **Stats** — prospect, duration, brief version reached, refreshes (with throttled/failed counts),
+  refresh p50/p95, and the number of sources.
+- **Final brief** — exactly what Live showed when the session ended, with its citation chips.
+- **How the brief evolved** — a timeline of every refresh that produced a usable brief, newest
+  first: version number, how long ago, how long that refresh took, and the topic/summary line at
+  that point. This is the practical way to answer "how did the brief get here" rather than only
+  "what does it look like now."
+- **Transcript** — the whole conversation, speaker by speaker.
+
+**Export** downloads the same record as Markdown — a handover note with the final brief, its brief
+history, the transcript and the citations — via `GET /api/v1/listen/sessions/{id}/export`.
+
+## Knowledge — what a prospect is grounded in
+
+`/knowledge/` is the content behind every brief and every answer for the selected prospect:
+
+- **Knowledge Box** card — connectivity (with round-trip time), a partially masked Knowledge Box id,
+  region, resource count, the answer and brief models in play, the reranker, and whether a stored
+  search configuration is provisioned or the pipeline is still building the request inline.
+- **Golden set** — the gate before a prospect is trusted to answer on its own: every one of its test
+  questions runs through the exact pipeline a live turn uses. Press **Run golden set** to fire a job
+  and watch its live timeline; when it finishes, the table fills in with each question, what was
+  expected, pass/fail (a failing row names the specific check that failed), and its latency. The chip
+  at the top reads **gate open** or **gate closed**. **Run history** below it lists every past run
+  for this prospect — click one to see its full per-question detail.
+- **Ask it something** — the same nine-step turn pipeline a spoken call would run, as a text
+  question. Suggested chips (drawn from the prospect's own golden questions, including one
+  deliberately out-of-scope one) are a fast way to see both halves of the story: a grounded, cited
+  answer, and a clean handoff instead of a guess. Each answer shows its citations and the
+  retrieve/first-token/total latency breakdown.
+
+## Quality — is it behaving?
+
+`/quality/` reports on the deflection pipeline (voice-answer calls and golden-eval runs together,
+filterable to either): turns in the current window, p50/p95 total latency, p50 first-token latency,
+handoff rate, citation coverage, and guard-trip rate, with what each number means spelled out beside
+it. The **turn log** lists individual turns with an outcome filter (answered / handed off / guard
+trip) and a source filter (live turns / golden runs); click a row to open its detail — the full
+latency breakdown, the outcome and reason, and the question text (or, pointedly, "not stored" when a
+safety guard fired instead of a real question reaching the Knowledge Box). A **why turns did not
+answer** panel ranks handoff and guard-trip reasons by frequency, so a reviewer can see what's
+actually driving handoffs rather than reading through the log row by row. There is still no
+equivalent automated gate for the live brief itself — see [`when-to-use.md`](when-to-use.md) — so a
+brief's own quality is read from its history in Conversations, not from a number here.
+
+## Prospects — the registry
+
+`/prospects/` lists every prospect this deployment answers for: its Knowledge Box, region, whether a
+search configuration is provisioned, its golden-question count, and whether it carries its own brand
+overlay. The registry is **read-only** until the deployment's admin token is entered inline — the
+same gate the Operator views use. Unlocked, **Edit**/**New** open a JSON editor over the prospect
+configuration, with **Provision search config** and **Delete** alongside it; a brand overlay (a
+`brand` block layered on the deployment's own `BRAND_*` configuration) is set the same way. Without
+the token, a **View** link still shows a prospect's non-secret detail — its locale, greeting,
+handoff line and golden questions.
+
+## Settings — connection, branding and integrations
+
+`/settings/` is where a deployment's own configuration is read back: **Connection** (the Knowledge
+Box's health, endpoint and answer model, and how many prospects are registered — per-prospect detail
+lives under Operator → Connection), a **Branding** preview built from the same `BRAND_*` variables
+Settings itself reads, and **Integrations** — every optional integration this deployment ships with,
+whether it's configured, and exactly which capability each one powers here (Scribe transcription,
+the voice agent, text-to-speech, the video-avatar pane), plus the ElevenLabs agent's exact tool
+definition and router system prompt to paste into the ElevenLabs dashboard for the selected
+prospect. An **API** card links to the interactive API reference and shows the one `curl` command
+that opens a listening session — everything this workspace does, your own application can do the
+same way.
+
+## Where to go next
+
+- [`walkthrough-admin.md`](walkthrough-admin.md) — the Operator views, in the same shell.
+- [`../developer/integrations.md`](../developer/integrations.md) — setting up the ElevenLabs agent
+  referenced from Live's voice-agent drawer and Settings' Integrations card.
+- [`../developer/extension-points.md`](../developer/extension-points.md) — the full onboarding
+  ritual a new prospect goes through, of which the golden set on Knowledge is the last step.

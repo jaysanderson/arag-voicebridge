@@ -343,6 +343,57 @@ Auth: ApiKey or Bearer
 
 ## realtime
 
+### `POST /api/v1/speech`
+
+**Speak a line of the brief aloud (ElevenLabs text-to-speech)** — The optional spoken brief: Live can read the grounded brief, or the single line the handler could say next, into their own ear. Nothing is ever injected into the call — this returns audio to the browser that asked for it, and it is off by default.
+
+Synthesis happens server-side so the ElevenLabs key never reaches a browser. Returns 503 when the deployment has no key, which is how the toggle knows to stay hidden.
+
+Request body (`application/json`): object
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `text` | string | yes |  |
+| `voice_id` | string |  | Overrides the configured voice |
+| `prospect` | string |  | Use this prospect's configured voice |
+
+Responses:
+
+- `200` The spoken line — `audio/mpeg` string
+- `400` Validation failed — `application/problem+json` [Problem](#problem)
+- `401` Authentication required — `application/problem+json` [Problem](#problem)
+- `403` Forbidden — `application/problem+json` [Problem](#problem)
+- `404` Not found — `application/problem+json` [Problem](#problem)
+- `429` Rate limited — `application/problem+json` [Problem](#problem)
+- `502` Upstream (ARAG) error — `application/problem+json` [Problem](#problem)
+- `503` ElevenLabs is not configured on this deployment; the toggle stays hidden — `application/problem+json` [Problem](#problem)
+
+Auth: ApiKey or Bearer
+
+
+### `GET /api/v1/voice-agent`
+
+**The ElevenLabs agent configuration for a prospect** — VoiceBridge is not a voice platform. The agent lives in ElevenLabs Conversational AI and calls `POST /api/v1/voice-answer` as a custom server tool, so every spoken answer still comes from the Knowledge Box. This returns exactly what has to be pasted into the ElevenLabs dashboard — tool definition and router prompt — derived from the registry.
+
+Parameters:
+
+| Name | In | Type | Required | Description |
+|---|---|---|---|---|
+| `prospect` | query | string | yes |  |
+
+Responses:
+
+- `200` OK — `application/json` [VoiceAgentConfig](#voiceagentconfig)
+- `400` Validation failed — `application/problem+json` [Problem](#problem)
+- `401` Authentication required — `application/problem+json` [Problem](#problem)
+- `403` Forbidden — `application/problem+json` [Problem](#problem)
+- `404` Not found — `application/problem+json` [Problem](#problem)
+- `429` Rate limited — `application/problem+json` [Problem](#problem)
+- `502` Upstream (ARAG) error — `application/problem+json` [Problem](#problem)
+
+Auth: ApiKey or Bearer
+
+
 ### `POST /api/v1/scribe-token`
 
 **Mint a single-use ElevenLabs Scribe realtime token** — Requires a same-origin session (`POST /api/v1/session`), an API key or the admin token, and is rate-limited separately: the token spends ElevenLabs quota. The browser never holds the ElevenLabs API key.
@@ -1183,9 +1234,41 @@ What the selected prospect is grounded in, and whether its golden gate is open
 | `id` | string (`arag`, `elevenlabs`, `livekit`, `liveavatar`) | yes |  |
 | `name` | string | yes |  |
 | `configured` | boolean | yes |  |
+| `primary` | boolean |  | True for the integrations the out-of-the-box experience is built on |
 | `purpose` | string | yes | What this integration unlocks in the product |
 | `detail` | string |  | Non-secret endpoint or mode, never a credential |
 | `setup` | string |  | The environment variables that switch it on |
+| `capabilities` | array of object |  | What this deployment actually uses the integration for |
+| `config` | object |  | Non-secret settings in force (models, endpoints, ids) — never a credential |
+
+### VoiceAgentTool
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `name` | string | yes |  |
+| `method` | string | yes |  |
+| `url` | string | yes |  |
+| `timeoutMs` | integer | yes | Must exceed VOICE_TURN_TIMEOUT_MS |
+| `bodySchema` | object | yes |  |
+
+### VoiceAgentConfig
+
+Everything needed to wire an ElevenLabs Conversational AI agent to this deployment: the custom server tool it calls, and the router prompt that keeps it from answering by itself.
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `prospect` | string | yes |  |
+| `display_name` | string | yes |  |
+| `provider` | string (`elevenlabs`) | yes |  |
+| `agent_id` | string,null |  | Non-secret agent id, null when unwired |
+| `ready` | boolean |  | An agent id is set and is not the example placeholder |
+| `configured` | boolean |  | This deployment holds an ElevenLabs key |
+| `voice_id` | string,null |  |  |
+| `greeting` | string |  |  |
+| `handoff_msg` | string |  |  |
+| `tool` | [VoiceAgentTool](#voiceagenttool) | yes |  |
+| `system_prompt` | string | yes |  |
+| `docs_url` | string |  |  |
 
 ### LatencyMs
 

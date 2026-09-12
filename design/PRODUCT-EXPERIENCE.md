@@ -288,66 +288,65 @@ where a screen departs from it.
 
 ### 3.1 The shell (every screen, workspace and operator)
 
+A **dark rail** on the left carrying the brand and the navigation, and a light content column with
+a sticky top bar. The rail is `--arag-ink-950`; it is the only large dark surface in the product,
+which is what makes the Progress wordmark and the green liveness dots read without either of them
+having to fight white.
+
 ```
-┌──────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
-│ ▐PROGRESS AGENTIC RAG▌                                      mock  ·  service online  ·  API docs  ·  Help     │ 36
-├──────────────────────┬───────────────────────────────────────────────────────────────────────────────────────┤
-│  GroundLine          │  Live                                        [ Prospect: Progress ▾ ]  [ End session ] │ 64
-│  live conversation   ├───────────────────────────────────────────────────────────────────────────────────────┤
-│                      │                                                                                        │
-│  ┌────────────────┐  │                                                                                        │
-│  │ Progress     ▾ │  │                                                                                        │
-│  └────────────────┘  │                          content area, 32 px gutters                                   │
-│                      │                                                                                        │
-│  ▸ Live         ● v4 │                                                                                        │
-│    Conversations     │                                                                                        │
-│    Knowledge         │                                                                                        │
-│    Prospects         │                                                                                        │
-│    Quality           │                                                                                        │
-│    Settings          │                                                                                        │
-│                      │                                                                                        │
-│  ──────────────────  │                                                                                        │
-│    Operator      ↗   │                                                                                        │
-│                      │                                                                                        │
-│                      │                                                                                        │
-│  ────────────────────│                                                                                        │
-│  Open source ·       │                                                                                        │
-│  Apache-2.0          │                                                                                        │
-│  v0.2.0              │                                                                                        │
-└──────────────────────┴───────────────────────────────────────────────────────────────────────────────────────┘
- ◄──── 248 px ────►    ◄────────────────────────── 1192 px ──────────────────────────────────────────────────►
+┌──────────────────────┬───────────────────────────────────────────────────────────────────────────────┐
+│▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓│  Live                                   mock   ● service online   [ End session ]│ 56
+│▓ ▐PROGRESS AGENTIC ▌ │───────────────────────────────────────────────────────────────────────────────│
+│▓   ▐RAG▌             │                                                                                │
+│▓                     │                                                                                │
+│▓ GroundLine          │                                                                                │
+│▓ live conversation   │                                                                                │
+│▓                     │                                                                                │
+│▓ ┌─────────────────┐ │                        content column, 32 px gutters                           │
+│▓ │ Progress      ▾ │ │                        max width 1440 px                                       │
+│▓ └─────────────────┘ │                                                                                │
+│▓                     │                                                                                │
+│▓▐ Live          ● v4 │                                                                                │
+│▓  Conversations      │                                                                                │
+│▓  Knowledge          │                                                                                │
+│▓  Prospects          │                                                                                │
+│▓  Quality            │                                                                                │
+│▓  Settings           │                                                                                │
+│▓                     │                                                                                │
+│▓  ─────────────────  │                                                                                │
+│▓  Operator        ↗  │                                                                                │
+│▓  API docs        ↗  │                                                                                │
+│▓                     │                                                                                │
+│▓  ─────────────────  │                                                                                │
+│▓  Open source ·      │                                                                                │
+│▓  Apache-2.0         │                                                                                │
+│▓  v0.2.0             │                                                                                │
+└──────────────────────┴───────────────────────────────────────────────────────────────────────────────┘
+ ◄──── 244 px ────►     ◄────────────────────────── remaining width ───────────────────────────────────►
 ```
 
-| Region | Source |
-|---|---|
-| Utility band, left | `public/brand/arag-logo-alt.svg` at `height:16px` (white + `#5ce500`). Hidden with the whole band when `GET /api/v1/branding → poweredBy === false`. |
-| Utility band, right | `mock`/`live` chip from `GET /readyz → arag.mock`; `<arag-status endpoint="/readyz">`; **API docs** → `branding.docsUrl`; **Help** → `branding.supportUrl` (item hidden when empty). |
-| Sidebar identity | `branding.logoUrl` as `<img style="height:26px">` when set, else `branding.productName` as text (default `GroundLine`); `branding.tagline` beneath at 11 px. |
-| Prospect switcher | `GET /api/v1/prospects → items[].key/display_name`. Writes `?prospect=`. |
-| Nav | Static manifest in `app/shell.js`. Active item by `location.pathname`. |
-| `● v4` on Live | `sessionStorage["vb.session"]` + last `brief` SSE event → `briefVersion`. Dot colour `--vb-live`. Absent when no session. |
-| Operator link | `/admin/`. Shown always; the operator area itself gates on `ADMIN_TOKEN`. |
-| Sidebar footer | `branding.footerText` (default `Open source · Apache-2.0`) + `GET /readyz → version`. |
-| Page header | Breadcrumb/title from the page; right cluster is page actions. |
-
-**When `poweredBy === false`** the utility band is removed entirely and its right-hand cluster
-(env chip, status, API docs, Help) moves into the page header's right side, before the page
-actions, separated by a 1 px divider. The Progress wordmark then appears nowhere in the chrome.
-This is the only branding-driven layout change; everything else is token swaps.
+| Region | Class | Source |
+|---|---|---|
+| Rail wordmark | `.vb-rail > .brand` | `public/brand/arag-logo-alt.svg` at `height:18px` (white + `#5ce500`) — the dark-surface variant. Replaced by `branding.logoUrl` when set; removed entirely when `branding.poweredBy === false` (§11.6 covers where the credit then lives). |
+| Product identity | `.vb-rail > .product` | `branding.productName` (default `GroundLine`) at 15 px 600, `branding.tagline` at 11 px in `--vb-rail-fg`. |
+| Prospect switcher | `.vb-rail select` | `GET /api/v1/prospects → items[].key/display_name`. Writes `?prospect=` and `localStorage["vb.prospect"]`. |
+| Nav | `.vb-nav a` | Static manifest in `app/shell.js`. Active item: `aria-current="page"`, a 3 px `--vb-accent` left indicator and full-white text. |
+| `● v4` on Live | `.vb-live-dot` + `.vb-chip-live` | `sessionStorage["vb.session"]` and the last `brief` SSE event → `briefVersion`. Absent when no session is open. |
+| Rail footer | `.vb-rail-foot` | `branding.footerText` (default `Open source · Apache-2.0`), `GET /readyz → version`, and the Progress credit line when `poweredBy` is on and a partner logo has replaced the wordmark. |
+| Top bar | `.vb-topbar` | Page title (`h1`), breadcrumb when nested, the `mock`/`live` chip from `GET /readyz → arag.mock`, `<arag-status endpoint="/readyz">`, then the page actions. |
+| Content | `.vb-content` / `.vb-main` | 32 px gutters, `max-width: var(--vb-content-max)` = 1440 px, centred beyond that. |
 
 **Responsive (applies to every screen)**
 
 | Breakpoint | Shell | Tables | Multi-pane content |
 |---|---|---|---|
-| ≥ 1280 px | Sidebar 248 px, expanded | All columns | Full three-pane |
-| 1100–1280 px | Sidebar collapses to a 64 px icon rail; labels become `title` tooltips and `aria-label`; the prospect switcher becomes an icon button opening a popover | All columns | Three-pane, rails narrow to 240/300 |
-| 700–1100 px | Sidebar becomes off-canvas behind a menu button in the page header; a scrim closes it; focus is trapped while open | Columns marked `data-priority="3"` are hidden | Two columns; the third pane moves below |
-| < 700 px | As above; page header wraps to two rows; page actions collapse into an overflow "More" menu | Table becomes stacked cards: each row a `.arag-datatable.cards` article with label/value pairs | Single column; panes become a `.vb-segmented` switcher, first pane default |
+| ≥ 1280 px | Rail 244 px, expanded | All columns | Full three-pane |
+| 1100–1280 px | Rail stays expanded; panes narrow first | All columns | Three-pane, rails narrow to 240 / 300 |
+| 700–1100 px | Rail becomes off-canvas behind `.vb-menu-btn` in the top bar; a backdrop closes it; focus is trapped while open | Columns marked `data-priority="3"` are hidden | Two columns; the third pane moves below |
+| < 700 px | As above; the top bar wraps to two rows; page actions collapse into an overflow menu | `.vb-table-wrap` scrolls horizontally; the least useful columns are already hidden | Single column; panes become a `.vb-segmented` switcher, brief first |
 
 No horizontal page scroll at any width. Tables, the transcript and snippet blocks each get their
-own `overflow-x:auto` container.
-
----
+own scroll container.
 
 ### 3.2 Live — empty (no session)
 
@@ -488,7 +487,7 @@ The brief is the widest pane. "Hide controls" collapses the left rail and widens
 
 | Region | Source |
 |---|---|
-| `● listening` | SSE `status` events on `/api/v1/listen/sessions/{id}/events`; `live`/`ended`. Dot `--vb-live`, pulsing. |
+| `● listening` | SSE `status` events on `/api/v1/listen/sessions/{id}/events`; `live`/`ended`. Dot `--vb-accent`, pulsing. |
 | Source segmented control | Local. Switching does not end the session — a session may be fed from several sources at once, which is the point. |
 | Level meter + interim line | Microphone only. Interim text from the local Scribe socket before it is posted as `final:false`. |
 | Brief model | `GET /api/v1/models?prospect={key}` → `models[]`, `current`. Applies to the *next* refresh; changing it does not restart the session. |
@@ -597,7 +596,7 @@ Single request: `GET /api/v1/listen/sessions?q=&prospect=&status=&from=&to=&sort
 |---|---|---|---|
 | STARTED | `createdAt`, relative + absolute in `title` | 1 | 132 |
 | PROSPECT | `prospect`, resolved to `display_name` from `GET /api/v1/prospects` | 1 | 120 |
-| STATUS | `status` → `● live` (`--vb-live` dot) / `ended` | 1 | 88 |
+| STATUS | `status` → `● live` (`--vb-accent` dot) / `ended` | 1 | 88 |
 | TOPIC | `brief.topic`, truncated with `text-overflow:ellipsis`, `—` when `brief === null` | 1 | flex |
 | VER | `briefVersion` | 2 | 56 |
 | SRC | `citations.length` | 2 | 56 |
@@ -1028,7 +1027,7 @@ it"*. It is a **staleness indicator, not an error**.
 | State | Trigger | Brief pane | Indicator (top-right of the brief header) | Colour |
 |---|---|---|---|---|
 | **Waiting** | Session open, `briefVersion === 0` | Empty state: "Listening. The brief appears once there is enough conversation." | `● listening` | `--vb-live` |
-| **Fresh** | `brief` event received < 20 s ago | Brief, fully opaque | `Updated 3 s ago` with a `--vb-live` dot | green |
+| **Fresh** | `brief` event received < 20 s ago | Brief, fully opaque | `Updated 3 s ago` with a `--vb-accent` dot | green |
 | **Refreshing** | `status:refreshing` | Brief, unchanged, **not dimmed** | `Refreshing` with a pulsing `--arag-brand-500` dot | blue |
 | **Throttled** | `status:skipped`, reason `nothing-relevant-yet`, or the append response says `refresh:"skipped"` | Brief, unchanged | `Waiting for new conversation` | muted, no dot |
 | **Stale** | ≥ 20 s since the last `brief`, or one failed refresh | Brief, unchanged, **still fully opaque**, plus a 2 px amber top rail on the card | `Last good brief · updated 34 s ago` | amber |
@@ -1817,7 +1816,7 @@ driving the rail colour; `data-changed` on a section for the 400 ms wash.
 ```html
 <span class="vb-stale" data-state="stale"><span class="dot"></span><span class="txt">Last good brief · updated 34 s ago</span><button class="arag-btn ghost sm" data-retry hidden>Retry now</button></span>
 ```
-States exactly as §4.2. Colours: `--vb-live` (fresh/listening), `--arag-brand-500` pulsing
+States exactly as §4.2. Colours: `--vb-accent` (fresh/listening), `--arag-brand-500` pulsing
 (refreshing), `--arag-warn-fg` (stale/failing/reconnecting), `--arag-text-subtle` (waiting/ended).
 Never red.
 
@@ -1849,7 +1848,7 @@ card keeps its full text and gains a muted reason line — never hidden, because
 is the product's transport-independence claim.
 
 #### 23. `.vb-scribe .level` — microphone level meter
-Ten 3 px bars, `--vb-live` fill, driven from the Web Audio analyser at ~20 fps, `aria-hidden`
+Ten 3 px bars, `--vb-accent` fill, driven from the Web Audio analyser at ~20 fps, `aria-hidden`
 (the interim transcript line is the accessible signal). Frozen grey when paused.
 
 #### 24. `.vb-pipeline` — the six-step turn pipeline
@@ -1961,18 +1960,17 @@ measure 68 ch (the brief summary is the only prose that gets close).
 | `--vb-s2` | 8 | Control gaps, chip rows, list-item gaps |
 | `--vb-s3` | 12 | Card body inner stack, form field gaps |
 | `--vb-s4` | 16 | Card padding, section gaps inside a card |
-| `--vb-s5` | 20 | Pane gaps in a split layout |
-| `--vb-s6` | 24 | Between cards |
-| `--vb-s7` | 32 | Page gutters, between major sections |
-| `--vb-s8` | 48 | Empty-state vertical padding |
-| `--vb-s9` | 72 | Onboarding step vertical rhythm |
+| `--vb-s5` | 24 | Between cards, pane gaps |
+| `--vb-s6` | 32 | Page gutters, between major sections |
+| `--vb-s7` | 48 | Empty-state vertical padding, onboarding rhythm |
 
 Every margin, padding and gap in `ui-ext.css` must be one of these tokens. No arbitrary pixel
-values, with two allowed exceptions: hairline borders (1 px) and the 2 px status rails.
+values, with two allowed exceptions: hairline borders (1 px) and the 2–3 px status rails.
 
-Fixed dimensions: utility band 36, page header 64, sidebar 248 (rail 64), filter bar 48, toolbar
-36, table row 40 / 32 compact, table header row 32, nav item 34, button 32 (`sm` 24, `lg` 44),
-input 34, drawer widths 400 / 480 / 640, content gutter 32.
+Fixed dimensions, as tokens: `--vb-rail: 244px`, `--vb-topbar: 56px`,
+`--vb-content-max: 1440px`, `--vb-hairline: color-mix(in srgb, var(--arag-border) 70%, transparent)`.
+Unparameterised constants: filter bar 48, table row 40 / 32 compact, table header row 32, nav item
+34, button 32 (`sm` 24, `lg` 44), input 34, drawer widths 400 / 480 / 640, content gutter 32.
 
 ### 7.3 Colour roles
 
@@ -1992,34 +1990,44 @@ Structural colour is the kit's ink and brand blues. They are not changed.
 | Action wash | `--arag-brand-50` | `#eef1fd` | Active nav fill, hover rows, chip fills |
 | Warning | `--arag-warn-fg` / `--arag-warn-bg` | `#6b4e00` / `#fff3c2` | Stale brief, guard reasons, degraded banners |
 | Danger | `--arag-danger-fg` / `--arag-danger-bg` | `#8c1f2e` / `#ffe3e7` | Errors, destructive buttons |
-| **Liveness** | `--vb-live` = `var(--arag-accent-400)` | **`#5ce500`** | See below |
+| Rail background | `--vb-rail-bg` = `var(--arag-ink-950)` | `#00123c` | The navigation rail |
+| Rail text | `--vb-rail-fg` | `rgba(255,255,255,.74)` | Rail labels; active item goes to full white |
+| Rail hairline | `--vb-rail-hairline` | `rgba(255,255,255,.10)` | Dividers inside the rail |
+| **Accent / liveness** | `--vb-accent` | **`#5ce500`** | See below |
+| Readable green | `--vb-accent-ink` | **`#2f6b00`** | Green *text* and green glyphs on light surfaces |
+| Green wash | `--vb-accent-soft` | `#edffd9` | Success chip backgrounds (with `--vb-accent-ink` text) |
 
-`ui-ext.css` sets, at `:root`, `--arag-accent-400: #5ce500;` — the kit's only use of that token is
-the brand band dot, which the sidebar shell replaces with the wordmark, so the override is safe
-and confined. Because `applyBranding()` rewrites `--arag-accent-400` from `BRAND_ACCENT_COLOR`,
-a partner's accent colour automatically becomes their liveness colour. Progress green is therefore
-the default, not a hard-coded constant.
+Three tokens, three jobs, and the split is the whole point: `--vb-accent` is `#5ce500` and is
+**never used for text on a light surface** (contrast against white is ≈ 1.7 : 1 and fails at every
+size). Where green has to be *read* rather than *noticed* — a pass label, a "connected" word, a
+success chip — the colour is `--vb-accent-ink` `#2f6b00`, which passes AA at body size. On the
+dark rail, `--vb-accent` may carry small text and thin rules; contrast against `#00123c` is
+≈ 11 : 1.
+
+`BRAND_ACCENT_COLOR` overrides `--vb-accent` through `applyBranding()`, so a partner's accent
+becomes their liveness colour. `--vb-accent-ink` is recomputed from it at the same time (or falls
+back to `--arag-accent-fg` when the partner colour cannot be darkened safely), so the readable
+pairing survives a rebrand.
 
 #### Where `#5ce500` appears — the complete list
-1. The liveness dot on the sidebar **Live** item while a session is running.
+1. The 3 px active indicator on the rail's current nav item, and the liveness dot on the rail's **Live** item while a session is running.
 2. The `● listening` / `● live` status dot in the Live page header and in list rows.
 3. The freshness indicator dot in the **fresh** state.
 4. The 2 px left rail on the brief card that flashes for 600 ms on a new brief version.
 5. The microphone level meter bars.
 6. The `● connected` / `● configured` dot on Knowledge Box and integration rows.
-7. The `✓` glyph on a passing golden case and the pass chip's icon (the chip text stays
-   `--arag-accent-fg`, which is a dark green with real contrast).
+7. The `✓` glyph on a passing golden case (the label beside it is `--vb-accent-ink`).
 8. Inside `arag-logo.svg` / `arag-logo-alt.svg`, as the wordmark's own mark.
 9. On the dark utility band only, it may carry small text (e.g. the `live` environment chip) —
    contrast against `#00123c` is ≈ 11 : 1.
 
 #### Where `#5ce500` must never appear
-- Body text, labels, links, headings, or any text on a light surface (contrast vs `#ffffff` is
-  ≈ 1.7 : 1 — it fails at any size).
+- Body text, labels, links, headings, or any text on a light surface — use `--vb-accent-ink`
+  `#2f6b00` instead. `#5ce500` on white is ≈ 1.7 : 1 and fails at any size.
 - Any fill larger than 24 × 24 px behind text of any colour.
 - Button backgrounds, nav item backgrounds, table row highlights, selected states, focus rings.
 - Charts, bars or progress fills (`.arag-progress` uses `--arag-brand-500`; guard bars use amber).
-- Success *messages* — those use `--arag-accent-soft` / `--arag-accent-fg` from the kit.
+- Success *messages* — those use `--vb-accent-soft` with `--vb-accent-ink` text.
 - Error, warning or disabled states, ever.
 - As a second brand colour alongside a partner's `primaryColor`.
 
@@ -2034,21 +2042,20 @@ follow.
 
 | File | Surface | Height | Placement | Clear space |
 |---|---|---|---|---|
-| `arag-logo-alt.svg` (white + `#5ce500`) | Dark: the utility band, the onboarding hero panel, the operator sign-in card in dark theme | 16 px (band), 24 px (onboarding hero) | Band: left, 20 px from the container edge, vertically centred | ≥ 16 px on all sides |
-| `arag-logo.svg` (ink `#4b4e52` + `#5ce500`) | Light: Settings → Branding preview caption, the operator sign-in card in light theme, the `.vb-brandpreview` band strip | 20 px (sign-in), 14 px (preview strip) | Left-aligned with the card's content | ≥ 12 px on all sides |
+| `arag-logo-alt.svg` (white + `#5ce500`) | Dark: **the navigation rail**, the onboarding hero panel, the operator sign-in card | 18 px (rail), 24 px (onboarding hero) | Rail: top-left, 16 px inset, above the product name | ≥ 16 px on all sides |
+| `arag-logo.svg` (ink `#4b4e52` + `#5ce500`) | Light: Settings → Branding, the `.vb-brandpreview` strip, and the `.vb-powered` attribution line | 20 px (Settings), 14 px (preview strip) | Left-aligned with the card's content | ≥ 12 px on all sides |
 
 Rules:
 - Variant is chosen by **surface luminance, not by theme**. Implement with both `<img>` elements
   inside `.vb-wordmark` and CSS visibility driven by the surface class, so no JavaScript is
   involved and no flash occurs on theme change.
-- Below 700 px the band wordmark drops to 14 px; below 380 px it is replaced by nothing (the band
-  keeps only its right-hand actions) rather than being squeezed.
+- In the off-canvas rail below 1100 px the wordmark keeps its 18 px height; it is never squeezed.
 - `alt="Progress Agentic RAG"`; when the wordmark sits next to the product name it becomes
   `alt=""` with `aria-hidden="true"` to avoid a duplicate announcement.
-- **`BRAND_LOGO_URL` never replaces the Progress wordmark and the Progress wordmark never replaces
-  a partner logo.** They occupy different slots: the partner logo is the sidebar identity, the
-  Progress wordmark is the "built on" credit in the band. `poweredBy:false` removes the band and
-  with it the Progress wordmark; the partner logo is unaffected.
+- **`BRAND_LOGO_URL` replaces the wordmark in the rail's brand slot.** The Progress credit then
+  moves to the rail footer as the `.vb-powered` line ("Built on Progress Agentic RAG" with the
+  light-surface wordmark at 14 px where the footer is light, the alt variant in the dark rail).
+  `BRAND_POWERED_BY=0` removes the Progress mark and the credit line entirely, everywhere.
 - Partner logos are constrained to `max-height:26px; max-width:180px; object-fit:contain`. A logo
   that fails to load falls back to `branding.productName` as text — never a broken-image icon.
 
@@ -2153,7 +2160,7 @@ The kit's `[data-theme="dark"]` block is the base. `ui-ext.css` adds only:
 }
 ```
 
-- `--vb-live` stays `#5ce500`: on `#0b1220` the contrast is ≈ 13 : 1, so on dark surfaces it may
+- `--vb-accent` stays `#5ce500`: on `#0b1220` the contrast is ≈ 13 : 1, so on dark surfaces it may
   additionally carry small text and thin rules. It still never fills a large area behind text.
 - Theme is applied by `shell.js` from `localStorage["vb.theme"]` (`light` / `dark` / `system`)
   **before first paint**, by setting `data-theme` on `<html>` in a synchronous inline module at
