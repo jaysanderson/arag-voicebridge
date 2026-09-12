@@ -26,6 +26,7 @@ import {
 } from "./shell.js";
 
 const ONBOARDED = "vb.onboarded";
+const READ_ALOUD = "vb.readaloud";
 
 /** A scripted discovery call, so the hero path works with no microphone and no credentials. */
 const SAMPLE = [
@@ -75,7 +76,7 @@ const live = {
   session: null,
   /** ElevenLabs: Scribe transcription state, and the opt-in spoken cue. */
   scribe: { state: "idle", latencyMs: 0, language: "", model: "scribe_v2_realtime" },
-  speak: false,
+  speak: localStorage.getItem(READ_ALOUD) === "1",
   spokenVersion: 0,
   audio: null,
 };
@@ -327,6 +328,9 @@ function renderTranscript(entries, total) {
  */
 async function speakCue(brief, version) {
   if (!live.speak || !brief || version <= live.spokenVersion) return;
+  // One line at a time: a newer version never cuts off the line being spoken, it is simply
+  // skipped. Talking over yourself is worse than missing a cue.
+  if (live.audio && !live.audio.paused && !live.audio.ended) return;
   live.spokenVersion = version;
   const text = cueFrom(brief);
   if (!text) return;
@@ -347,7 +351,6 @@ async function speakCue(brief, version) {
       return;
     }
     const url = URL.createObjectURL(await res.blob());
-    live.audio?.pause();
     live.audio = new Audio(url);
     live.audio.onended = () => URL.revokeObjectURL(url);
     await live.audio.play();
@@ -721,6 +724,7 @@ function wireIdle() {
 function wireRunning() {
   $("#vbSpeak")?.addEventListener("change", (e) => {
     live.speak = e.target.checked;
+    localStorage.setItem(READ_ALOUD, live.speak ? "1" : "0");
     if (!live.speak) live.audio?.pause();
   });
   $("#vbSample")?.addEventListener("click", playSample);

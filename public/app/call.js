@@ -4,7 +4,7 @@
 //
 // The agent runs on ElevenLabs and calls this service's POST /api/v1/voice-answer as a custom
 // tool, so every spoken answer still comes from the Knowledge Box.
-import { api, esc, icon, openDrawer, toast } from "./shell.js";
+import { api, esc, icon, openDrawer, snippet, toast } from "./shell.js";
 
 let convo = null;
 let muted = false;
@@ -233,9 +233,10 @@ export function openCallDrawer(prospect) {
               ? `<span class="vb-mono">${esc(cfg.agent_id)}</span>`
               : '<span class="arag-chip warn">not wired</span>'
           }</dd>
-          <dt>Tool</dt><dd class="vb-mono">${esc(cfg.tool.method)} ${esc(cfg.tool.url)}</dd>
           <dt>Tool timeout</dt><dd>${cfg.tool.timeoutMs} ms</dd>
         </dl>
+        <p class="muted small" style="margin:0 0 4px">Tool endpoint</p>
+        ${snippet(`${cfg.tool.method} ${cfg.tool.url}`)}
         ${
           cfg.ready
             ? ""
