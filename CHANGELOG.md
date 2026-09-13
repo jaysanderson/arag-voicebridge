@@ -97,8 +97,39 @@ and the ElevenLabs voice agent is configured from the product instead of a dashb
   agent push as the primary way to wire up the ElevenLabs voice agent; the manual dashboard steps
   are documented as the fallback, not the path.
 
+### Fixed
+- **Three ElevenLabs shapes only the live API knew about** (`DECISIONS.md` V-28), found by
+  `make agent-check`'s throwaway-agent verification and each now a named regression test: every
+  property of a tool's `request_body_schema` needs a `description`, nested ones included, or the
+  create is a 422; a `GET` on an agent returns both the deprecated inline `tools` array and
+  `tool_ids`, and sending both back is a 400; and deleting a tool a linked agent still references
+  needs `force`.
+- **Settings that were editable and inert** (V-31): the per-route rate limits and the turn-log ring
+  size were captured at boot, and `ARAG_GENERATIVE_MODEL` / `ARAG_RERANKER` were documented as the
+  deployment's defaults but read by nothing. All four now take effect on the next request.
+- **A registry change logged the prospect id as a secret.** The platform's log redactor blanks any
+  field named `key`, so every audit line read `prospect.deleted actor=operator key=•••`. The field
+  is now named `prospect`.
+- The operator Security view claimed secrets live "only in the environment, never written to the
+  stores", which stopped being true when settings became editable. It now names the files.
+
+### Security
+- **An uploaded SVG logo can no longer run script on this origin** (V-29). Making the logo editable
+  introduced a stored-XSS path the read-only page did not have: SVG is a document, partners need
+  vector logos, and the product's CSP allows `script-src 'self' 'unsafe-inline'`. `/branding/*` is
+  now served under its own `default-src 'none'; style-src 'unsafe-inline'; img-src data:; sandbox`
+  policy, and the upload refuses an SVG carrying a script, an event handler, a `foreignObject` or an
+  entity declaration.
+- A prospect's `brand` colours are now held to the same grammar as the deployment's
+  (`isSafeColor`); they reach a browser and are interpolated into CSS custom properties the same way.
+
 ### Removed
 - `public/app.js` and `public/console.css` — the single-page console they implemented.
+- **`GET /api/v1/admin/turns` and `GET /api/v1/admin/golden-evals`** (V-30): they returned a
+  strictly weaker view of data `GET /api/v1/turns` and `GET /api/v1/golden-evals` already serve
+  with filters and paging, and the auth distinction they appeared to draw does not exist — an admin
+  token authenticates against an `auth: "api"` route too. They were the only two operations no
+  screen used.
 - **LiveAvatar and LiveKit** (`DECISIONS.md` V-25): `POST /api/v1/avatar/sessions`,
   `src/services/liveavatar.ts`, `src/services/livekit.ts`, the `LIVEAVATAR_*`/`LIVEKIT_*`
   environment variables, the prospect `avatar_id` field, and the two integration cards. The pane
