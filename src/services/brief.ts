@@ -17,7 +17,7 @@ import type {
 import type { VoiceConfig } from "../config.ts";
 import type { Citation, ProspectConfig } from "../types.ts";
 import { citationsFrom } from "./citations.ts";
-import type { AskCapable } from "./pipeline.ts";
+import type { AragDefaults, AskCapable } from "./pipeline.ts";
 import { guardInput, screenTranscript } from "./safety.ts";
 
 /** OpenAI-function-style schema ARAG expects in `answer_json_schema`. */
@@ -162,7 +162,12 @@ export function resetRejectedModels(): void {
 }
 
 /** Build the ARAG request for one brief refresh (exported for tests). */
-export function buildBriefRequest(req: BriefRequest, prospect: ProspectConfig): AskRequest {
+export function buildBriefRequest(
+  req: BriefRequest,
+  prospect: ProspectConfig,
+  /** The deployment's own ARAG defaults (Settings → Connection), under the prospect's. */
+  defaults?: AragDefaults,
+): AskRequest {
   // ARAG's prompt templater only allows {context}/{question}; any other curly braces 400.
   const stripBraces = (s: string) => s.replace(/[{}]/g, "");
   // The transcript is caller-supplied and lands in the prompt: drop injected lines first.
@@ -184,14 +189,14 @@ export function buildBriefRequest(req: BriefRequest, prospect: ProspectConfig): 
     // conversation awareness (e.g. resolves "what does that cost").
     context: transcript ? [{ author: "USER", text: transcript.slice(-1500) }] : [],
     prompt: { system: briefSystemPrompt(prospect.display_name, prospect.locale), user },
-    reranker: prospect.reranker ?? "predict",
+    reranker: prospect.reranker ?? defaults?.reranker ?? "predict",
     max_tokens: 600,
     temperature: prospect.temperature ?? 0,
     answer_json_schema: LIVE_BRIEF_SCHEMA,
   };
   // The brief MUST be fast: a per-request model wins, else the prospect's fast brief_model, else
   // its answer model. Slow models don't return answer_json before the timeout → null briefs.
-  const model = req.model || prospect.brief_model || prospect.generative_model;
+  const model = req.model || prospect.brief_model || prospect.generative_model || defaults?.generativeModel;
   if (model && !rejectedModels.has(`${prospect.display_name}|${model}`)) body.generative_model = model;
   return body;
 }
@@ -203,7 +208,7 @@ export function buildBriefRequest(req: BriefRequest, prospect: ProspectConfig): 
 export async function runBrief(
   req: BriefRequest,
   prospect: ProspectConfig,
-  deps: { client: AskCapable; voice: VoiceConfig; log: Logger },
+  deps: { client: AskCapable; voice: VoiceConfig; log: Logger; aragDefaults?: () => AragDefaults },
   opts: { signal?: AbortSignal } = {},
 ): Promise<BriefResult> {
   const t0 = performance.now();
@@ -215,7 +220,7 @@ export async function runBrief(
 
   if (!guardInput(req.text).ok) return { brief: null, citations: [], latency_ms: latency() };
 
-  const body = buildBriefRequest(req, prospect);
+  const body = buildBriefRequest(req, prospect, deps.aragDefaults?.());
   const askOpts = { signal: opts.signal, timeoutMs: deps.voice.briefTimeoutMs };
   try {
     let result: AskResult;

@@ -232,3 +232,49 @@ describe("isGuardReason", () => {
     expect(isGuardReason(undefined)).toBe(false);
   });
 });
+
+/**
+ * `ARAG_GENERATIVE_MODEL` and `ARAG_RERANKER` are documented as the deployment's defaults and are
+ * editable under Settings → Connection — but nothing read them, so both were inert.
+ */
+describe("the deployment's ARAG defaults", () => {
+  const base: ProspectConfig = {
+    display_name: "Acme",
+    kb_id: "kb",
+    region: "r",
+    locale: "en-GB",
+    greeting: "hi",
+    handoff_msg: "bye",
+  };
+  const voice = readVoiceEnv({});
+
+  it("fills in the model and reranker a prospect does not set", () => {
+    const body = buildAskRequest({ prospect: "acme", question: "q" }, base, voice, {
+      generativeModel: "chatgpt-azure-4o",
+      reranker: "predict",
+    });
+    expect(body.generative_model).toBe("chatgpt-azure-4o");
+    expect(body.reranker).toBe("predict");
+  });
+
+  it("still lets the prospect and the request win, in that order", () => {
+    const prospect = { ...base, generative_model: "prospect-model", reranker: "noop" };
+    const defaults = { generativeModel: "deployment-model", reranker: "predict" };
+    const body = buildAskRequest({ prospect: "acme", question: "q" }, prospect, voice, defaults);
+    expect(body.generative_model).toBe("prospect-model");
+    expect(body.reranker).toBe("noop");
+    const overridden = buildAskRequest(
+      { prospect: "acme", question: "q", generative_model: "request-model" },
+      prospect,
+      voice,
+      defaults,
+    );
+    expect(overridden.generative_model).toBe("request-model");
+  });
+
+  it("falls back to the lowest-latency reranker when nobody has an opinion", () => {
+    const body = buildAskRequest({ prospect: "acme", question: "q" }, base, voice);
+    expect(body.reranker).toBe("noop");
+    expect(body.generative_model).toBe(undefined);
+  });
+});

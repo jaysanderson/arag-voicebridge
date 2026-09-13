@@ -97,7 +97,15 @@ export function registerVoiceRoutes(app: App, deps: ProductDeps): void {
             model: body.generative_model,
           },
           prospect,
-          { client: deps.clients.for(prospect), voice: deps.voice, log: deps.log },
+          {
+            client: deps.clients.for(prospect),
+            voice: deps.voice,
+            log: deps.log,
+            aragDefaults: () => ({
+              generativeModel: deps.env.arag.generativeModel,
+              reranker: deps.env.arag.reranker,
+            }),
+          },
           { signal },
         );
       } finally {

@@ -31,10 +31,20 @@ export interface AskCapable {
   ask(body: AskRequest, opts?: { signal?: AbortSignal; timeoutMs?: number }): Promise<AskResult>;
 }
 
+/** The deployment-wide ARAG answering defaults, which a prospect may override. */
+export interface AragDefaults {
+  /** Empty = the Knowledge Box's own default model. */
+  generativeModel: string;
+  /** "predict" | "noop". */
+  reranker: string;
+}
+
 export interface TurnDeps {
   /** Resolves the ARAG client for a prospect (see AragClientPool). */
   clientFor: (p: ProspectConfig) => AskCapable;
   voice: VoiceConfig;
+  /** Read per turn, not captured, so Settings → Connection is not inert. */
+  aragDefaults?: () => AragDefaults;
   log: Logger;
 }
 
@@ -78,6 +88,7 @@ export function buildAskRequest(
   req: VoiceAnswerRequest,
   prospect: ProspectConfig,
   voice: VoiceConfig,
+  defaults: AragDefaults | undefined = undefined,
 ): AskRequest {
   const body: AskRequest = {
     query: req.question.trim(),
@@ -93,11 +104,13 @@ export function buildAskRequest(
   }
   // Inline path: the grounding voice prompt plus the latency levers.
   body.prompt = buildVoicePrompt(prospect.display_name, prospect.locale);
-  body.reranker = prospect.reranker ?? "noop";
+  // The prospect wins, then the deployment's own default (Settings → Connection), then "noop" —
+  // the lowest-latency choice, which is what a voice turn wants when nobody has said otherwise.
+  body.reranker = prospect.reranker ?? defaults?.reranker ?? "noop";
   body.max_tokens = prospect.max_tokens ?? 160;
   // Temperature 0 → deterministic answers/handoffs, so the golden set is repeatable.
   body.temperature = prospect.temperature ?? 0;
-  const model = req.generative_model || prospect.generative_model;
+  const model = req.generative_model || prospect.generative_model || defaults?.generativeModel;
   if (model) body.generative_model = model;
   return body;
 }
@@ -187,7 +200,7 @@ export async function runTurn(
   }
 
   // Step 3 — build the ARAG request.
-  const body = buildAskRequest(req, prospect, deps.voice);
+  const body = buildAskRequest(req, prospect, deps.voice, deps.aragDefaults?.());
   trace?.add(
     "build-request",
     "Build the ARAG request",

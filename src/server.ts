@@ -164,7 +164,13 @@ export async function createProduct(
     log,
     voice,
     prospect: (key) => registry.require(key),
-    brief: (req, prospect) => runBrief(req, prospect, { client: clients.for(prospect), voice, log }),
+    brief: (req, prospect) =>
+      runBrief(req, prospect, {
+        client: clients.for(prospect),
+        voice,
+        log,
+        aragDefaults: () => ({ generativeModel: env.arag.generativeModel, reranker: env.arag.reranker }),
+      }),
   });
 
   const retention = new RetentionService({ voice, log, metrics, listen, evals });
@@ -189,6 +195,11 @@ export async function createProduct(
     turnDeps: () => ({
       clientFor: (p: ProspectConfig): AskCapable => clients.for(p),
       voice,
+      // A function, not a snapshot: Settings → Connection changes these and the next turn must see it.
+      aragDefaults: () => ({
+        generativeModel: env.arag.generativeModel,
+        reranker: env.arag.reranker,
+      }),
       log,
     }),
   };
