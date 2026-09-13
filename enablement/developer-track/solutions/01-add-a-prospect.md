@@ -2,25 +2,25 @@
 
 ```bash
 ARAG_MOCK=1 ADMIN_TOKEN=ex1-token DATA_DIR=/tmp/vb-ex1 PORT=8099 node src/index.ts &
+```
 
-curl -s -c cookies.txt -X POST http://localhost:8099/api/v1/admin/login \
-  -H 'content-type: application/json' -d '{"token":"ex1-token"}'
+Open `http://localhost:8099/prospects/`, enter `ex1-token` in the sign-in banner, press **New
+prospect**, and fill in the form:
 
-curl -s -b cookies.txt -X POST http://localhost:8099/api/v1/admin/prospects \
-  -H 'content-type: application/json' -d '{
-    "key": "orbital",
-    "config": {
-      "display_name": "Orbital Fabrication",
-      "kb_id": "kb-orbital-demo",
-      "region": "aws-us-east-2-1",
-      "locale": "en-US",
-      "greeting": "Hi, thanks for calling Orbital.",
-      "handoff_msg": "Let me get an Orbital specialist for that.",
-      "golden_questions": [
-        { "q": "What is binder jetting?", "expect": "answer", "must_include": ["binder"] }
-      ]
-    }
-  }'
+- **Setup** tab — Registry key `orbital`, Display name `Orbital Fabrication`, Locale `en-US`,
+  Knowledge Box id `kb-orbital-demo`, Region `aws-us-east-2-1`.
+- **Voice** tab — Greeting `Hi, thanks for calling Orbital.`, Handoff line
+  `Let me get an Orbital specialist for that.`.
+- **Golden set** tab — add one row: question `What is binder jetting?`, expect `answer`, must
+  include `binder`.
+
+Press **Save**. The form's own network call is exactly the request an API-only client would send —
+watching the browser's network tab (or reading `src/routes/admin.ts`'s prospect-create handler)
+shows the same shape you'd write by hand:
+
+```
+POST /api/v1/admin/prospects
+{"key":"orbital","config":{"display_name":"Orbital Fabrication","kb_id":"kb-orbital-demo","region":"aws-us-east-2-1","locale":"en-US","greeting":"Hi, thanks for calling Orbital.","handoff_msg":"Let me get an Orbital specialist for that.","golden_questions":[{"q":"What is binder jetting?","expect":"answer","must_include":["binder"]}]}}
 ```
 
 ```
@@ -28,6 +28,9 @@ HTTP/1.1 201 Created
 Location: /api/v1/admin/prospects/orbital
 {"id":"orbital","display_name":"Orbital Fabrication", ...}
 ```
+
+Confirm it's registered, then ask it a question — either with **Ask it something** on
+`/knowledge/` (prospect switcher set to `orbital`), or directly:
 
 ```bash
 curl -s -X POST http://localhost:8099/api/v1/voice-answer -H 'content-type: application/json' \
@@ -56,8 +59,9 @@ and no redeploy, because the registry itself **is** the store (`DECISIONS.md` V-
 the write succeeds, `POST /api/v1/voice-answer` for `"prospect":"orbital"` resolves through
 `deps.registry.require("orbital")` in `src/routes/voice.ts`, and the same nine-step pipeline runs
 for it as for `progress`. Nothing about `runTurn` (`src/services/pipeline.ts`) knows or cares
-whether a prospect was seeded at boot or created ten seconds ago by a curl command — that
-uniformity is the entire point of keeping "which prospect" as data, not as a compile-time branch.
+whether a prospect was seeded at boot or created ten seconds ago through the Prospects form (or a
+curl command hitting the same route directly) — that uniformity is the entire point of keeping
+"which prospect" as data, not as a compile-time branch.
 
 The `kb_id` you supplied (`kb-orbital-demo`) is never actually dereferenced while `ARAG_MOCK=1`:
 `AragClientPool.for()` (`src/services/clientPool.ts`) checks `this.deps.mock` first and, if set,

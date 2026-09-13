@@ -44,6 +44,11 @@ export interface VoiceAgentConfig {
   handoff_msg: string;
   tool: VoiceAgentTool;
   system_prompt: string;
+  /**
+   * What an empty override would give. The editor needs this to answer "what does clearing this
+   * do?" without making the operator clear it and save to find out.
+   */
+  system_prompt_default: string;
   /** True when the prompt is this prospect's own text rather than the generated default. */
   system_prompt_custom: boolean;
   /** Which stored API key the tool's X-API-Key header carries (id and prefix, never the secret). */
@@ -202,6 +207,7 @@ export function voiceAgentConfig(
       bodySchema: tool.bodySchema,
     },
     system_prompt: effectiveSystemPrompt(prospect),
+    system_prompt_default: systemPrompt(prospect.display_name),
     system_prompt_custom: Boolean(prospect.system_prompt?.trim()),
     api_key: apiKey ?? null,
     docs_url: "/api/v1/docs",

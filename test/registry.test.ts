@@ -55,6 +55,21 @@ describe("validateProspect", () => {
     expect(validateProspect({ ...valid, temperature: 9 })[0]!.path).toBe("/temperature");
   });
 
+  /**
+   * A prospect's brand overlay reaches the browser and is interpolated into CSS custom properties
+   * exactly as the deployment's own branding is. Validating one and not the other left the weaker
+   * path unguarded.
+   */
+  it("holds a prospect's brand colours to the same grammar as the deployment's", () => {
+    const bad = validateProspect({ ...valid, brand: { primaryColor: "red; background:url(evil)" } });
+    expect(bad[0]!.path).toBe("/brand/primaryColor");
+    expect(bad[0]!.message).toContain("interpolated into CSS");
+    expect(validateProspect({ ...valid, brand: { accentColor: "rgb(12 34 56)" } })).toEqual([]);
+    expect(validateProspect({ ...valid, brand: { primaryColor: "#6b2fa0", accentColor: "" } })).toEqual([]);
+    // Non-colour branding fields are unaffected.
+    expect(validateProspect({ ...valid, brand: { footerText: "© Acme" } })).toEqual([]);
+  });
+
   it("validates golden questions", () => {
     expect(validateProspect({ ...valid, golden_questions: "nope" })[0]!.path).toBe("/golden_questions");
     const bad = validateProspect({ ...valid, golden_questions: [{ q: "x", expect: "maybe" }] });

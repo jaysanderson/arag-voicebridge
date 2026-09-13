@@ -47,6 +47,12 @@ the operator-side equivalent of the Conversations detail drawer in the main work
 [`walkthrough-demo.md`](walkthrough-demo.md#conversations--every-past-session)) — the same underlying
 record, reached from the operator's own navigation instead of the product's.
 
+A trash icon on each row, and a **Delete** button in the detail view, permanently removes a
+conversation — its transcript, every version of its brief and the sources it gathered — after a
+confirmation naming exactly what goes away. This is different from ending a session (which just
+stops it accepting new transcript and keeps the record): deleting is the one place in the product
+that actually erases a conversation, and it's recorded in the operator log like any other change here.
+
 A session left "live" by a server restart is closed automatically the next time the service starts,
 so it shows here as **ended** rather than a session that stays live forever with nobody listening to
 it.
@@ -78,8 +84,12 @@ keeps whatever cases it had already recorded rather than discarding them.
 
 ## Logs
 
-A live-refreshing (every 5 seconds) tail of the last 500 in-memory log records, filterable by level
-and by a text-contains search. Because secrets are redacted unconditionally at the logger level (see
+A **paged** view over the last 500 in-memory log records, filterable by level and by a
+text-contains search, 50 records to a page with **Newer**/**Older** paging and a range readout
+(`1–50 of 214`, say). A **Follow** switch turns on a 5-second auto-refresh instead — following and
+paging are deliberately mutually exclusive, so a log that reloads under you while you're three pages
+into an investigation never happens; paging away from the newest records turns Follow off
+automatically. Because secrets are redacted unconditionally at the logger level (see
 [`../architecture/security-model.md`](../architecture/security-model.md)), this is safe to leave open
 during a live debugging session without a second thought about what might be visible on screen.
 
@@ -94,12 +104,18 @@ a per-prospect overlay actually took effect — see
 
 ## Security
 
-Two panels — **Access** (whether `ADMIN_TOKEN` and `API_KEYS` are set, the CORS origins in force, and
-which proxy header is trusted for rate limiting) and **Budgets** (the global rate limit, the
-brief/listen-session budget, the speech-token budget, the max request body size, and the turn/tool
-timeouts) — plus a **Data kept** panel spelling out exactly what the turn log and listen sessions
-retain, and that secrets never leave the environment. This is the page to open before telling a
-compliance reviewer what the deployment does and does not expose.
+Two panels — **Access** (whether `ADMIN_TOKEN` is required for every operator route, how many API
+keys are active and a link to manage them, the CORS origins in force, and which proxy header is
+trusted for rate limiting) and **Budgets** (the global rate limit, the brief/listen-session budget,
+the speech-token budget, the max request body size, and the turn/tool timeouts) — plus a **Data
+kept** panel spelling out exactly what the turn log, conversations and golden runs retain, whether
+automatic purge is on (with a link to change the windows), and, plainly, **where secrets actually
+live**: the ARAG service-account token and the ElevenLabs key live in the environment until an
+operator rotates them from Settings, at which point the rotated value lives in
+`DATA_DIR/settings.json`; API keys live in their own `DATA_DIR/api-keys.json` because authenticating
+one needs the plaintext. None of it is ever sent to a browser, returned by an API after it's set, or
+written to a log. This is the page to open before telling a compliance reviewer what the deployment
+does and does not expose.
 
 ## Managing prospects, and onboarding a new one
 
@@ -107,10 +123,11 @@ Operator itself has no prospect-editing view — the registry lives at `/prospec
 workspace, unlocked for editing once the same admin token used to sign in here has been entered
 there. The ritual for a new prospect:
 
-1. Open `/prospects/`, enter the admin token if it's still read-only, then **New prospect**. Fill in
-   `display_name`, `kb_id`, `region`, `locale`, `greeting`, `handoff_msg`, and a first pass at
-   `golden_questions` (mix answerable and deliberately out-of-scope ones). Set the **Key** field to a
-   short lowercase identifier, then **Save**.
+1. Open `/prospects/`, enter the admin token if it's still read-only, then **New prospect**. On the
+   **Setup** tab, fill in the display name, a short lowercase registry key, the locale, the Knowledge
+   Box id and region. On the **Voice** tab, write the greeting and handoff line. On the **Golden
+   set** tab, add a first pass at golden questions (mix answerable and deliberately out-of-scope
+   ones). Then **Save**.
 2. Press **Provision search config**. Confirm the result shows the configuration name — this is the
    point at which the prospect's Knowledge Box actually has the voice-answer prompt and governance
    filters written into it.
@@ -119,11 +136,15 @@ there. The ritual for a new prospect:
 4. Still on Knowledge, press **Run golden set** and confirm the gate opens. If it doesn't, go back to
    the Prospects editor, adjust `reranker`/`generative_model`/the golden questions themselves,
    re-provision, and re-run until it does.
-5. If the prospect will take live voice calls, add its ElevenLabs `agent_id` (and optionally
-   `voice_id`) in the same editor and save again — see
-   [`../developer/integrations.md`](../developer/integrations.md) for setting up that agent in the
-   first place, and Settings' Integrations card (or `GET /api/v1/voice-agent`) for the exact tool
-   definition and prompt to paste into the ElevenLabs dashboard.
+5. If the prospect will take live voice calls, open Settings → ElevenLabs for this prospect: it
+   reads what this deployment wants the agent to look like and, once an ElevenLabs API key is
+   configured, compares it against what ElevenLabs actually has. Press **Push to ElevenLabs** (or
+   **Create and push the agent**, the first time) and the tool and the agent are created or updated
+   directly — no dashboard copy-paste required. The pushed agent id, tool id and API key id are
+   written back onto the prospect automatically, so a second push is a patch. See
+   [`../developer/integrations.md`](../developer/integrations.md) for the mechanics, and for the
+   manual, dashboard-only path if a deployment can't reach ElevenLabs' API from wherever Settings is
+   being operated.
 
 No step here touches application code or requires a redeploy — see
 [`../developer/extension-points.md`](../developer/extension-points.md) for the same ritual expressed

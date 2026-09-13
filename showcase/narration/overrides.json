@@ -1,47 +1,53 @@
 {
-  "_note": "Applied by videos/shared/narrate-walkthrough.mjs on top of showcase/SCRIPT.md, which is never edited. Two kinds of change: (a) cue times, because SCRIPT.md's timestamps are estimates — record.spec.ts paces itself off real UI state, and every beat from 00:15 on lands EARLIER in this recording than the script predicted, by up to 25s; times below are read off the recording's own transition profile and confirmed against extracted frames. (b) trimmed narration, because the script is written long: at this voice's ~162 wpm the nine cues need 3:07 of speech against a 2:44 recording, and the early beats leave only 8-10s of screen time.",
+  "_note": "Applied by videos/shared/narrate-walkthrough.mjs on top of showcase/SCRIPT.md, which is never edited. Only one kind of change here: trimmed narration. The script is written to be read, and at this voice's pace the twelve cues need about 4:40 of speech against a 2:52 recording — so each cue is cut to roughly 90% of the seconds its beat is on screen, keeping the point and dropping the elaboration. The cue START times are NOT overridden: record.spec.ts prints the moment each still is captured and SCRIPT.md is re-timed from that printout, so the script's own times are already the recording's. Re-derive these trims whenever the recording's pacing changes; `--no-synth` prints the per-cue window each one has to fit.",
   "cues": {
     "1": {
-      "text": "Someone on a live call needs to know what is true right now, not after it ends. This is Live, the screen VoiceBridge opens on, and the banner says plainly what it will not do.",
-      "note": "trimmed 65w to 35w; the Live screen only holds 10.5s before the sample starts"
+      "text": "Someone on a live call needs what is true right now, not after it ends. This is Live, and the banner says plainly what it will not do.",
+      "note": "65w to 27w; Live is only on screen for 7s before the sample starts. The two promises the banner makes are on screen and legible, so the voice points at them rather than reading them out."
     },
     "2": {
-      "start": 10.5,
-      "text": "Press play. The brief is not redrawn from scratch on every line — the version number only moves forward when the server's own throttle decides a refresh is worth an LLM call, so a burst of turns produces one refresh, not nine. Watch it climb through several real versions as the caller says more: a machine shop, then binder jetting, then a furnace, then titanium and budget. Every claim is grounded, and the sources build up underneath as the call goes on.",
-      "note": "Play sample is pressed at 10.4s, not 15s (frame-verified); trimmed 93w to 79w"
+      "text": "Press play. The brief is not redrawn from scratch on every line — the version number only moves forward when the server's own throttle decides a refresh is worth an LLM call. Watch it climb as the caller says more: a machine shop, binder jetting, a furnace, titanium and budget. Every claim is grounded, and the sources build up underneath.",
+      "note": "93w to 58w for a 22s window; the throttle explanation is the load-bearing part and is kept, its 'one refresh, not nine' illustration is not."
     },
     "3": {
-      "start": 43.5,
-      "text": "Next to the brief, the transcript, and the session's own numbers: refreshes run, refreshes the throttle skipped, and the last refresh's latency.",
-      "note": "the session-stats card appears at 43.4s, not 60s — 16.5s earlier; only 8s of screen time before End and save, so 65w trimmed to 22w. The mock-vs-real latency aside is dropped; the mock-Knowledge-Box honesty is still carried by cues 5 and 9."
+      "text": "Next to the brief, the transcript and the session's own numbers: refreshes run, refreshes the throttle skipped, and how long the last one took.",
+      "note": "65w to 24w for a 12s window. The mock-versus-real latency comparison is dropped here; cue 5 already marks the content as sample."
     },
     "4": {
-      "start": 51.5,
-      "text": "Ending a session loses nothing — the brief, its sources and how it developed are kept. Conversations lists every call this deployment has listened to, and searching for something the caller actually said finds this one. Opening it shows the same final brief, the full transcript, and every version the brief passed through on the way there, each timestamped and timed.",
-      "note": "End and save happens at 51.3s, not 76s — 24.5s earlier; trimmed 72w to 59w"
+      "text": "Ending a session loses nothing — the brief, its sources and how it developed are kept. Conversations lists every call, and searching for something the caller actually said finds this one. Opening it shows the final brief, the full transcript, and every version the brief passed through, each timestamped and timed.",
+      "note": "72w to 51w for a 19s window; the scrolling directions are dropped, the viewer can see them."
     },
     "5": {
-      "start": 76,
-      "note": "Knowledge opens at 75.9s, not 96s — 20s earlier; text unchanged, it fits the 28s window"
+      "text": "Knowledge shows what a prospect is grounded in — sample content here, honestly marked. The Ask tester runs the same pipeline a live turn does and shows its work: nine steps, timed. Ask something it knows and the answer carries a citation; ask something it does not and it hands off.",
+      "note": "78w to 52w for a 19s window; the stepper is on screen, so the voice names it rather than walking it."
     },
     "6": {
-      "start": 104.2,
-      "text": "Before a prospect is trusted to answer it has to clear this gate: ten questions, run right now, through the same pipeline a real call uses. All ten pass, so the gate opens.",
-      "note": "the golden-set run lands at 104.2s, not 114s; trimmed 64w to 33w. The caveat that this is the only automated gate — none yet for the live brief — does not fit the 10.4s window and is dropped."
+      "text": "Before a prospect is trusted to answer it clears this gate: the same ten questions, through the same pipeline, right now.",
+      "note": "64w to 21w for an 8s window. 'All ten pass' is dropped — the gate chip on screen says it."
     },
     "7": {
-      "start": 114.6,
-      "text": "Quality checks all of that in aggregate. And when someone tries an injection, the guard trips before the model sees it — the log keeps the reason, never the text.",
-      "note": "Quality opens at 114.5s, not 127s — 12.4s earlier; trimmed 43w to 29w for the 10.4s window"
+      "text": "Quality checks all of that in aggregate. And when someone tries an injection, the guard trips first — the log keeps the reason, never the text.",
+      "note": "43w to 25w for an 8s window; the explanation of why that matters is dropped, the redacted row is visible."
     },
     "8": {
-      "start": 125,
-      "note": "the Operator panel opens at 124.8s, not 139s — 14.2s earlier; text unchanged, it fits the 28.5s window across Overview, Listen sessions and the brief history"
+      "text": "Behind the product is an Operator panel for whoever runs the deployment, behind its own token. It sees the same session from the operator's side — every version the brief passed through, and how long each refresh took.",
+      "note": "44w to 38w for a 13s window."
     },
     "9": {
-      "start": 153.5,
-      "text": "White-labelled by configuration alone, and everything voice runs on ElevenLabs — Scribe, Conversational AI, text-to-speech. None switched on here, and the page says so plainly.",
-      "note": "Settings lands at 153.5s, matching the script; only 10.2s remain to the end of the recording, so 62w trimmed to 26w"
+      "text": "Settings is a reading screen until this browser proves it is an operator. The same token unlocks it in place, on this page.",
+      "note": "64w to 23w for a 7s window. The point that nobody is sent to a separate admin application survives in 'in place, on this page'."
+    },
+    "10": {
+      "text": "Every setting this product reads from configuration is editable here. Type a partner's name into Branding: the preview repaints as you type, before anything is saved. Save, and the rail, the tab title and the action colour repaint underneath you — no reload, no restart. Reset the group and the environment's value comes straight back.",
+      "note": "89w to 57w for a 22s window. This is the pass's headline beat, so it keeps its whole argument: preview, save, repaint, reset."
+    },
+    "11": {
+      "text": "Everything voice runs on ElevenLabs, configured from in here rather than their dashboard. No key on this deployment, so the page says so. Add one and this panel shows where it and the live agent disagree.",
+      "note": "100w to 34w for a 12s window. The tool, timeout, greeting and router prompt are all on screen and readable, so the voice makes the argument instead of listing them."
+    },
+    "12": {
+      "text": "And everything you have watched the workspace do, an application can do. This explorer is built from the deployment's own OpenAPI document, so an operation cannot be added to the API and forgotten here. Find the voice turn, send it with the body already filled in, and the answer comes back with its citations and its timings — the same call the agent makes, written out as curl, ready to paste.",
+      "note": "91w to 70w for the closing 23s; the transport-agnostic line is dropped in favour of ending on something the viewer can see happening."
     }
   }
 }

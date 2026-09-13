@@ -129,6 +129,13 @@ regardless of this decision.
   failure" problems this ships with already solved — usually after the first call where an
   unthrottled client fired an LLM call on every word, or a failed refresh blanked the screen instead
   of leaving the last good brief up.
+- **A hand-wired ElevenLabs Conversational AI setup.** Wiring a voice agent to a custom backend
+  normally means hand-copying a system prompt, a tool schema and a webhook URL into the ElevenLabs
+  dashboard, once per customer, with no record of what was actually pushed versus what's in the
+  prompt file. VoiceBridge's Settings screen reads the desired configuration, diffs it against what
+  ElevenLabs actually has, and pushes the difference — the same operation is a repeatable API call
+  (`POST /api/v1/admin/voice-agent/push`), not a dashboard ritual someone has to remember correctly
+  for the tenth customer.
 
 ### Where we don't win
 
@@ -150,6 +157,24 @@ regardless of this decision.
   is a strong demo/pilot shape, not a durable, horizontally-scaled session store.
 - Today's architecture pools ARAG credentials per Knowledge Box and zone rather than per prospect;
   strict per-tenant credential isolation is a documented extension point, not a shipped guarantee.
+
+## Deployable by a partner, not just demoable
+
+Everything a deployment needs to be operated — not merely shown — is now a screen, not a redeploy:
+
+- **Every configurable value is editable in the product.** Branding, the Knowledge Box connection,
+  every rate limit and timeout, the ElevenLabs stack — all 41 settings behind Settings are stored,
+  not just read from the environment, and a change takes effect on the next request. An environment
+  variable is only the starting value.
+- **A voice agent pushed from the product, not pasted into a dashboard.** Settings reads what a
+  prospect's ElevenLabs Conversational AI agent should look like, diffs it field by field against
+  what ElevenLabs actually has, and a single action pushes the difference — the router prompt, the
+  greeting, the voice, and the custom tool's URL, method, timeout and authentication header. Cloning
+  the setup for the next customer is a registry entry and a button, not a second trip through the
+  dashboard.
+- **A real API key store.** Named, revocable keys with last-used tracking replace a single shared
+  environment variable; revoking one bites on the very next request, and the record survives its own
+  revocation for the audit trail.
 
 ## Proof points (true today)
 

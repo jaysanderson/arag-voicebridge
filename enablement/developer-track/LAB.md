@@ -703,9 +703,14 @@ rm -rf /tmp/voicebridge-lab
 
 ## What's next
 
-- `exercises/` — six short, independent exercises with a runnable acceptance check each, including
-  driving a listening session from a script (exercise 06).
-- `knowledge-check.md` — questions to check what stuck, including the listening throttle.
+- `exercises/` — eight short, independent exercises with a runnable acceptance check each: adding a
+  prospect through the Prospects form (01), writing a golden question (02), tripping the input guard
+  (03), forcing an upstream failure (04), adding a new guard check (05), driving a listening session
+  from a script (06), locking the API down with a named key (07), and changing a setting through the
+  admin API and proving it took effect with no restart (08) — the last one deliberately revisits 04
+  from the other side: same failure mode, no restart required.
+- `knowledge-check.md` — questions to check what stuck, including the listening throttle, the
+  settings store and the API key store.
 - `../architect-track/WORKSHOP.md` — the same product from a deployment and reliability angle:
   the turn budget, multi-tenant routing, stored configurations, agent-assist at scale, failure
   modes.

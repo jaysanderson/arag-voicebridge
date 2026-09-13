@@ -21,12 +21,25 @@ Alongside the listening path, VoiceBridge ships a workspace, not a single page: 
 left rail with **Live** (the hero — press **Play sample conversation** to watch a scripted discovery
 call build a live brief with no credentials at all, paste or type your own conversation, or listen to
 a real microphone feed), **Conversations** (every past session, searchable by what was said in it,
-with how each brief evolved), **Knowledge** (what a prospect is grounded in, its golden set, and an
-"ask it something" tester), **Prospects** (the registry), **Quality** (latency, handoff rate, citation
-coverage and the turn log) and **Settings** (connection, branding and integrations) — plus
-**Operator**, the same shell with the deployment's own views (health, configuration, logs, branding,
-security). See [`walkthrough-demo.md`](walkthrough-demo.md) and
-[`walkthrough-admin.md`](walkthrough-admin.md) for a full tour of each.
+with how each brief evolved and a field-by-field comparison between any two brief versions),
+**Knowledge** (what a prospect is grounded in, its golden set, and an "ask it something" tester that
+can trace all nine steps of how a turn was answered), **Prospects** (the registry, edited through a
+form with a live branding preview, not raw JSON), **Quality** (latency, handoff rate, citation
+coverage and the turn log), **API** (a live explorer, built from the deployment's own OpenAPI
+document, with a try-it form for every operation) and **Settings** — plus **Set up**, a first-run
+checklist computed from live configuration, and **Operator**, the same shell with the deployment's
+own views (health, configuration, logs, branding, security). See
+[`walkthrough-demo.md`](walkthrough-demo.md) and [`walkthrough-admin.md`](walkthrough-admin.md) for a
+full tour of each.
+
+Every one of Settings' 41 configurable values is editable in the product, not just read back:
+environment variables are defaults, a JSON store is the authority, and a change — a rebrand, a
+different Knowledge Box, a tighter rate limit — takes effect on the very next request, with no
+restart. The same screen holds a real API key store (named keys, revocation that bites immediately,
+last-used tracking) and the strongest new capability in this pass: Settings reads what a prospect's
+ElevenLabs voice agent *should* look like, compares it field by field against what ElevenLabs
+actually has, and pushes the difference — including the custom tool's URL and its authentication
+header — so a partner can wire a working phone call without opening the ElevenLabs dashboard.
 
 With `ELEVENLABS_API_KEY` set, the shipped experience is ElevenLabs-powered rather than merely
 compatible with it: ElevenLabs Scribe v2 Realtime is the default microphone transcription in Live,

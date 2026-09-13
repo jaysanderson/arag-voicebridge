@@ -20,6 +20,13 @@
 - **Multiple customers/demo targets share one deployment**, each with its own Knowledge Box, voice,
   greeting and test questions. The prospect registry exists precisely so onboarding the fifth
   prospect costs the same as the second — a configuration change, not a code change.
+- **A partner needs to operate the deployment, not just watch a demo of it.** Every one of the 41
+  settings — the Knowledge Box, the branding, the rate limits, the ElevenLabs stack — is editable
+  from Settings and takes effect without a restart; API access can be locked down with named,
+  revocable keys instead of a shared environment variable; and the ElevenLabs voice agent can be
+  pushed and kept in sync from the product instead of hand-copied into a dashboard. If the buyer is
+  the partner delivering this to their own customers, not just the person evaluating a demo, that is
+  the difference that matters.
 - **Self-serve deflection is wanted as a second step, once listening is trusted.** The same grounded
   pipeline that feeds the brief can answer a caller directly over `POST /api/v1/voice-answer` when
   nobody's available, gated by a golden set before it's ever demoed or deployed. A text-first proof

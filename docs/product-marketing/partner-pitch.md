@@ -33,6 +33,17 @@ already uses.
   questions); `POST /api/v1/admin/prospects/{key}/provision` writes retrieval settings into the
   Knowledge Box as a stored search configuration. Both are idempotent and both run against a live
   deployment.
+- **Every configurable value is a screen, not a redeploy either.** Rebranding, pointing at a
+  different Knowledge Box, tightening a rate limit, rotating a credential — all of it is a form in
+  Settings, backed by a store the environment only seeds, and a change takes effect on the very next
+  request. The partner operating this for a customer never needs the codebase or a deploy pipeline
+  to make a configuration change after go-live.
+- **The voice agent is pushed, not copy-pasted.** Settings reads what a prospect's ElevenLabs
+  Conversational AI agent should look like, compares it against what ElevenLabs actually has, and
+  pushes the router prompt, the greeting, the voice and the custom tool — including its
+  authentication header — with one action. Onboarding the fifth customer's voice channel is a
+  registry entry and a button, not another trip through the ElevenLabs dashboard done correctly by
+  memory.
 - **What the partner owns:** the prospect relationship, the Knowledge Box content and its ingestion,
   whatever feeds the session API (an STT integration, a telephony webhook, or nothing at all if the
   pilot starts with typed or pasted transcripts), the brand-facing configuration (greeting, handoff
@@ -112,6 +123,8 @@ agree the two or three prospects to start with.
 | "Is there a pass/fail gate for the brief, the way there is for the deflection answer?" | Not today, honestly. The golden-set gate covers the deflection pipeline (`/api/v1/voice-answer`) only; reviewing whether a live brief was useful on a given call is a manual read of the session's brief history in Conversations. |
 | "Is this production-ready?" | It's an MVP, and we say so plainly: session state is a single-machine, in-memory store with a 200-session cap; per-prospect credential isolation is a documented extension point, not a shipped guarantee. What is shipped and tested is the throttled listening service, the evolving-brief schema, the deflection pipeline's handoff contract, and the golden-set gate for deflection. |
 | "What does it cost us to maintain?" | Zero runtime dependencies and an OpenAPI document that drives request validation and contract tests — there is very little surface area to patch, and drift between the spec and the implementation fails the build rather than shipping quietly. |
+| "Once this is live for a customer, how do we change anything without a maintenance window?" | Every setting behind Settings — branding, the Knowledge Box, rate limits, the ElevenLabs stack — is stored, not just read from the environment, and a change takes effect on the next request. No deploy pipeline, no restart. |
+| "How do we stop this being an open endpoint once it's not just an internal demo?" | Mint a named key under Settings → API keys. With at least one active, every non-operator route requires it; a key can be revoked (effective on the next request) without touching any other key, and a revoked key stays in the list for the audit trail. |
 
 ## Pilot plan
 

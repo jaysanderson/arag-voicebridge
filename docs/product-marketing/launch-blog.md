@@ -130,6 +130,21 @@ against the Knowledge Box and returns a spoken-shaped answer directly, with cita
 model's own opinion of whether it knows enough. Every prospect ships a golden set of questions it
 must answer and questions it must refuse, and nothing is demoed or deployed until that set is green.
 
+## From demo to deployment
+
+Two more things separate a deployment a partner can actually operate from one they can only show.
+First, every configurable value — branding, the Knowledge Box connection, rate limits, the
+ElevenLabs stack — now lives in a store the environment only seeds, editable from Settings, and a
+change takes effect on the very next request. Rebranding for the next customer, pointing at a
+different Knowledge Box, or tightening a rate limit is a form, not a deploy. Second, the ElevenLabs
+voice agent is configured from the product: Settings reads what a prospect's agent should look like,
+compares it field by field against what ElevenLabs actually has, and pushes the difference — the
+router prompt, the greeting, the voice, and the custom tool's URL and authentication header — so a
+partner wires a working phone call without ever opening the ElevenLabs dashboard. Add a named,
+revocable API key from the same screen and the deployment stops being open by default. None of this
+changes what the listening path or the deflection pipeline does; it changes who can run this for a
+customer without touching the codebase.
+
 ## What's next
 
 VoiceBridge is an MVP, released as open source under Apache-2.0, and we're upfront about what it

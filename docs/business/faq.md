@@ -67,6 +67,49 @@ The citation still appears (title and score), just without a clickable link — 
 require a URL to surface a source, only a usable title. See
 [`../architecture/arag-integration.md`](../architecture/arag-integration.md).
 
+**Can I rebrand this for my own customers, without forking it?**
+Yes — that's what Settings → Branding is for: product name, tagline, logo (upload a file or paste a
+URL), primary and accent colour, footer text and whether the Progress credit is shown, all editable
+in the product and applied live, with a preview that redraws as you type. A prospect can also carry
+its own overlay on top of the deployment's branding (set in its Prospects editor, also with a live
+preview), for one deployment serving several differently-branded customers. Attribution stays in
+`LICENSE` and `THIRD_PARTY_NOTICES.md` regardless of what the toggle says. See
+[`../developer/white-label.md`](../developer/white-label.md).
+
+**Do I need to redeploy to change a setting?**
+No. Every one of the 41 settings behind Settings — connection, branding, limits, the ElevenLabs
+stack, retention — is stored in a JSON file the product reads on every request; an environment
+variable only supplies the starting value. `PATCH /api/v1/admin/settings` (or the Settings form)
+takes effect on the very next request. The one exception that isn't a restart either: a patch that
+would put the voice-turn timeout at or above the agent's tool timeout is rejected and rolled back,
+not silently applied and then broken. See [`../developer/settings.md`](../developer/settings.md).
+
+**How do I lock the API down?**
+Mint a named key under Settings → API keys (or `POST /api/v1/admin/api-keys`). The moment at least
+one key is active, every non-operator `/api/v1` route requires `X-API-Key`; with none active, the
+API is open to anyone who can reach the deployment, which is the shipped default for a demo, not a
+recommendation for a public URL. A key can be renamed and revoked — revocation bites on the very
+next request, and a revoked key stays in the list so its audit trail survives. Revoking the last
+active key reopens the API; that's documented behaviour, not a bug, and the Settings page says so in
+as many words. See [`../architecture/security-model.md`](../architecture/security-model.md).
+
+**Do I have to configure the ElevenLabs agent by hand in their dashboard?**
+No, and this is new: Settings → ElevenLabs reads what a prospect's voice agent *should* look like,
+compares it field by field against what ElevenLabs actually has right now, and a button pushes the
+difference — the router prompt, the greeting, the voice, and the custom tool's URL, method, timeout
+and `X-API-Key` header. The dashboard remains a valid fallback if a deployment can't reach
+ElevenLabs' API from wherever Settings runs, but it's no longer the only way in. See
+[`../developer/integrations.md`](../developer/integrations.md).
+
+**What is kept, and for how long?**
+A turn's question text (for turns that passed the input guard), a conversation's transcript and
+brief history, and golden-run results are each kept for a configurable number of days — 0 keeps them
+until the underlying ring or store rolls over, which is the shipped default. Settings → Retention
+sets those windows and can apply them automatically on an hourly timer; **Purge now** applies them on
+demand, or, as an explicit, separately-confirmed action, deletes a whole category regardless of age.
+A single conversation can also be deleted outright from Operator's Listen sessions view. See
+[`../architecture/data-flow.md`](../architecture/data-flow.md#retention-and-purge).
+
 **Can the ambient Live brief leak information across calls?**
 No — each listen session's state (the running transcript, the evolving brief and its history) is
 scoped to that session's own record in `DATA_DIR/listen-sessions.json`; nothing from one session's

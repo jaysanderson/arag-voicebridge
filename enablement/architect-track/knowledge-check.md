@@ -1,6 +1,6 @@
 # Architect track — knowledge check
 
-12 questions with answers.
+16 questions with answers.
 
 ---
 
@@ -146,3 +146,68 @@ solved by the per-prospect client pool (`AragClientPool`)?
 > out as "a documented extension point," not an implemented feature. Flag this as a gap to design
 > and build before committing to that customer's requirement — it is not something a configuration
 > change alone can satisfy today.
+
+---
+
+**13. Judgement.** A customer asks whether changing their Knowledge Box region in production
+requires a maintenance window. What is actually true, and what is the one thing that *does* need to
+happen even though nothing restarts?
+
+> No maintenance window: `PATCH /api/v1/admin/settings` with `{"connection": {"region": "..."}}`
+> takes effect on the next request, because `SettingsService.apply()` writes the value straight into
+> the live `PlatformEnv` object. What does have to happen is that the region field (like every
+> connection field) is marked `rewiresClients`, so `onRewire()` drops the cached per-Knowledge-Box
+> `AragClient` in `AragClientPool` — without that, requests already in flight against the old
+> client finish against the old region, but every *new* client would otherwise be built from a
+> pool entry keyed on the old value and never notice the change. The customer-facing claim ("no
+> restart") is true; the reason it's true is a specific invalidation step, not an accident of how
+> objects happen to be shared.
+
+---
+
+**14. Recall.** `ApiKeyStore` stores every key's secret in full, in plaintext, in
+`DATA_DIR/api-keys.json`, rather than hashing it. Name the two reasons this is a considered
+trade-off rather than an oversight, and the one place the plaintext is deliberately returned.
+
+> (1) `App.authenticate()`'s comparison against an incoming `X-API-Key` header is a constant-time
+> comparison against the stored value, which needs the plaintext on both sides — a one-way hash
+> would need to be re-hashed and compared, which is fine for a password but this is a bearer
+> credential checked on every request, not a login. (2) Pushing the ElevenLabs agent's custom tool
+> has to put a *real*, usable key into the tool's `X-API-Key` header (`desiredTool()`,
+> `src/services/voiceAgent.ts`) — a hash cannot supply a credential a third-party service will
+> actually send back. The plaintext is returned exactly once: the response to
+> `POST /api/v1/admin/api-keys` that creates it. Every read after that (`GET
+> /api/v1/admin/api-keys`, the diff panel in Settings) shows only a `prefix`.
+
+---
+
+**15. Judgement.** `POST /api/v1/admin/voice-agent/push` is documented as *merging* into whatever
+ElevenLabs already has for an agent, rather than replacing the agent's configuration wholesale. Why
+does that matter for a customer who has already hand-tuned their agent's turn-taking or ASR settings
+in the ElevenLabs dashboard, and what would go wrong if the push instead sent a full replacement?
+
+> A full replacement would silently discard any setting VoiceBridge does not itself own — turn-taking
+> sensitivity, ASR provider choice, evaluation configuration — every time an operator pushes an
+> update to the router prompt or the tool definition, even though nothing about those other settings
+> was supposed to change. `pushAgent()` reads the agent ElevenLabs currently has and patches only the
+> fields this product manages (prompt, greeting, voice, tool link), leaving the rest as the customer
+> left it. This is what makes "push again after editing the prompt" a safe, repeatable operation
+> rather than one that quietly undoes hand-tuning done outside the product.
+
+---
+
+**16. Judgement.** A partner wants to know whether locking down the API (minting a key under
+Settings → API keys) is safe to do on a live deployment mid-demo, without warning anyone watching.
+What actually happens to a call already in flight, and to the workspace UI itself, the moment the
+key becomes active?
+
+> A request already accepted by the process (already past `App.authenticate()`) completes normally —
+> the key only gates authentication at the start of the request, not mid-flight. The *next* call from
+> anything that doesn't carry the new key (a script, a telephony bridge, an agent's tool call) starts
+> failing with 401 immediately, since `ApiKeyStore.sync()` rewrites the live `env.apiKeys` array the
+> authenticator reads with no restart in between. The workspace UI itself keeps working: it
+> authenticates with a same-origin `arag_session` cookie minted at boot, which is accepted
+> independently of the `X-API-Key` check (see the auth-modes table in `security-model.md`) — so an
+> operator watching the console sees nothing change, while any *external* caller lacking the key
+> starts getting locked out that instant. Warn whoever owns those external integrations before doing
+> this on a live deployment, not after.

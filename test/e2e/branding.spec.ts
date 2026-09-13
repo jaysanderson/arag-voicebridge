@@ -2,6 +2,15 @@ import { expect, test } from "@playwright/test";
 import { BRANDED_URL } from "../../playwright.config.ts";
 
 /**
+ * Every API call this file makes carries the operator token.
+ *
+ * The suite runs several workers against one deployment, and one of them mints an API key — which
+ * is exactly the product's documented behaviour: the moment a key exists, `/api/v1` requires one.
+ * A test that relied on the deployment being open was relying on an accident of ordering.
+ */
+const ADMIN = { Authorization: "Bearer e2e-admin-token" };
+
+/**
  * White-label check: a second instance of the same build, started with only BRAND_* variables
  * set, must present itself as the partner's product — no fork, no code change.
  */
@@ -33,10 +42,10 @@ test.describe("white-label branding", () => {
   });
 
   test("branding is served as public API", async ({ request }) => {
-    const branded = await request.get(`${BRANDED_URL}/api/v1/branding`);
+    const branded = await request.get(`${BRANDED_URL}/api/v1/branding`, { headers: ADMIN });
     expect(branded.status()).toBe(200);
     expect(await branded.json()).toMatchObject({ productName: "Contoso Live Assist", poweredBy: false });
-    const plain = await request.get("/api/v1/branding");
+    const plain = await request.get("/api/v1/branding", { headers: ADMIN });
     expect(await plain.json()).toMatchObject({ productName: "VoiceBridge", poweredBy: true });
   });
 });

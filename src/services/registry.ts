@@ -6,7 +6,13 @@
  * the store on first boot; real KB ids and agent ids live in the store (and in env), not in git.
  */
 import { existsSync, readFileSync } from "node:fs";
-import type { Branding, Collection, Logger, Store } from "../../vendor/arag-platform/src/index.ts";
+import {
+  type Branding,
+  type Collection,
+  isSafeColor,
+  type Logger,
+  type Store,
+} from "../../vendor/arag-platform/src/index.ts";
 import type { VoiceConfig } from "../config.ts";
 import { scribeEnabled } from "../config.ts";
 import type {
@@ -48,6 +54,9 @@ const OPTIONAL_STRINGS: Array<keyof ProspectConfig> = [
 ];
 
 /** The branding fields a prospect may override (see `ProspectBrand`). */
+/** The branding fields that end up as CSS values, and so must pass the platform's colour grammar. */
+const COLOUR_KEYS = ["primaryColor", "accentColor"];
+
 const BRAND_KEYS = [
   "productName",
   "tagline",
@@ -97,11 +106,20 @@ export function validateProspect(cfg: unknown): FieldError[] {
       errors.push({ path: "/brand", message: "must be an object" });
     } else {
       for (const [k, v] of Object.entries(cfg.brand)) {
-        if (!BRAND_KEYS.includes(k)) errors.push({ path: `/brand/${k}`, message: "is not a branding field" });
-        else if (k === "poweredBy" ? typeof v !== "boolean" : typeof v !== "string") {
+        if (!BRAND_KEYS.includes(k)) {
+          errors.push({ path: `/brand/${k}`, message: "is not a branding field" });
+        } else if (k === "poweredBy" ? typeof v !== "boolean" : typeof v !== "string") {
           errors.push({
             path: `/brand/${k}`,
             message: k === "poweredBy" ? "must be a boolean" : "must be a string",
+          });
+        } else if (COLOUR_KEYS.includes(k) && v !== "" && !isSafeColor(String(v))) {
+          // The same grammar the deployment's own branding is held to. A prospect overlay reaches
+          // the browser and is interpolated into CSS custom properties exactly as the deployment's
+          // is, so validating one and not the other left the weaker path unguarded.
+          errors.push({
+            path: `/brand/${k}`,
+            message: "must be a hex, rgb(), hsl() or keyword colour (it is interpolated into CSS)",
           });
         }
       }

@@ -124,7 +124,7 @@ test.describe("brief version comparison", () => {
 
 test.describe("the API explorer", () => {
   test("lists every operation in the document and can call one", async ({ page, request }) => {
-    const spec = (await (await request.get("/api/v1/openapi.json")).json()) as {
+    const spec = (await (await request.get("/api/v1/openapi.json", { headers: ADMIN })).json()) as {
       paths: Record<string, Record<string, unknown>>;
     };
     const expected = Object.values(spec.paths).reduce(

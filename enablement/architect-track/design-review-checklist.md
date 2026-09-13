@@ -55,6 +55,36 @@ customer's specific configuration" — there is no generic pass/fail for it.
       both are caller-supplied and reach the model as context on endpoints that are open by
       default.
 
+## Configuration authority
+
+- [ ] Confirm whoever operates this deployment understands that an environment variable is only a
+      **default**: `SettingsService` (`src/services/settings.ts`, `DECISIONS.md` V-26) reads it once
+      at boot, and from then on `DATA_DIR/settings.json` is the authority for all 41 fields across
+      the five groups (branding, connection, limits, elevenlabs, retention). A value read from
+      `.env` or a platform secret after go-live may not be the value actually in force if anyone has
+      since patched it through `PATCH /api/v1/admin/settings` or the Settings screen — check
+      `GET /api/v1/admin/settings` (each field's `source`: `stored`/`env`/`default`), not the
+      deployment's environment configuration, when the question is "what is this deployment actually
+      doing right now."
+- [ ] Confirm the one invariant that is enforced rather than merely validated is understood by
+      whoever will operate Settings day to day: a patch that would put `turnTimeoutMs` at or above
+      `agentToolTimeoutMs` is applied, checked, and **rolled back** — both the store and the live
+      config — rather than accepted and left broken. This is the only cross-field safety net
+      Settings has; every other field is validated in isolation (type, range) and nothing stops an
+      operator from, say, setting a rate limit to zero or a retention window to zero on every group
+      at once.
+- [ ] Confirm every `settings.changed`/`settings.reset` event lands in the operator log (`GET
+      /api/v1/admin/logs`) with who, which fields, and when — never the values, since some are
+      secrets. If this customer's change-management process requires knowing *what* a setting was
+      changed *to*, not just that it changed, that is a gap: the log is an audit trail of the fact of
+      a change, not a value history.
+- [ ] Confirm a connection field's `rewiresClients` behaviour is understood before relying on "no
+      restart" as an operational promise during a live customer call: changing the Knowledge Box id,
+      region, base URL, API key or client timeout drops every cached `AragClient` in the pool
+      (`onRewire()`), so the very next ARAG call anywhere in the deployment builds a fresh client —
+      this is correct behaviour, but it means a connection change made mid-incident affects every
+      prospect on this deployment simultaneously, not just the one being investigated.
+
 ## Credentials
 
 - [ ] `ADMIN_TOKEN` is set, unique to this deployment, generated with sufficient entropy
@@ -62,19 +92,36 @@ customer's specific configuration" — there is no generic pass/fail for it.
       `assertVoiceConfig` (`src/config.ts`) already refuses to boot without one — confirm this
       check actually ran (i.e., `NODE_ENV=production`) rather than the deployment silently running
       in a mode where the check is skipped.
-- [ ] Confirm whether `API_KEYS` is set. If unset, every non-admin `/api/v1` route (including
-      `voice-answer` and `brief`) is open to anyone who can reach the host. Confirm this is the
-      customer's intended posture — it is the shipped default, appropriate for a demo, and a
-      deliberate decision to revisit for a production deployment with a public URL.
-- [ ] Confirm `POST /api/v1/scribe-token` requires a session, API key or admin token even when
-      `API_KEYS` is unset (`DECISIONS.md` V-06) — it mints third-party ElevenLabs credentials, and
-      this is the one route deliberately never left open by default. Verify this hasn't been
-      changed by a customisation.
+- [ ] Confirm the API key posture: `GET /api/v1/admin/api-keys`'s `open` field says plainly whether
+      any key is active. With none, every non-admin `/api/v1` route (including `voice-answer` and
+      `brief`) is open to anyone who can reach the host — the shipped default, appropriate for a
+      demo, and a deliberate decision to revisit before a production deployment with a public URL.
+      `API_KEYS` is only the seed for this store now (`DECISIONS.md` V-27); after boot, keys are
+      minted, named and revoked through the store, not the environment variable.
+- [ ] Confirm a **key rotation** plan exists for every real credential a customer's integration
+      holds (a telephony bridge's API key, the key baked into a pushed ElevenLabs tool's
+      `X-API-Key` header): mint the replacement first, update the caller, then revoke the old one —
+      revocation is live on the very next request (`ApiKeyStore.sync()` rewrites the authenticator's
+      array in place), so revoking before the caller has the new key is an outage, not a
+      formality. Confirm the customer's own process, not just VoiceBridge's mechanism, sequences it
+      that way. Separately, confirm whoever operates this deployment knows that revoking the
+      **last** active key reopens the API rather than locking anyone out — the intended "no keys =
+      open" behaviour, not a failure mode to design around.
+- [ ] Confirm revoked keys are expected to stay listed (marked `revoked`, never deleted) in
+      `GET /api/v1/admin/api-keys` — this is the audit trail a security review will look for, and a
+      script that filters revoked keys out of its own reporting will undercount how many
+      credentials have ever existed for this deployment.
+- [ ] Confirm `POST /api/v1/scribe-token` requires a session, API key or admin token even when no
+      key is active (`DECISIONS.md` V-06) — it mints third-party ElevenLabs credentials, and this is
+      the one route deliberately never left open by default. Verify this hasn't been changed by a
+      customisation.
 - [ ] Confirm how many real credentials are in play: one ARAG service-account token shared across
       **all** prospects today (`DECISIONS.md` V-03 — "per-prospect credentials are a documented
-      extension point," not yet implemented). If this customer's compliance model requires
-      per-prospect credential isolation (e.g. two brands that must never share a service account),
-      flag this as a gap to design around, not something already solved.
+      extension point," not yet implemented). Rotating it is a Settings connection-field change
+      (secrets are write-only: set once, then rotated, never displayed back), but it is still one
+      token for every prospect. If this customer's compliance model requires per-prospect credential
+      isolation (e.g. two brands that must never share a service account), flag this as a gap to
+      design around, not something already solved.
 
 ## Rate limits
 
@@ -95,6 +142,10 @@ customer's specific configuration" — there is no generic pass/fail for it.
 - [ ] Confirm `VOICE_SCRIBE_RATE_RPS`/`BURST` (default 0.2 rps / burst 3) are in place if Live's
       microphone transcription is in scope — this limits how fast third-party ElevenLabs Scribe
       tokens can be minted per caller IP.
+- [ ] All of the above are Settings → Limits fields now, not only environment variables — confirm
+      whoever tunes these for this customer is reading `GET /api/v1/admin/settings`'s `limits`
+      group (which shows the *effective* value and its source) rather than only the deployment's
+      environment configuration, which may no longer match if anyone has patched a value since.
 
 ## Data retention (turn log)
 
@@ -110,10 +161,26 @@ customer's specific configuration" — there is no generic pass/fail for it.
       is protected only by `ADMIN_TOKEN`, a single shared secret, not per-operator accounts or
       audit-logged access. The Quality page reads the same records through `GET /api/v1/turns`,
       which is never anonymous — it requires a same-origin session, an API key or the admin token
-      even when `API_KEYS` is unset — but a session is minted by anyone who can load the page, so
-      on an internet-reachable deployment with `API_KEYS` unset that is still everyone. Set
-      `API_KEYS`, or put the deployment behind your own authentication, before real conversations
-      run through it.
+      even when no API key is active — but a session is minted by anyone who can load the page, so
+      on an internet-reachable deployment with no active key that is still everyone. Mint at least
+      one API key under Settings → API keys, or put the deployment behind your own authentication,
+      before real conversations run through it.
+- [ ] Confirm the retention windows actually configured for this customer (Settings → Retention, or
+      `GET /api/v1/admin/settings` group `retention`): `VOICE_RETENTION_TURN_DAYS`,
+      `VOICE_RETENTION_SESSION_DAYS` and `VOICE_RETENTION_EVAL_DAYS` each default to `0`, which means
+      "keep until the underlying ring or store evicts it," not "delete promptly" — a customer who
+      assumes a stated retention policy is already enforced because the fields exist is assuming
+      something the shipped defaults do not do. If a specific retention period is a contractual or
+      regulatory requirement, confirm the windows are actually set to it, not left at the default.
+- [ ] Confirm whether `VOICE_RETENTION_AUTO_PURGE` is on. Off (the default) means the configured
+      windows are enforced only when an operator presses **Purge now** or calls
+      `POST /api/v1/admin/purge` — a real, contractual retention limit that depends on someone
+      remembering to click a button is not actually enforced. If auto-purge is the customer's
+      expectation, confirm it is switched on, not merely available.
+- [ ] Confirm whoever operates this deployment understands the danger-zone purge scopes
+      (`turns`/`sessions`/`evals`/`all`) delete **regardless of age**, immediately, with no undo, and
+      are distinct from applying the retention windows (`scope: "retention"`, the safe default). Both
+      are logged at `warn`, but only one of them is reversible by simply waiting.
 
 ## Real-time listening (agent-assist)
 
@@ -127,13 +194,14 @@ customer's specific configuration" — there is no generic pass/fail for it.
       turn-log answer above already covers it.
 - [ ] Confirm who may read a session. `GET /api/v1/listen/sessions/{id}` and
       `GET /api/v1/listen/sessions` are both `auth: "api"` (public) routes, same as
-      `voice-answer` — if `API_KEYS` is unset, **anyone who can reach the host can read any live or
+      `voice-answer` — with no active API key, **anyone who can reach the host can read any live or
       recent session's full transcript and evolving brief by id, and list recent sessions across
       every prospect on the deployment**, with no concept of "which agent owns this call." If this
       customer's compliance model requires that only the owning agent (or a supervisor) can read a
-      session, this is a gap to design around, not something already enforced — confirm `API_KEYS`
-      is set, and that "any holder of a valid key can read any session" is an acceptable interim
-      posture, or flag the missing per-session ownership check explicitly.
+      session, this is a gap to design around, not something already enforced — confirm at least one
+      API key is active (Settings → API keys), and that "any holder of a valid key can read any
+      session" is an acceptable interim posture, or flag the missing per-session ownership check
+      explicitly.
 - [ ] Confirm the throttle defaults (`DEFAULT_THROTTLE` in `src/services/listen.ts` — 1500 ms
       minimum gap, a 28-word window, a 4-word minimum, `jaccardMax: 0.85`) have been discussed with
       this customer if they have unusual conversation characteristics (very fast speakers, a

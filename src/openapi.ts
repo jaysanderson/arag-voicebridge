@@ -360,6 +360,10 @@ const VoiceAgentConfig = {
     handoff_msg: { type: "string" },
     tool: { $ref: "#/components/schemas/VoiceAgentTool" },
     system_prompt: { type: "string" },
+    system_prompt_default: {
+      type: "string",
+      description: "What an empty override would give — so the editor can show what clearing it does",
+    },
     system_prompt_custom: {
       type: "boolean",
       description: "The prompt is this prospect's own text rather than the generated default",

@@ -250,6 +250,16 @@ describe("the desired agent configuration", () => {
     expect(view.tool.headerNames).toEqual(["X-API-Key"]);
     expect(view.api_key!.prefix).toBe("vbk_abc123");
     expect(view.system_prompt_custom).toBe(false);
+    // The editor needs to be able to say what clearing the override would give.
+    expect(view.system_prompt_default).toBe(systemPrompt("Acme"));
+    const overridden = voiceAgentConfig(
+      { ...PROSPECT, system_prompt: "Say hello." },
+      cfg(),
+      "https://x.test",
+    );
+    expect(overridden.system_prompt).toBe("Say hello.");
+    expect(overridden.system_prompt_default).toBe(systemPrompt("Acme"));
+    expect(overridden.system_prompt_custom).toBe(true);
     expect(view.tool_id).toBe("tool_live_1");
     expect(JSON.stringify(view)).not.toContain("secret");
   });

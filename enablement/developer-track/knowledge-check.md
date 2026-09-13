@@ -1,6 +1,6 @@
 # Developer track — knowledge check
 
-19 questions. Try answering before you look — several are judgement calls, not recall, and the
+23 questions. Try answering before you look — several are judgement calls, not recall, and the
 "why" matters more than the label.
 
 ---
@@ -249,3 +249,60 @@ already has. Should they open a `POST /api/v1/listen/sessions` session, or call
 > multiple readers or want the server to own the throttle for you — means reimplementing
 > `decideRefresh`'s policy yourself, badly, which is exactly the mistake V-14 exists to prevent
 > (Q16).
+
+---
+
+**20. Recall.** `VOICE_TURN_TIMEOUT_MS` is set as an environment variable at boot. An operator then
+patches it through `PATCH /api/v1/admin/settings`. Does the running server need to restart to pick
+up the new value on the next voice turn?
+
+> No. `SettingsService.apply()` (`src/services/settings.ts`, `DECISIONS.md` V-26) writes the
+> effective value directly into the same `VoiceConfig` object `runTurn` already holds a reference
+> to — the environment variable only supplied the value at boot, it is not re-read afterwards, and
+> nothing about the pipeline's own code changes. The very next `POST /api/v1/voice-answer` on the
+> same process reads the patched value.
+
+---
+
+**21. Judgement.** An operator patches `limits.turnTimeoutMs` to a value at or above
+`agentToolTimeoutMs` through `PATCH /api/v1/admin/settings`. What happens, and why does Settings
+check this *after* applying the patch rather than only validating the number in isolation first?
+
+> The patch is applied, `assertVoiceConfig()` (the same check `src/config.ts` runs at boot) is run
+> again against the live config, finds the turn-budget invariant broken, and the whole change is
+> **rolled back** — the store and the live `VoiceConfig` both revert to what they were before the
+> patch — and the request gets a 400 naming the invariant. Checking a single field in isolation
+> can't catch this: the invariant is a relationship *between* two fields (`turnTimeoutMs` and
+> `agentToolTimeoutMs`), potentially in different groups, so the only way to know a patch is safe is
+> to actually apply it against the real config and check the whole thing, the same as at boot —
+> which is also why a rollback, not just a rejection, is necessary if that check fails.
+
+---
+
+**22. Judgement.** `API_KEYS` used to be the entire authentication story for `auth: "api"` routes.
+`ApiKeyStore` (`DECISIONS.md` V-27) replaces it, but still reads `API_KEYS` on first boot. What is
+`API_KEYS`'s role now, and what would break for an already-deployed customer if the store simply
+ignored it?
+
+> `API_KEYS` is now only the **seed**: on first boot, any key listed there is recorded into the
+> store as an `origin: "env"` key, so it shows up in `GET /api/v1/admin/api-keys` and keeps
+> authenticating exactly as before. If the store ignored it, every existing integration holding one
+> of those keys — a telephony bridge, a pushed ElevenLabs tool's `X-API-Key` header — would stop
+> authenticating the moment a customer upgraded to the version with the new store, with no
+> equivalent key to reach for in the admin UI, because nothing would have recorded that the old key
+> was ever meant to keep working.
+
+---
+
+**23. Recall.** `POST /api/v1/admin/voice-agent/push` writes the custom server tool before it writes
+the agent, and a `GET` immediately before that can show ElevenLabs holding both a deprecated inline
+`tools` array and a `tool_ids` array on the same agent. What does the push actually send back for
+those, and why?
+
+> `pushAgent()` (`src/services/elevenAgent.ts`) sends `tool_ids` only, dropping the inline `tools`
+> copy from what it reads and writes back — sending both is refused by ElevenLabs with a 400
+> ("Cannot specify both tools and tool IDs"), one of three live-API constraints found by
+> `make agent-check`'s throwaway-agent verification (`DECISIONS.md` V-28) rather than by the unit
+> suite, which only exercises an in-process fake with no opinion on what the real API accepts. The
+> tool is created or patched first specifically so its id exists before the agent write that links
+> to it needs one.
