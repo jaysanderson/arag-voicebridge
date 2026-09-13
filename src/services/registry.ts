@@ -8,7 +8,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import type { Branding, Collection, Logger, Store } from "../../vendor/arag-platform/src/index.ts";
 import type { VoiceConfig } from "../config.ts";
-import { avatarEnabled, scribeEnabled } from "../config.ts";
+import { scribeEnabled } from "../config.ts";
 import type {
   GoldenQuestion,
   ProspectBrand,
@@ -48,7 +48,6 @@ const OPTIONAL_STRINGS: Array<keyof ProspectConfig> = [
   "brief_model",
   "agent_id",
   "voice_id",
-  "avatar_id",
 ];
 
 /** The branding fields a prospect may override (see `ProspectBrand`). */
@@ -285,7 +284,6 @@ export class ProspectRegistry {
       agent_id: p.agent_id ?? null,
       voice_id: p.voice_id ?? null,
       golden_questions: p.golden_questions ?? [],
-      avatar_ready: avatarEnabled(this.cfg) && Boolean(p.avatar_id),
       scribe_ready: scribeEnabled(this.cfg),
       brand: this.brandFor(p),
     };

@@ -3,7 +3,6 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   assertVoiceConfig,
-  avatarEnabled,
   describeVoiceConfig,
   readVoiceBranding,
   readVoiceEnv,
@@ -72,28 +71,13 @@ describe("config", () => {
   it("feature flags follow the credentials", () => {
     expect(scribeEnabled(readVoiceEnv({}))).toBe(false);
     expect(scribeEnabled(readVoiceEnv({ ELEVENLABS_API_KEY: "k" }))).toBe(true);
-    expect(avatarEnabled(readVoiceEnv({ ELEVENLABS_API_KEY: "k" }))).toBe(false);
-    expect(
-      avatarEnabled(
-        readVoiceEnv({
-          ELEVENLABS_API_KEY: "k",
-          LIVEAVATAR_API_KEY: "la",
-          LIVEKIT_URL: "wss://x",
-          LIVEKIT_API_KEY: "a",
-          LIVEKIT_API_SECRET: "b",
-        }),
-      ),
-    ).toBe(true);
   });
 
   it("describeVoiceConfig never exposes a secret", () => {
     const described = JSON.stringify(
-      describeVoiceConfig(
-        readVoiceEnv({ ELEVENLABS_API_KEY: "sk-super-secret", LIVEKIT_API_SECRET: "s3cret" }),
-      ),
+      describeVoiceConfig(readVoiceEnv({ ELEVENLABS_API_KEY: "sk-super-secret" })),
     );
     expect(described).not.toContain("sk-super-secret");
-    expect(described).not.toContain("s3cret");
   });
 });
 

@@ -22,7 +22,7 @@ import {
   startMockArag,
   validationError,
 } from "../vendor/arag-platform/src/index.ts";
-import { assertVoiceConfig, avatarEnabled, scribeEnabled, type VoiceConfig } from "./config.ts";
+import { assertVoiceConfig, scribeEnabled, type VoiceConfig } from "./config.ts";
 import { openapi, VERSION } from "./openapi.ts";
 import { registerAdminRoutes } from "./routes/admin.ts";
 import { registerJobRoutes } from "./routes/jobs.ts";
@@ -35,7 +35,6 @@ import { runBrief } from "./services/brief.ts";
 import { AragClientPool } from "./services/clientPool.ts";
 import { type GoldenEvalResult, GoldenEvalStore, runGoldenEval } from "./services/goldenEval.ts";
 import { ListenService, ListenSessionNotFound } from "./services/listen.ts";
-import { LiveAvatarClient } from "./services/liveavatar.ts";
 import { MetricsService } from "./services/metrics.ts";
 import type { AskCapable, TurnDeps } from "./services/pipeline.ts";
 import { ProspectNotFoundError, ProspectRegistry, ValidationFailed } from "./services/registry.ts";
@@ -62,7 +61,6 @@ export interface ProductDeps {
   metrics: MetricsService;
   evals: GoldenEvalStore;
   listen: ListenService;
-  liveAvatar: LiveAvatarClient;
   usage: Usage;
   platformVersion: string;
   /** Pipeline dependencies (client resolver + config + logger). */
@@ -85,8 +83,6 @@ export interface CreateOptions {
   persist?: boolean;
   /** Seed the registry from this file when the store is empty. */
   registrySeedFile?: string;
-  /** Injectable fetch for the LiveAvatar client (tests only — never set in production). */
-  liveAvatarFetch?: (input: string, init?: RequestInit) => Promise<Response>;
 }
 
 export async function createProduct(
@@ -131,7 +127,6 @@ export async function createProduct(
   });
   const metrics = new MetricsService({ store, cap: voice.turnLogLimit });
   const evals = new GoldenEvalStore(store);
-  const liveAvatar = new LiveAvatarClient(voice, { log, fetch: opts.liveAvatarFetch });
   // Real-time listening: sessions own the throttling, the evolving brief and the citations seen
   // across a call. The brief itself is the same primitive POST /api/v1/brief exposes.
   const listen = new ListenService({
@@ -153,7 +148,6 @@ export async function createProduct(
     metrics,
     evals,
     listen,
-    liveAvatar,
     usage,
     platformVersion: PLATFORM_VERSION,
     turnDeps: () => ({
@@ -192,8 +186,10 @@ export async function createProduct(
 
   // ── HTTP ─────────────────────────────────────────────────────────────────────
   const app = new App({ env, log });
-  // The console talks WebRTC/WebSocket to ElevenLabs (agent + Scribe) and to LiveKit for the
-  // avatar pane; everything else stays on the platform's narrow default CSP.
+  // The console talks WebRTC/WebSocket to ElevenLabs for the agent call and Scribe transcription.
+  // The ElevenLabs browser client negotiates its WebRTC media over LiveKit Cloud, so those hosts
+  // are part of the ElevenLabs integration, not a separate one. Everything else stays on the
+  // platform's narrow default CSP.
   app.use(
     securityHeaders({
       connectSrc: [
@@ -220,7 +216,7 @@ export async function createProduct(
     if (err instanceof ValidationFailed) return validationError(err.errors, "body");
     if (err instanceof ListenSessionNotFound) return notFound("Listen session");
     const e = err as { name?: string; message?: string; status?: number };
-    if (["ScribeError", "VoicesError", "TtsError", "LiveAvatarError"].includes(e?.name ?? "")) {
+    if (["ScribeError", "VoicesError", "TtsError", "AgentError"].includes(e?.name ?? "")) {
       const status = e.status && e.status >= 400 && e.status <= 599 ? e.status : 502;
       return new HttpError(
         status === 503 ? 503 : status,
@@ -262,7 +258,7 @@ export async function createProduct(
   app.get("/api/v1/branding", () => voice.branding, { operationId: "getBranding", noRateLimit: true });
 
   // Which optional integrations are switched on. Booleans and non-secret detail only — this tells
-  // the Settings view why the microphone, the spoken brief or the avatar pane is unavailable,
+  // the Settings view why the microphone or the spoken brief is unavailable,
   // without leaking a key. ElevenLabs is marked primary: with a key set it powers the default
   // out-of-the-box experience (Scribe transcription, the voice agent, the spoken brief), and
   // without one the product degrades to the sample and typed conversation.
@@ -327,40 +323,6 @@ export async function createProduct(
               ttsVoiceId: voice.ttsVoiceId || "per-prospect or library default",
               defaultAgentId: voice.defaultAgentId || "set per prospect",
             },
-          },
-          {
-            id: "livekit",
-            name: "LiveKit",
-            configured: Boolean(voice.livekitUrl && voice.livekitApiKey && voice.livekitApiSecret),
-            primary: false,
-            purpose: "Media transport for the video avatar pane",
-            detail: voice.livekitUrl || undefined,
-            setup: "LIVEKIT_URL, LIVEKIT_API_KEY, LIVEKIT_API_SECRET",
-            capabilities: [
-              {
-                name: "Room tokens",
-                detail: "Minted server-side per avatar session",
-                enabled: Boolean(voice.livekitUrl),
-              },
-            ],
-            config: { url: voice.livekitUrl || "not set" },
-          },
-          {
-            id: "liveavatar",
-            name: "LiveAvatar",
-            configured: avatarEnabled(voice),
-            primary: false,
-            purpose: "The video avatar for the voice agent",
-            detail: voice.liveAvatarApiBase,
-            setup: "LIVEAVATAR_API_KEY (plus LiveKit and ElevenLabs)",
-            capabilities: [
-              {
-                name: "Lite sessions",
-                detail: "Driven by the same ElevenLabs agent",
-                enabled: avatarEnabled(voice),
-              },
-            ],
-            config: { apiBase: voice.liveAvatarApiBase },
           },
         ],
       };

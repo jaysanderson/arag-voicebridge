@@ -325,92 +325,6 @@ describe("credential-minting routes", () => {
     const withSession = await client.request("POST", "/api/v1/scribe-token", { headers: { cookie } });
     expect(withSession.status).toBe(503);
   });
-
-  it("503s avatar sessions until LiveAvatar and LiveKit are configured", async () => {
-    const r = await client.request("POST", "/api/v1/avatar/sessions", {
-      json: { prospect: "progress" },
-      headers: admin,
-    });
-    expect(r.status).toBe(503);
-  });
-});
-
-describe("avatar sessions (LiveAvatar + LiveKit configured)", () => {
-  let avatarProduct: Product;
-  let avatarClient: testing.TestClient;
-
-  before(async () => {
-    const env = readEnv({
-      ARAG_MOCK: "1",
-      DATA_DIR: mkdtempSync(join(tmpdir(), "vb-avatar-")),
-      ADMIN_TOKEN: ADMIN,
-      RATE_LIMIT_RPS: "500",
-      RATE_LIMIT_BURST: "500",
-      LOG_LEVEL: "error",
-    });
-    avatarProduct = await createProduct(
-      env,
-      readVoiceEnv({
-        ELEVENLABS_API_KEY: "xi-test",
-        LIVEAVATAR_API_KEY: "la-test",
-        LIVEAVATAR_ELEVENLABS_SECRET_ID: "sec-test",
-        LIVEKIT_URL: "wss://livekit.test",
-        LIVEKIT_API_KEY: "lk-key",
-        LIVEKIT_API_SECRET: "lk-secret",
-      }),
-      {
-        log: new Logger({ level: "error", ringSize: 10, write: () => {} }),
-        persist: false,
-        liveAvatarFetch: async () =>
-          new Response(JSON.stringify({ session_id: "sess-1" }), {
-            status: 200,
-            headers: { "content-type": "application/json" },
-          }),
-      },
-    );
-    avatarClient = await testing.startTestServer(avatarProduct.app);
-  });
-
-  after(async () => {
-    await avatarClient.close();
-    await avatarProduct.close();
-  });
-
-  it("starts a session and returns a viewer token for a bridge-owned room", async () => {
-    const rec = avatarProduct.deps.registry.require("progress");
-    avatarProduct.deps.registry.replace("progress", { ...rec, agent_id: "agent_1", avatar_id: "avatar_1" });
-    const r = await avatarClient.request("POST", "/api/v1/avatar/sessions", {
-      json: { prospect: "progress" },
-      headers: admin,
-    });
-    expect(r.status).toBe(201);
-    const body = r.json as { livekit_url: string; room: string; token: string; session_id: string };
-    expect(body.livekit_url).toBe("wss://livekit.test");
-    expect(body.room.startsWith("progress-")).toBe(true);
-    expect(body.session_id).toBe("sess-1");
-    // The viewer token is a LiveKit JWT scoped to that room, minted server-side.
-    const payload = JSON.parse(Buffer.from(body.token.split(".")[1]!, "base64url").toString("utf8"));
-    expect(payload.video.room).toBe(body.room);
-    expect(payload.iss).toBe("lk-key");
-  });
-
-  it("explains which prospect fields the avatar pane needs", async () => {
-    const rec = avatarProduct.deps.registry.require("tangerine");
-    avatarProduct.deps.registry.replace("tangerine", { ...rec, agent_id: "agent_2" });
-    const r = await avatarClient.request("POST", "/api/v1/avatar/sessions", {
-      json: { prospect: "tangerine" },
-      headers: admin,
-    });
-    expect(r.status).toBe(400);
-    expect((r.json as { detail: string }).detail).toContain("avatar_id");
-  });
-
-  it("still refuses anonymous callers", async () => {
-    const r = await avatarClient.request("POST", "/api/v1/avatar/sessions", {
-      json: { prospect: "progress" },
-    });
-    expect(r.status).toBe(401);
-  });
 });
 
 describe("metrics", () => {
@@ -578,7 +492,7 @@ describe("the workspace surfaces", () => {
       }
     ).items;
     expect(items.find((i) => i.id === "arag")?.configured).toBe(true);
-    expect(items.length).toBe(4);
+    expect(items.length).toBe(2);
 
     // ElevenLabs is a primary integration: with a key it powers transcription, the voice agent
     // and the spoken brief. Without one it reports itself honestly and the product degrades.

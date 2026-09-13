@@ -99,8 +99,6 @@ export interface ProspectConfig {
   /** Non-secret ElevenLabs identifiers (used by the browser, not the server). */
   agent_id?: string;
   voice_id?: string;
-  /** HeyGen/LiveAvatar avatar id for this prospect's video avatar. */
-  avatar_id?: string;
   locale: string;
   greeting: string;
   handoff_msg: string;
@@ -143,7 +141,6 @@ export interface PublicProspect {
   agent_id: string | null;
   voice_id: string | null;
   golden_questions: GoldenQuestion[];
-  avatar_ready: boolean;
   scribe_ready: boolean;
   /** Branding for this prospect: the deployment's branding with its overrides applied. */
   brand: Branding;

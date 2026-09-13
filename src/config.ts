@@ -56,9 +56,6 @@ export interface VoiceConfig {
   briefBurst: number;
   scribeRps: number;
   scribeBurst: number;
-  /** Per-IP budget for starting an avatar session (mints LiveKit tokens and a billed upstream session). */
-  avatarRps: number;
-  avatarBurst: number;
   elevenLabsApiKey: string;
   elevenLabsApiBase: string;
   /** Scribe realtime model used for microphone transcription in Live. */
@@ -70,14 +67,6 @@ export interface VoiceConfig {
   /** Per-IP budget for text-to-speech (it costs money per character). */
   ttsRps: number;
   ttsBurst: number;
-  liveAvatarApiKey: string;
-  liveAvatarApiBase: string;
-  liveAvatarSecretsPath: string;
-  liveAvatarSessionPath: string;
-  liveAvatarElevenLabsSecretId: string;
-  livekitUrl: string;
-  livekitApiKey: string;
-  livekitApiSecret: string;
   /** White-label branding for this deployment. */
   branding: Branding;
 }
@@ -97,8 +86,6 @@ export function readVoiceEnv(src: Src = process.env): VoiceConfig {
     briefBurst: num(src, "VOICE_BRIEF_RATE_BURST", 5),
     scribeRps: num(src, "VOICE_SCRIBE_RATE_RPS", 0.2),
     scribeBurst: num(src, "VOICE_SCRIBE_RATE_BURST", 3),
-    avatarRps: num(src, "VOICE_AVATAR_RATE_RPS", 0.2),
-    avatarBurst: num(src, "VOICE_AVATAR_RATE_BURST", 3),
     elevenLabsApiKey: str(src, "ELEVENLABS_API_KEY"),
     elevenLabsApiBase: str(src, "ELEVENLABS_API_BASE", "https://api.elevenlabs.io"),
     scribeModel: str(src, "ELEVENLABS_SCRIBE_MODEL", "scribe_v2_realtime"),
@@ -106,14 +93,6 @@ export function readVoiceEnv(src: Src = process.env): VoiceConfig {
     ttsModelId: str(src, "ELEVENLABS_TTS_MODEL", "eleven_flash_v2_5"),
     ttsRps: num(src, "VOICE_TTS_RATE_RPS", 1),
     ttsBurst: num(src, "VOICE_TTS_RATE_BURST", 6),
-    liveAvatarApiKey: str(src, "LIVEAVATAR_API_KEY"),
-    liveAvatarApiBase: str(src, "LIVEAVATAR_API_BASE", "https://api.liveavatar.com/v1"),
-    liveAvatarSecretsPath: str(src, "LIVEAVATAR_SECRETS_PATH", "/secrets"),
-    liveAvatarSessionPath: str(src, "LIVEAVATAR_SESSION_PATH", "/sessions"),
-    liveAvatarElevenLabsSecretId: str(src, "LIVEAVATAR_ELEVENLABS_SECRET_ID"),
-    livekitUrl: str(src, "LIVEKIT_URL"),
-    livekitApiKey: str(src, "LIVEKIT_API_KEY"),
-    livekitApiSecret: str(src, "LIVEKIT_API_SECRET"),
     branding: readVoiceBranding(src),
   };
 }
@@ -121,17 +100,6 @@ export function readVoiceEnv(src: Src = process.env): VoiceConfig {
 /** Is the ambient "Listen" mode available? Needs only an ElevenLabs key (Scribe STT). */
 export function scribeEnabled(v: VoiceConfig): boolean {
   return Boolean(v.elevenLabsApiKey);
-}
-
-/** Is the LiveAvatar pane configured? Needs LiveAvatar + LiveKit + an ElevenLabs key/secret. */
-export function avatarEnabled(v: VoiceConfig): boolean {
-  return Boolean(
-    v.liveAvatarApiKey &&
-      v.livekitUrl &&
-      v.livekitApiKey &&
-      v.livekitApiSecret &&
-      (v.liveAvatarElevenLabsSecretId || v.elevenLabsApiKey),
-  );
 }
 
 /**
@@ -163,7 +131,6 @@ export function describeVoiceConfig(v: VoiceConfig): Record<string, unknown> {
       brief: { rps: v.briefRps, burst: v.briefBurst },
       scribeToken: { rps: v.scribeRps, burst: v.scribeBurst },
       speech: { rps: v.ttsRps, burst: v.ttsBurst },
-      avatarSession: { rps: v.avatarRps, burst: v.avatarBurst },
     },
     elevenLabs: {
       configured: Boolean(v.elevenLabsApiKey),
@@ -172,14 +139,9 @@ export function describeVoiceConfig(v: VoiceConfig): Record<string, unknown> {
       ttsModel: v.ttsModelId,
       ttsVoiceId: v.ttsVoiceId,
     },
-    liveAvatar: { configured: Boolean(v.liveAvatarApiKey), apiBase: v.liveAvatarApiBase },
-    livekit: {
-      configured: Boolean(v.livekitUrl && v.livekitApiKey && v.livekitApiSecret),
-      url: v.livekitUrl,
-    },
     // Non-secret: the same value is served to browsers on /api/v1/prospects.
     defaultAgentId: v.defaultAgentId,
-    features: { scribe: scribeEnabled(v), avatar: avatarEnabled(v) },
+    features: { scribe: scribeEnabled(v) },
     branding: v.branding,
   };
 }

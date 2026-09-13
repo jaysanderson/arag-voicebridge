@@ -184,13 +184,11 @@ describe("ProspectRegistry", () => {
 
   it("publicView never leaks kb ids, regions or stored config names", () => {
     const { reg } = registry();
-    const rec = reg.create("acme", { ...valid, ask_config: "acme_voice", avatar_id: "av1" });
+    const rec = reg.create("acme", { ...valid, ask_config: "acme_voice" });
     const pub = reg.publicView(rec);
     const json = JSON.stringify(pub);
     expect(json).not.toContain("kb-1");
     expect(json).not.toContain("acme_voice");
-    expect(json).not.toContain("av1");
     expect(pub.scribe_ready).toBe(false);
-    expect(pub.avatar_ready).toBe(false);
   });
 });

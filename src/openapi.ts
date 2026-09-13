@@ -268,7 +268,7 @@ const IntegrationStatus = {
   type: "object",
   required: ["id", "name", "configured", "purpose"],
   properties: {
-    id: { type: "string", enum: ["arag", "elevenlabs", "livekit", "liveavatar"] },
+    id: { type: "string", enum: ["arag", "elevenlabs"] },
     name: { type: "string" },
     configured: { type: "boolean" },
     primary: {
@@ -357,7 +357,6 @@ const Prospect = {
     agent_id: { type: ["string", "null"], description: "ElevenLabs agent id (non-secret)" },
     voice_id: { type: ["string", "null"] },
     golden_questions: { type: "array", items: { $ref: "#/components/schemas/GoldenQuestion" } },
-    avatar_ready: { type: "boolean" },
     scribe_ready: { type: "boolean" },
     brand: {
       $ref: "#/components/schemas/Branding",
@@ -396,7 +395,6 @@ const ProspectInput = {
     },
     agent_id: { type: "string", maxLength: 120 },
     voice_id: { type: "string", maxLength: 120 },
-    avatar_id: { type: "string", maxLength: 120 },
     locale: { type: "string", minLength: 2, maxLength: 20 },
     greeting: { type: "string", minLength: 1, maxLength: 600 },
     handoff_msg: { type: "string", minLength: 1, maxLength: 600 },
@@ -599,7 +597,7 @@ export const openapi = buildOpenApi({
     },
     { name: "voice", description: "Voice turns and the live brief" },
     { name: "prospects", description: "The prospect registry (non-secret projection)" },
-    { name: "realtime", description: "ElevenLabs Scribe and LiveAvatar session bootstrap" },
+    { name: "realtime", description: "ElevenLabs Scribe, speech and agent configuration" },
     { name: "quality", description: "Metrics and golden-set evaluations" },
     { name: "jobs", description: "Asynchronous work" },
     { name: "admin", description: "Operator endpoints (ADMIN_TOKEN)" },
@@ -1085,40 +1083,6 @@ export const openapi = buildOpenApi({
         security: publicSecurity,
       },
     },
-    "/api/v1/avatar/sessions": {
-      post: {
-        operationId: "createAvatarSession",
-        tags: ["realtime"],
-        summary: "Start a LiveAvatar session in a bridge-owned LiveKit room",
-        requestBody: jsonBody({
-          type: "object",
-          required: ["prospect"],
-          properties: { prospect: { type: "string", pattern: prospectKeyPattern } },
-          additionalProperties: false,
-        }),
-        responses: {
-          201: jsonResponse(
-            {
-              type: "object",
-              required: ["livekit_url", "room", "token"],
-              properties: {
-                livekit_url: { type: "string" },
-                room: { type: "string" },
-                token: { type: "string", description: "Viewer token for the browser" },
-                session_id: { type: ["string", "null"] },
-              },
-            },
-            "Session started",
-          ),
-          503: {
-            description: "LiveAvatar/LiveKit are not configured",
-            content: { "application/problem+json": { schema: { $ref: "#/components/schemas/Problem" } } },
-          },
-          ...standardResponses,
-        },
-        security: publicSecurity,
-      },
-    },
     "/api/v1/metrics": {
       get: {
         operationId: "getMetrics",
@@ -1213,7 +1177,7 @@ export const openapi = buildOpenApi({
         summary: "Which optional integrations this deployment has configured",
         description:
           "Booleans and non-secret detail only — never a credential. Backs the Settings view so a " +
-          "partner can see at a glance why the microphone or the avatar pane is unavailable.",
+          "partner can see at a glance why the microphone or the spoken brief is unavailable.",
         responses: {
           200: jsonResponse({
             type: "object",
