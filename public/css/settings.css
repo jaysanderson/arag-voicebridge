@@ -1,0 +1,291 @@
+/*! Settings — the few things the UI kit and the product surface do not already carry.
+
+    Everything on this screen is the kit: `.arag-card`, `.arag-field`, `.arag-input`,
+    `.arag-datatable`, `.arag-dropzone`, `.arag-alert`, `.arag-chip`, `.arag-tabs`. What is left
+    here is the settings *form* itself — a field that has to say where its value came from, an
+    error that has to land against the offending control, a branding preview, and the one-time
+    secret panel. All of it is expressed against the kit's tokens and the product's 4/8 rhythm
+    (`--vb-s*` from ui-ext.css), so a white-label brand change still lands in one place. */
+
+/* ---------- section index ----------
+   A settings screen is one long page with a sticky index, not a wizard: an operator sent here by
+   a deep link (#branding, #api-keys) lands on the section and can still see the rest. */
+.vb-set-nav {
+  position: sticky;
+  /* Under the band, not behind it: the kit's band is sticky at top:0 with z-index 40, and it
+     collapses to 0 height on a deployment that hides the Progress signature. */
+  top: var(--arag-band-h);
+  z-index: 5;
+  margin-bottom: var(--vb-s5);
+  padding-top: var(--vb-s1);
+  background: var(--arag-surface);
+}
+
+.vb-set-nav a[aria-current="page"] {
+  color: var(--arag-brand-600);
+  border-bottom-color: var(--arag-brand-600);
+}
+
+/* Anchors sit under the sticky index when the browser jumps to one. The voice-agent panel is a
+   deep-link target of the onboarding wizard without being a section of its own. */
+.vb-set-section,
+.vb-set-anchor {
+  scroll-margin-top: calc(var(--arag-band-h) + 58px);
+}
+
+.vb-set-section + .vb-set-section {
+  margin-top: var(--vb-s5);
+}
+
+/* ---------- the group form ---------- */
+.vb-set-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: var(--vb-s4) var(--vb-s5);
+}
+
+/* A field that runs the width of the card: prose, a long URL, a system prompt. */
+.vb-set-grid > .wide {
+  grid-column: 1 / -1;
+}
+
+/* Where this value came from, and how to put it back. It sits under the control, with the help
+   text: beside the label it wrapped, and a wrapped label starts every control in the row at a
+   different height. Quiet by default — it is provenance, not a call to action. */
+.vb-set-origin {
+  margin: 0;
+  font-size: 0.7rem;
+  font-weight: 500;
+  color: var(--arag-text-subtle);
+}
+
+.vb-set-origin.stored {
+  color: var(--arag-brand-600);
+  font-weight: 600;
+}
+
+.vb-set-origin button {
+  border: 0;
+  background: none;
+  padding: 0;
+  font: inherit;
+  color: var(--arag-brand-600);
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.vb-set-origin button:hover {
+  color: var(--arag-text);
+}
+
+/* A server-side validation error lands against its own field. The kit has no invalid state for a
+   control, so this is the one piece of form styling the product owns. */
+.vb-set-field .vb-set-err {
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: var(--arag-danger-fg);
+}
+
+.vb-set-field[data-invalid] .arag-input,
+.vb-set-field[data-invalid] .arag-select,
+.vb-set-field[data-invalid] .arag-textarea {
+  border-color: var(--arag-danger-fg);
+}
+
+/* Colour: the swatch and the hex a partner pastes are one control. */
+.vb-set-colour {
+  display: flex;
+  gap: var(--vb-s2);
+  align-items: center;
+}
+
+.vb-set-colour input[type="color"] {
+  flex: 0 0 auto;
+}
+
+/* A secret that is already set: the hint and the rotate control, never a value. */
+.vb-set-secret {
+  display: flex;
+  align-items: center;
+  gap: var(--vb-s2);
+  flex-wrap: wrap;
+  min-height: 36px;
+}
+
+.vb-set-secret code {
+  font-size: 0.8rem;
+  color: var(--arag-text-muted);
+}
+
+/* The card foot: save, reset, and the result of the last attempt, in place. */
+.vb-set-foot {
+  display: flex;
+  align-items: center;
+  gap: var(--vb-s3);
+  flex-wrap: wrap;
+  margin-top: var(--vb-s5);
+  padding-top: var(--vb-s4);
+  border-top: 1px solid var(--vb-hairline);
+}
+
+.vb-set-foot .spacer {
+  flex: 1 1 auto;
+}
+
+.vb-set-foot .vb-set-status {
+  font-size: 0.78rem;
+  color: var(--arag-text-subtle);
+}
+
+.vb-set-foot .vb-set-status.ok {
+  color: var(--arag-accent-fg);
+  font-weight: 600;
+}
+
+.vb-set-foot .vb-set-status.bad {
+  color: var(--arag-danger-fg);
+  font-weight: 600;
+}
+
+/* ---------- branding preview ----------
+   The rail as the customer will see it, repainted on every keystroke, before anything is saved. */
+.vb-set-preview {
+  border-radius: var(--arag-radius-lg);
+  background: var(--arag-ink-950);
+  color: #fff;
+  padding: var(--vb-s4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--vb-s3);
+}
+
+.vb-set-preview .mark {
+  min-height: 22px;
+  display: flex;
+  align-items: center;
+}
+
+.vb-set-preview .mark img {
+  max-height: 22px;
+  max-width: 160px;
+}
+
+.vb-set-preview .name {
+  font-size: 1rem;
+  font-weight: 650;
+  line-height: 1.25;
+}
+
+.vb-set-preview .tagline {
+  font-size: 0.76rem;
+  opacity: 0.62;
+}
+
+.vb-set-preview .swatches {
+  display: flex;
+  gap: var(--vb-s2);
+  align-items: center;
+}
+
+.vb-set-preview .swatch {
+  width: 34px;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--arag-brand-500);
+}
+
+.vb-set-preview .foot {
+  font-size: 0.7rem;
+  opacity: 0.5;
+}
+
+/* The uploaded mark, on the light surface it will also appear on. */
+.vb-set-logo {
+  display: flex;
+  align-items: center;
+  gap: var(--vb-s3);
+  flex-wrap: wrap;
+}
+
+.vb-set-logo .frame {
+  display: grid;
+  place-items: center;
+  min-width: 96px;
+  height: 52px;
+  padding: 0 var(--vb-s2);
+  border: 1px solid var(--vb-hairline);
+  border-radius: var(--arag-radius);
+  background: var(--arag-surface-raised);
+}
+
+.vb-set-logo .frame img {
+  max-height: 34px;
+  max-width: 140px;
+}
+
+.vb-set-dropzone {
+  padding: var(--vb-s4);
+}
+
+/* ---------- the one-time secret ----------
+   Shown once, ever. It gets the weight of an alert and the width of the card, because an operator
+   who scrolls past it has lost the key. */
+.vb-set-once {
+  border: 1px solid var(--arag-accent-500);
+  border-radius: var(--arag-radius-lg);
+  background: var(--arag-accent-soft);
+  padding: var(--vb-s4);
+  margin-bottom: var(--vb-s4);
+}
+
+.vb-set-once h3 {
+  margin: 0 0 var(--vb-s1);
+  font-size: 0.95rem;
+}
+
+.vb-set-once p {
+  margin: 0 0 var(--vb-s3);
+  font-size: 0.8rem;
+  color: var(--arag-text-muted);
+}
+
+/* ---------- the voice-agent diff ---------- */
+.vb-set-diff td.val {
+  font-family: var(--arag-font-mono);
+  font-size: 0.76rem;
+  word-break: break-word;
+}
+
+.vb-set-diff tr[data-matches="false"] td.val {
+  color: var(--arag-text);
+}
+
+.vb-set-diff tr[data-matches="false"] {
+  background: color-mix(in srgb, var(--arag-warn-bg) 45%, transparent);
+}
+
+/* Give the two sides of the comparison equal weight — one of them is not more important. */
+.vb-set-diff th:nth-child(2),
+.vb-set-diff th:nth-child(3) {
+  width: 36%;
+}
+
+/* ---------- responsive ----------
+   390 px: the grid is already one column (auto-fit), so only the wider pieces need help. */
+@media (max-width: 640px) {
+  .vb-set-grid {
+    gap: var(--vb-s4);
+  }
+
+  .vb-set-foot {
+    align-items: stretch;
+  }
+
+  .vb-set-foot .spacer {
+    display: none;
+  }
+
+  .vb-set-nav {
+    margin-bottom: var(--vb-s4);
+  }
+}

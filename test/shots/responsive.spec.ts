@@ -9,7 +9,16 @@
 import { expect, test } from "@playwright/test";
 
 const WIDTHS = [1440, 1200, 1024, 768, 390];
-const PAGES = ["/", "/conversations/", "/knowledge/", "/prospects/", "/quality/", "/settings/"];
+const PAGES = [
+  "/",
+  "/conversations/",
+  "/knowledge/",
+  "/prospects/",
+  "/quality/",
+  "/api/",
+  "/setup/",
+  "/settings/",
+];
 
 for (const width of WIDTHS) {
   test(`no horizontal page scroll at ${width} px`, async ({ page }) => {

@@ -1,0 +1,465 @@
+/*! VoiceBridge — the Prospects editor.
+
+    Everything the shared kit already owns is used as-is: `.arag-card`, `.arag-field`,
+    `.arag-input`, `.arag-select`, `.arag-textarea`, `.arag-help`, `.arag-grid`, `.arag-tabs`,
+    `.arag-chip`, `.arag-alert`, `.arag-datatable` and the drawer. What is here is the two things
+    the kit has no component for:
+
+      1. the editor's scroll furniture inside a drawer — a pinned tab strip, a pinned live
+         preview, and a pinned save bar, so a long form never hides its own controls; and
+      2. the live branding preview itself: a miniature of the product's identity that redraws on
+         every keystroke and says, per field, whether the value is this prospect's own or is
+         inherited from the deployment.
+
+    Colours in the preview arrive as CSS custom properties written from JavaScript, and only ever
+    after `isSafeColor()` (the platform's own grammar) has accepted them. */
+
+/* ─────────────────────── editor scroll furniture ─────────────────────── */
+
+/* The drawer body scrolls; these three pieces must not scroll away with it.
+
+   A sticky offset inside a scroll container is measured from the scrollport *inset by the
+   container's own padding*, and the kit's drawer body carries 16px of it. Pinning to `top: 0`
+   therefore leaves a 16px strip above the tab strip that the content scrolls through in full
+   view, so the offsets below are stated against that padding instead. The tab strip is also
+   given an exact height, so the preview under it can pin to a known offset. */
+.vb-pr-tabs,
+.vb-pv-wrap,
+.vb-pr-foot {
+  --vb-pr-pad: 16px;
+  --vb-pr-tabs-h: 37px;
+}
+.vb-pr-tabs {
+  position: sticky;
+  top: calc(-1 * var(--vb-pr-pad));
+  z-index: 3;
+  height: var(--vb-pr-tabs-h);
+  margin: 0 0 14px;
+  background: var(--arag-surface-raised);
+}
+
+.vb-pr-panel > h3 {
+  margin: 22px 0 10px;
+  font-size: 0.86rem;
+}
+.vb-pr-panel > h3:first-child {
+  margin-top: 0;
+}
+
+/* A lead-in under a section heading: one line that says why the section exists. */
+.vb-pr-lead {
+  margin: -4px 0 12px;
+  font-size: 0.78rem;
+  color: var(--arag-text-muted);
+}
+
+/* Two columns where two short values belong on one line (region + locale, the two colours),
+   collapsing to one at the width a drawer reaches on a phone. */
+.vb-pr-pair {
+  display: grid;
+  gap: 12px 14px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+.vb-pr-field-span {
+  grid-column: 1 / -1;
+}
+@media (max-width: 560px) {
+  .vb-pr-pair {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Fields carry their own error slot, so a server error lands under the input it names rather
+   than in a toast. `aria-describedby` points the input at it. */
+.arag-help.vb-pr-error {
+  color: var(--arag-danger-fg);
+  font-weight: 600;
+}
+.arag-input[aria-invalid="true"],
+.arag-select[aria-invalid="true"],
+.arag-textarea[aria-invalid="true"] {
+  border-color: var(--arag-danger-fg);
+}
+
+/* A live character budget next to a label ("412 / 600"), amber as it runs out. */
+.vb-pr-count {
+  float: right;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  color: var(--arag-text-subtle);
+}
+.vb-pr-count[data-over="true"] {
+  color: var(--arag-danger-fg);
+}
+
+/* The save bar: full-bleed to the drawer's edges and pinned to its floor. */
+.vb-pr-foot {
+  position: sticky;
+  bottom: calc(-1 * var(--vb-pr-pad));
+  z-index: 3;
+  margin: 22px calc(-1 * var(--vb-pr-pad)) calc(-1 * var(--vb-pr-pad));
+  padding: 12px var(--vb-pr-pad);
+  background: var(--arag-surface-raised);
+  border-top: 1px solid var(--arag-border);
+}
+.vb-pr-foot .arag-row {
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.vb-pr-foot .spacer {
+  flex: 1 1 auto;
+}
+
+/* ─────────────────────── the golden set row editor ─────────────────────── */
+
+.vb-gq {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px 12px;
+  padding: 12px;
+  margin-bottom: 10px;
+  border: 1px solid var(--arag-border);
+  border-radius: var(--arag-radius);
+  background: var(--arag-surface);
+}
+.vb-gq > .vb-gq-head {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.74rem;
+  font-weight: 600;
+  color: var(--arag-text-subtle);
+}
+.vb-gq > .vb-gq-head .spacer {
+  flex: 1 1 auto;
+}
+.vb-gq > .arag-field {
+  grid-column: 1 / -1;
+}
+.vb-gq .vb-pr-pair {
+  grid-column: 1 / -1;
+}
+
+/* ─────────────────────── the live branding preview ─────────────────────── */
+
+/* Pinned directly under the tab strip, so the result stays on screen while the fields below it
+   are typed into. */
+.vb-pv-wrap {
+  position: sticky;
+  top: calc(var(--vb-pr-tabs-h) - var(--vb-pr-pad));
+  z-index: 2;
+  padding-bottom: 12px;
+  background: var(--arag-surface-raised);
+}
+
+.vb-pv {
+  --vb-pv-primary: var(--arag-brand-600);
+  --vb-pv-accent: var(--arag-green);
+  overflow: hidden;
+  border: 1px solid var(--arag-border);
+  border-radius: var(--arag-radius-lg);
+  box-shadow: var(--arag-shadow);
+  font-size: 10px;
+  line-height: 1.35;
+  user-select: none;
+}
+
+/* The Progress signature band. `poweredBy: false` removes it, exactly as the shell does. */
+.vb-pv-band {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 22px;
+  padding: 0 8px;
+  background: var(--arag-ink-950);
+  border-bottom: 2px solid var(--arag-green);
+}
+.vb-pv-band img {
+  height: 9px;
+  width: auto;
+}
+.vb-pv-band .spacer {
+  flex: 1 1 auto;
+}
+.vb-pv-band span {
+  color: rgba(255, 255, 255, 0.6);
+  font-size: 8px;
+}
+
+.vb-pv-body {
+  display: flex;
+  min-height: 152px;
+}
+
+/* The dark rail: the mark, the product name, the tagline, navigation, the footer line. */
+.vb-pv-rail {
+  flex: 0 0 120px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 9px 9px;
+  background: var(--arag-rail-bg);
+  color: rgba(255, 255, 255, 0.74);
+}
+.vb-pv-ident {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--arag-rail-line);
+}
+.vb-pv-mark {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  margin-bottom: 3px;
+  border-radius: 5px;
+  background: var(--vb-pv-primary);
+  color: #fff;
+  font-weight: 700;
+  font-size: 10px;
+  overflow: hidden;
+}
+.vb-pv-mark img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+.vb-pv-name {
+  color: #fff;
+  font-weight: 700;
+  font-size: 11px;
+  font-family: var(--arag-font-display);
+  word-break: break-word;
+}
+.vb-pv-tagline {
+  font-size: 8px;
+  color: rgba(255, 255, 255, 0.6);
+  overflow-wrap: anywhere;
+}
+.vb-pv-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 9px;
+}
+.vb-pv-nav li {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+.vb-pv-nav li::before {
+  content: "";
+  width: 2px;
+  height: 10px;
+  border-radius: 2px;
+  background: transparent;
+}
+.vb-pv-nav li[aria-current]::before {
+  background: var(--vb-pv-accent);
+}
+.vb-pv-nav li[aria-current] {
+  color: #fff;
+}
+.vb-pv-foot {
+  margin-top: auto;
+  padding-top: 8px;
+  border-top: 1px solid var(--arag-rail-line);
+  font-size: 8.5px;
+  color: rgba(255, 255, 255, 0.55);
+  word-break: break-word;
+}
+
+/* The content column: a page head with the action colour, a card, and the Progress credit. */
+.vb-pv-main {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
+  background: var(--arag-surface);
+}
+.vb-pv-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.vb-pv-h1 {
+  font-family: var(--arag-font-display);
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--arag-text);
+}
+.vb-pv-head .spacer {
+  flex: 1 1 auto;
+}
+.vb-pv-btn {
+  padding: 3px 8px;
+  border-radius: 5px;
+  background: var(--vb-pv-primary);
+  color: #fff;
+  font-weight: 600;
+  font-size: 9px;
+  white-space: nowrap;
+}
+.vb-pv-card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px;
+  border: 1px solid var(--arag-border);
+  border-radius: var(--arag-radius);
+  background: var(--arag-surface-raised);
+}
+.vb-pv-pill {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: var(--vb-pv-accent);
+  color: var(--arag-green-ink);
+  font-size: 8.5px;
+  font-weight: 700;
+}
+.vb-pv-line {
+  height: 5px;
+  border-radius: 3px;
+  background: var(--arag-hairline);
+}
+.vb-pv-line.short {
+  width: 55%;
+}
+.vb-pv-credit {
+  margin-top: auto;
+  padding-top: 6px;
+  border-top: 1px solid var(--vb-hairline, var(--arag-border));
+  font-size: 8.5px;
+  color: var(--arag-text-subtle);
+}
+
+/* Which values are this prospect's own. The dotted rule is a second signal only — the layering
+   list below the preview names every field in words. */
+.vb-pv [data-origin="override"] {
+  text-decoration: underline dotted var(--vb-pv-accent) 1.5px;
+  text-underline-offset: 2px;
+}
+
+.vb-pv-legend {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 12px;
+  margin: 8px 0 0;
+  font-size: 0.72rem;
+  color: var(--arag-text-muted);
+}
+.vb-pv-legend .swatch {
+  display: inline-block;
+  width: 14px;
+  border-bottom: 2px dotted var(--arag-accent-500);
+  vertical-align: middle;
+  margin-right: 4px;
+}
+
+/* The layering, in words: every brand field, its effective value, and where that value came
+   from. This is the part an operator reads when the preview surprises them. */
+.vb-pv-layers {
+  margin: 0 0 16px;
+  padding: 0;
+  list-style: none;
+  border: 1px solid var(--arag-border);
+  border-radius: var(--arag-radius);
+  overflow: hidden;
+}
+.vb-pv-layers li {
+  display: grid;
+  grid-template-columns: 96px minmax(0, 1fr) auto;
+  gap: 4px 10px;
+  align-items: baseline;
+  padding: 7px 10px;
+  font-size: 0.76rem;
+  border-top: 1px solid var(--vb-hairline, var(--arag-border));
+}
+.vb-pv-layers li:first-child {
+  border-top: 0;
+}
+.vb-pv-layers .k {
+  color: var(--arag-text-muted);
+  font-weight: 600;
+}
+.vb-pv-layers .v {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.vb-pv-layers .v.none {
+  color: var(--arag-text-subtle);
+  font-style: italic;
+}
+@media (max-width: 480px) {
+  .vb-pv-layers li {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+  .vb-pv-layers .k {
+    grid-column: 1 / -1;
+  }
+}
+
+/* A colour: the swatch picker and the text a partner pastes, as one control. */
+.vb-pr-colour {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.vb-pr-colour .arag-input[type="color"] {
+  flex: 0 0 auto;
+}
+.vb-pr-colour .arag-input[type="text"] {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-family: var(--arag-font-mono);
+}
+
+/* The raw-JSON escape hatch. It is a tab, never the front door. */
+.vb-pr-json {
+  min-height: 320px;
+  font-family: var(--arag-font-mono);
+  font-size: 12px;
+}
+
+/* ─────────────────────── the read-only sign-in banner ─────────────────────── */
+
+/* The token field, the copy and the mark share one row on a desktop and stack on a phone. The
+   kit's `.arag-row` does not shrink its children, so the input gets an explicit min-width of 0. */
+.vb-pr-signin-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 14px;
+}
+.vb-pr-signin-copy {
+  flex: 1 1 220px;
+  min-width: 0;
+}
+.vb-pr-signin-form {
+  flex: 0 1 260px;
+  min-width: 180px;
+}
+.vb-pr-signin-form .arag-row {
+  gap: 8px;
+}
+.vb-pr-signin-form .arag-input {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.vb-pr-signin-form .arag-btn {
+  flex: 0 0 auto;
+}

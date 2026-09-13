@@ -638,6 +638,8 @@ export interface DescribedField {
   /** Secrets only: is one configured, and a hint that identifies it without revealing it. */
   set?: boolean;
   hint?: string;
+  /** Secrets only: would resetting this field restore one from the environment? Never the value. */
+  envSet?: boolean;
   /** Where the effective value came from. */
   source: "stored" | "env" | "default";
   /** The boot-time default, so the UI can offer "reset to the environment". */
@@ -659,6 +661,12 @@ export interface SettingsDeps {
   log: Logger;
   env: PlatformEnv;
   voice: VoiceConfig;
+  /**
+   * The raw environment, used only to tell "the variable is set to 0/false/empty" apart from "the
+   * variable is not set at all". Both produce the same effective value, and a settings screen that
+   * cannot distinguish them tells an operator the wrong story about where a value came from.
+   */
+  envSrc?: Record<string, string | undefined>;
   /** Called after a change that invalidates the cached ARAG clients. */
   onRewire?: () => void;
 }
@@ -670,13 +678,20 @@ export class SettingsService {
   private readonly onRewire?: () => void;
   /** The boot-time (environment) values, captured before any stored override is applied. */
   private readonly defaults = new Map<string, unknown>();
+  /** Which fields had their environment variable actually present at boot. */
+  private readonly fromEnv = new Set<string>();
 
   constructor(deps: SettingsDeps) {
     this.col = deps.store.collection<SettingsDoc>("settings");
     this.live = { env: deps.env, voice: deps.voice };
     this.log = deps.log;
     this.onRewire = deps.onRewire;
-    for (const f of SETTINGS_FIELDS) this.defaults.set(`${f.group}.${f.key}`, f.read(this.live));
+    const src = deps.envSrc ?? process.env;
+    for (const f of SETTINGS_FIELDS) {
+      const id = `${f.group}.${f.key}`;
+      this.defaults.set(id, f.read(this.live));
+      if (src[f.env] !== undefined && src[f.env] !== "") this.fromEnv.add(id);
+    }
   }
 
   private doc(): SettingsDoc {
@@ -710,9 +725,10 @@ export class SettingsService {
     return SETTINGS_GROUPS.map((g) => ({
       ...g,
       fields: SETTINGS_FIELDS.filter((f) => f.group === g.id).map((f) => {
+        const id = `${g.id}.${f.key}`;
         const stored = values[g.id]?.[f.key];
         const effective = f.read(this.live);
-        const envDefault = this.defaults.get(`${g.id}.${f.key}`);
+        const envDefault = this.defaults.get(id);
         const base: DescribedField = {
           key: f.key,
           group: f.group,
@@ -720,7 +736,9 @@ export class SettingsService {
           type: f.type,
           env: f.env,
           help: f.help,
-          source: stored !== undefined ? "stored" : envDefault ? "env" : "default",
+          // "env" means the variable was actually set at boot — including to 0, false or an empty
+          // string — not merely that the effective value is truthy.
+          source: stored !== undefined ? "stored" : this.fromEnv.has(id) ? "env" : "default",
         };
         if (f.options) base.options = f.options;
         if (f.min !== undefined) base.min = f.min;
@@ -729,6 +747,8 @@ export class SettingsService {
         if (f.type === "secret") {
           base.set = Boolean(effective);
           base.hint = maskSecret(String(effective ?? ""));
+          // Never the value, but whether resetting would restore one is not itself a secret.
+          base.envSet = Boolean(envDefault);
         } else {
           base.value = effective;
           base.envValue = envDefault;
@@ -825,7 +845,11 @@ export class SettingsService {
     } catch (err) {
       this.col.put({ id: "deployment", values: before });
       this.apply();
-      throw new ValidationFailed([{ path: "/limits", message: (err as Error).message }]);
+      // Name the field, not the group: the screen puts an error against an input, and "/limits"
+      // would leave it guessing which of fourteen.
+      const message = (err as Error).message;
+      const field = SETTINGS_FIELDS.find((f) => f.group === "limits" && message.includes(f.env));
+      throw new ValidationFailed([{ path: field ? `/limits/${field.key}` : "/limits", message }]);
     }
     // Audited in the operator log: who, what and when. Values are deliberately not logged —
     // some of them are secrets and all of them are visible in the settings API.

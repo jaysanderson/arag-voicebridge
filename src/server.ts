@@ -91,6 +91,12 @@ export interface CreateOptions {
   persist?: boolean;
   /** Seed the registry from this file when the store is empty. */
   registrySeedFile?: string;
+  /**
+   * The raw environment the config was read from. Tests build `PlatformEnv`/`VoiceConfig` from a
+   * literal rather than `process.env`, so without this the settings screen would report every
+   * field as a product default.
+   */
+  envSrc?: Record<string, string | undefined>;
 }
 
 export async function createProduct(
@@ -136,7 +142,14 @@ export async function createProduct(
   // Settings: the store is the authority, the environment is only the default. `apply()` writes
   // the effective values into `env` and `voice` — the same objects everything else holds — so a
   // change takes effect on the next request with no restart and no re-wiring.
-  const settings = new SettingsService({ store, log, env, voice, onRewire: () => clients.clear() });
+  const settings = new SettingsService({
+    store,
+    log,
+    env,
+    voice,
+    envSrc: opts.envSrc,
+    onRewire: () => clients.clear(),
+  });
   settings.apply();
   const registry = new ProspectRegistry({ store, log, voice });
   registry.seedFromFile(opts.registrySeedFile ?? resolve(HERE, "config", "prospects.example.json"), {

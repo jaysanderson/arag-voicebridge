@@ -371,8 +371,10 @@ export function openDrawer({ title, sub = "", actions = "", body = "", onClose }
 }
 
 /** Confirm before something destructive. Resolves true when confirmed. */
-export function confirmAction({ title, body, confirmLabel = "Delete", danger = true }) {
-  return confirmDialog({ title: esc(title), body: `<p>${esc(body)}</p>`, confirmLabel, danger });
+export function confirmAction({ title, body, confirmLabel = "Delete", danger = true, typed = null }) {
+  // `typed` keeps the destructive button disabled until the word is typed exactly. The kit owns
+  // that behaviour; this wrapper exists so a section written against the old shell keeps working.
+  return confirmDialog({ title: esc(title), body: esc(body), confirmLabel, danger, typed });
 }
 
 /** A copyable snippet (webhook URLs, curl examples). */

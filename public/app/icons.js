@@ -39,6 +39,7 @@ const KIT = {
   sortArrow: "sort",
   source: "document",
   trash: "trash",
+  upload: "upload",
   warning: "alert-triangle",
 };
 
