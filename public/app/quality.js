@@ -27,12 +27,12 @@ const $ = (s) => document.querySelector(s);
 
 function chrome() {
   return `
-    <div class="vb-stats" id="qMetrics" style="margin-bottom:20px">
-      ${Array.from({ length: 6 }, () => '<div class="vb-stat"><span class="vb-skeleton" style="width:70%"></span></div>').join("")}
+    <div class="arag-statstrip" id="qMetrics" style="margin-bottom:20px">
+      ${Array.from({ length: 6 }, () => '<div><span class="arag-skeleton" style="width:70%"></span></div>').join("")}
     </div>
 
-    <section class="vb-card">
-        <header>
+    <section class="arag-card">
+        <div class="head">
           <h2>Turn log</h2>
           <span class="spacer"></span>
           <select id="qOutcome" class="arag-select" style="width:auto;height:32px;padding-block:0" aria-label="Outcome">
@@ -47,33 +47,35 @@ function chrome() {
             <option value="golden-eval">Golden runs</option>
           </select>
           <button class="arag-btn ghost sm" id="qReload">${icon("refresh", 14)}</button>
-        </header>
-        <div class="vb-card-body" style="padding:0">
-          <div class="vb-scroll">
-            <table class="vb-table" id="qTable">
-              <thead><tr>
-                <th>When</th><th>Question</th><th>Result</th>
-                <th class="num">total</th><th class="num">1st token</th><th class="num">cites</th>
-              </tr></thead>
-              <tbody>${skeletonRows(8, 6)}</tbody>
-            </table>
-          </div>
-          <div class="vb-pager" id="qPager" hidden>
-            <button class="arag-btn ghost sm" id="qPrev">Previous</button>
-            <button class="arag-btn ghost sm" id="qNext">Next</button>
-            <span class="spacer"></span><span id="qRange"></span>
+        </div>
+        <div class="body" style="padding:0">
+          <div class="arag-datatable vb-flat">
+            <div class="scroll">
+              <table id="qTable">
+                <thead><tr>
+                  <th>When</th><th>Question</th><th>Result</th>
+                  <th class="num">total</th><th class="num">1st token</th><th class="num">cites</th>
+                </tr></thead>
+                <tbody>${skeletonRows(8, 6)}</tbody>
+              </table>
+            </div>
+            <nav class="arag-pagination" id="qPager" hidden>
+              <button class="arag-btn ghost sm" id="qPrev">Previous</button>
+              <button class="arag-btn ghost sm" id="qNext">Next</button>
+              <span class="spacer"></span><span class="range" id="qRange"></span>
+            </nav>
           </div>
         </div>
       </section>
 
-      <div class="vb-grid cols-2" style="margin-top:20px">
-        <section class="vb-card">
-          <header><h2>Why turns did not answer</h2></header>
-          <div class="vb-card-body" id="qReasons"><div class="vb-skeleton" style="height:90px"></div></div>
+      <div class="arag-grid cols-2" style="margin-top:20px">
+        <section class="arag-card">
+          <div class="head"><h2>Why turns did not answer</h2></div>
+          <div class="body" id="qReasons"><div class="arag-skeleton" style="height:90px"></div></div>
         </section>
-        <section class="vb-card">
-          <header><h2>How quality is decided</h2></header>
-          <div class="vb-card-body">
+        <section class="arag-card">
+          <div class="head"><h2>How quality is decided</h2></div>
+          <div class="body">
             <p class="muted small" style="margin:0 0 10px">The golden set under Knowledge is the
               source of truth: every question runs through this deployment's own pipeline, and the
               gate opens only when all of them behave. Nothing else can open it.</p>
@@ -85,10 +87,10 @@ function chrome() {
               automated quality gate for the live brief itself yet.</p>
           </div>
         </section>
-        <section class="vb-card">
-          <header><h2>What the numbers mean</h2></header>
-          <div class="vb-card-body">
-            <dl class="vb-kv">
+        <section class="arag-card">
+          <div class="head"><h2>What the numbers mean</h2></div>
+          <div class="body">
+            <dl class="arag-kv">
               <dt>Handoff rate</dt><dd>Turns escalated rather than answered. A deliberate handoff is a
                 good outcome — it is the alternative to guessing.</dd>
               <dt>Citation coverage</dt><dd>Share of answered turns carrying at least one source. An
@@ -133,8 +135,8 @@ function turnRow(t, i) {
       ? `<span class="arag-chip warn">handoff · ${esc(t.reason ?? "")}</span>`
       : '<span class="arag-chip ok">answered</span>';
   return `<tr tabindex="0" data-turn="${i}">
-    <td>${ago(t.createdAt)}<div class="vb-sub">${esc(t.source)}</div></td>
-    <td><span class="vb-truncate" style="max-width:40ch">${
+    <td>${ago(t.createdAt)}<div class="cell-sub">${esc(t.source)}</div></td>
+    <td><span class="arag-truncate" style="max-width:40ch">${
       t.question ? esc(t.question) : '<span class="muted">redacted (guard trip)</span>'
     }</span></td>
     <td>${badge}</td>
@@ -205,19 +207,19 @@ function turnDetail(i) {
   if (!t) return;
   openDrawer({
     title: "Turn",
-    sub: `<span class="vb-mono">${esc(t.id)}</span>`,
+    sub: `<span class="mono">${esc(t.id)}</span>`,
     body: `
-      <div class="vb-stats" style="margin-bottom:18px">
+      <div class="arag-statstrip" style="margin-bottom:18px">
         ${stat("Total", `${t.total} ms`)}
         ${stat("First token", `${t.first_token} ms`)}
         ${stat("Retrieval", `${t.retrieve} ms`)}
         ${stat("Citations", t.citations)}
       </div>
-      <dl class="vb-kv">
+      <dl class="arag-kv">
         <dt>When</dt><dd>${new Date(t.createdAt).toLocaleString()}</dd>
         <dt>Prospect</dt><dd>${esc(t.prospect)}</dd>
         <dt>Source</dt><dd>${esc(t.source)}</dd>
-        <dt>Conversation</dt><dd class="vb-mono">${esc(t.conversation_id ?? "—")}</dd>
+        <dt>Conversation</dt><dd class="mono">${esc(t.conversation_id ?? "—")}</dd>
         <dt>Outcome</dt><dd>${t.handoff ? "handed off" : "answered"}${t.reason ? ` · ${esc(t.reason)}` : ""}</dd>
         <dt>Question</dt><dd>${
           t.question

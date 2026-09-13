@@ -33,7 +33,8 @@ export interface PoolDeps {
 }
 
 export interface ProspectTarget {
-  kb_id: string;
+  /** Empty = the deployment default Knowledge Box (Settings → Connection). */
+  kb_id?: string;
   region?: string;
 }
 
@@ -69,7 +70,9 @@ export class AragClientPool {
   /** Get (or build) the client for a prospect. */
   for(p: ProspectTarget): AragClient {
     const baseUrl = this.baseUrlFor(p);
-    const kbId = this.deps.mock ? this.deps.mock.kbId : p.kb_id;
+    // A prospect without its own Knowledge Box answers from the deployment default, which is
+    // what makes Settings → Connection → "Knowledge Box id" a setting with a visible effect.
+    const kbId = this.deps.mock ? this.deps.mock.kbId : p.kb_id || this.deps.env.arag.kbId;
     const key = `${kbId}|${baseUrl}`;
     let client = this.clients.get(key);
     if (!client) {

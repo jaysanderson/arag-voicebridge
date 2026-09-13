@@ -55,8 +55,28 @@ const VoiceAnswerRequest = {
     conversation_id: { type: "string", maxLength: 120 },
     history: { type: "array", maxItems: 40, items: { $ref: "#/components/schemas/HistoryTurn" } },
     generative_model: { type: "string", maxLength: 120, description: "Per-request model override" },
+    trace: {
+      type: "boolean",
+      description:
+        "Return the per-step pipeline trace alongside the answer. The Ask tester sets this; a " +
+        "voice agent never should (it adds bytes to every turn).",
+    },
   },
   additionalProperties: false,
+};
+
+const PipelineStep = {
+  type: "object",
+  description: "One step of the nine-step turn pipeline, as run for this question",
+  required: ["step", "id", "label", "status", "ms"],
+  properties: {
+    step: { type: "integer" },
+    id: { type: "string", description: "Stable step id (resolve, guard-input, ask, handoff, …)" },
+    label: { type: "string" },
+    status: { type: "string", enum: ["ok", "skipped", "tripped", "handoff", "error"] },
+    ms: { type: "integer", description: "ms from the start of the turn to the end of this step" },
+    detail: { type: "string", description: "What happened, in one line" },
+  },
 };
 
 const VoiceAnswerResponse = {
@@ -67,6 +87,11 @@ const VoiceAnswerResponse = {
     citations: { type: "array", items: { $ref: "#/components/schemas/Citation" } },
     handoff: { type: "boolean", description: "True when the turn must escalate to a human" },
     latency_ms: { $ref: "#/components/schemas/LatencyMs" },
+    pipeline: {
+      type: "array",
+      description: "Present only when the request asked to trace",
+      items: { $ref: "#/components/schemas/PipelineStep" },
+    },
     handoff_reason: {
       type: "string",
       description: "Why the turn handed off or deflected (never spoken)",
@@ -307,6 +332,11 @@ const VoiceAgentTool = {
     method: { type: "string" },
     url: { type: "string" },
     timeoutMs: { type: "integer", description: "Must exceed VOICE_TURN_TIMEOUT_MS" },
+    headerNames: {
+      type: "array",
+      description: "Header names the tool sends. Values (the API key) are never returned.",
+      items: { type: "string" },
+    },
     bodySchema: { type: "object", additionalProperties: true },
   },
 };
@@ -322,6 +352,7 @@ const VoiceAgentConfig = {
     display_name: { type: "string" },
     provider: { type: "string", enum: ["elevenlabs"] },
     agent_id: { type: ["string", "null"], description: "Non-secret agent id, null when unwired" },
+    tool_id: { type: ["string", "null"], description: "The custom server tool's id in ElevenLabs" },
     ready: { type: "boolean", description: "An agent id is set and is not the example placeholder" },
     configured: { type: "boolean", description: "This deployment holds an ElevenLabs key" },
     voice_id: { type: ["string", "null"] },
@@ -329,6 +360,19 @@ const VoiceAgentConfig = {
     handoff_msg: { type: "string" },
     tool: { $ref: "#/components/schemas/VoiceAgentTool" },
     system_prompt: { type: "string" },
+    system_prompt_custom: {
+      type: "boolean",
+      description: "The prompt is this prospect's own text rather than the generated default",
+    },
+    api_key: {
+      type: ["object", "null"],
+      description: "Which stored API key the tool's X-API-Key header carries — never the secret",
+      properties: {
+        id: { type: "string" },
+        name: { type: "string" },
+        prefix: { type: "string" },
+      },
+    },
     docs_url: { type: "string" },
   },
 };
@@ -368,10 +412,14 @@ const Prospect = {
 const ProspectInput = {
   type: "object",
   description: "Full prospect configuration (admin only — contains KB ids)",
-  required: ["display_name", "kb_id", "region", "locale", "greeting", "handoff_msg"],
+  required: ["display_name", "region", "locale", "greeting", "handoff_msg"],
   properties: {
     display_name: { type: "string", minLength: 1, maxLength: 120 },
-    kb_id: { type: "string", minLength: 1, maxLength: 80, description: "ARAG Knowledge Box id" },
+    kb_id: {
+      type: "string",
+      maxLength: 80,
+      description: "ARAG Knowledge Box id. Empty = the deployment default (Settings → Connection).",
+    },
     region: { type: "string", minLength: 1, maxLength: 60, description: "ARAG zone slug" },
     ask_config: { type: "string", maxLength: 120, description: "Stored ask search configuration name" },
     reranker: { type: "string", enum: ["noop", "predict"] },
@@ -395,6 +443,17 @@ const ProspectInput = {
     },
     agent_id: { type: "string", maxLength: 120 },
     voice_id: { type: "string", maxLength: 120 },
+    tool_id: { type: "string", maxLength: 120, description: "ElevenLabs custom server tool id" },
+    system_prompt: {
+      type: "string",
+      maxLength: 8000,
+      description: "Router prompt override; empty uses the generated default",
+    },
+    agent_api_key_id: {
+      type: "string",
+      maxLength: 80,
+      description: "Which stored API key the pushed tool's X-API-Key header carries",
+    },
     locale: { type: "string", minLength: 2, maxLength: 20 },
     greeting: { type: "string", minLength: 1, maxLength: 600 },
     handoff_msg: { type: "string", minLength: 1, maxLength: 600 },
@@ -413,7 +472,7 @@ const ProspectInput = {
 const ProspectRecord = {
   type: "object",
   description: "A stored registry entry (admin only)",
-  required: ["id", "display_name", "kb_id", "region", "locale", "greeting", "handoff_msg"],
+  required: ["id", "display_name", "region", "locale", "greeting", "handoff_msg"],
   properties: {
     id: { type: "string", description: "Registry key" },
     createdAt: { type: "string", format: "date-time" },
@@ -546,6 +605,181 @@ const GoldenEval = {
   },
 };
 
+// ── settings ─────────────────────────────────────────────────────────────────
+
+const SettingsField = {
+  type: "object",
+  description:
+    "One editable setting. `value` carries the effective value; a secret carries `set` and a " +
+    "`hint` instead, because a secret is written once and then rotated, never displayed.",
+  required: ["key", "group", "label", "type", "env", "help", "source"],
+  properties: {
+    key: { type: "string" },
+    group: { type: "string", enum: ["branding", "connection", "limits", "elevenlabs", "retention"] },
+    label: { type: "string" },
+    type: {
+      type: "string",
+      enum: ["string", "text", "number", "boolean", "color", "secret", "enum"],
+    },
+    env: { type: "string", description: "The environment variable that supplies the default" },
+    help: { type: "string" },
+    options: { type: "array", items: { type: "string" } },
+    min: { type: "number" },
+    max: { type: "number" },
+    placeholder: { type: "string" },
+    value: { description: "Effective value (absent for secrets)" },
+    envValue: { description: "The boot-time default, so the UI can offer 'reset to environment'" },
+    set: { type: "boolean", description: "Secrets only: is one configured" },
+    hint: { type: "string", description: "Secrets only: enough to recognise the value, no more" },
+    source: {
+      type: "string",
+      enum: ["stored", "env", "default"],
+      description: "Where the effective value came from",
+    },
+  },
+};
+
+const SettingsGroupSchema = {
+  type: "object",
+  required: ["id", "title", "description", "fields"],
+  properties: {
+    id: { type: "string" },
+    title: { type: "string" },
+    description: { type: "string" },
+    fields: { type: "array", items: { $ref: "#/components/schemas/SettingsField" } },
+  },
+};
+
+const SettingsDocument = {
+  type: "object",
+  required: ["groups"],
+  properties: {
+    groups: { type: "array", items: { $ref: "#/components/schemas/SettingsGroup" } },
+  },
+};
+
+const SettingsPatch = {
+  type: "object",
+  description:
+    "Partial update, keyed by group then field. `null` resets a field to its environment " +
+    "default. Unknown groups and fields are rejected rather than ignored.",
+  properties: {
+    branding: { type: "object", additionalProperties: true },
+    connection: { type: "object", additionalProperties: true },
+    limits: { type: "object", additionalProperties: true },
+    elevenlabs: { type: "object", additionalProperties: true },
+    retention: { type: "object", additionalProperties: true },
+  },
+  additionalProperties: false,
+};
+
+const ApiKey = {
+  type: "object",
+  description: "A stored API key. The secret is returned exactly once, when the key is created.",
+  required: ["id", "name", "prefix", "origin", "createdAt", "uses", "revoked"],
+  properties: {
+    id: { type: "string" },
+    name: { type: "string" },
+    prefix: { type: "string", description: "Leading characters, enough to recognise the key" },
+    origin: { type: "string", enum: ["env", "store"], description: "Seeded from API_KEYS, or minted here" },
+    createdAt: { type: "string", format: "date-time" },
+    lastUsedAt: { type: ["string", "null"], format: "date-time" },
+    uses: { type: "integer", description: "Recorded uses (sampled at most every 30 s per key)" },
+    revoked: { type: "boolean" },
+    revokedAt: { type: ["string", "null"], format: "date-time" },
+  },
+};
+
+const AgentDiffRow = {
+  type: "object",
+  required: ["field", "label", "local", "remote", "matches"],
+  properties: {
+    field: { type: "string" },
+    label: { type: "string" },
+    local: { type: "string", description: "What this deployment wants" },
+    remote: { type: "string", description: "What ElevenLabs currently has" },
+    matches: { type: "boolean" },
+  },
+};
+
+const RemoteAgentState = {
+  type: "object",
+  description:
+    "The agent and tool as ElevenLabs currently holds them, reduced to the fields this product owns",
+  required: ["agent", "tool"],
+  properties: {
+    agent: {
+      type: "object",
+      required: ["found"],
+      properties: {
+        found: { type: "boolean" },
+        agent_id: { type: "string" },
+        name: { type: "string" },
+        first_message: { type: "string" },
+        system_prompt: { type: "string" },
+        voice_id: { type: "string" },
+        language: { type: "string" },
+        tool_ids: { type: "array", items: { type: "string" } },
+        error: { type: "string" },
+      },
+    },
+    tool: {
+      type: "object",
+      required: ["found"],
+      properties: {
+        found: { type: "boolean" },
+        tool_id: { type: "string" },
+        name: { type: "string" },
+        url: { type: "string" },
+        method: { type: "string" },
+        timeout_secs: { type: "integer" },
+        header_names: {
+          type: "array",
+          description: "Header names only — the X-API-Key value is never returned",
+          items: { type: "string" },
+        },
+        has_api_key_header: { type: "boolean" },
+        error: { type: "string" },
+      },
+    },
+  },
+};
+
+const PurgeResult = {
+  type: "object",
+  required: ["turns", "sessions", "evals", "at", "windows"],
+  properties: {
+    turns: { type: "integer" },
+    sessions: { type: "integer" },
+    evals: { type: "integer" },
+    at: { type: "string", format: "date-time" },
+    windows: {
+      type: "object",
+      properties: {
+        turnDays: { type: "integer" },
+        sessionDays: { type: "integer" },
+        evalDays: { type: "integer" },
+      },
+    },
+  },
+};
+
+const SetupStep = {
+  type: "object",
+  description: "One step of the first-run wizard, with whether this deployment has done it",
+  required: ["id", "title", "body", "done", "optional"],
+  properties: {
+    id: { type: "string" },
+    title: { type: "string" },
+    body: { type: "string" },
+    done: { type: "boolean" },
+    optional: { type: "boolean", description: "The product works without this step" },
+    detail: { type: "string", description: "What the product found when it checked" },
+    href: { type: "string", description: "Where to go to do it" },
+    action: { type: "string", description: "Label for the link" },
+  },
+};
+
 const pathKey = {
   name: "key",
   in: "path",
@@ -616,6 +850,16 @@ export const openapi = buildOpenApi({
     IntegrationStatus,
     VoiceAgentTool,
     VoiceAgentConfig,
+    PipelineStep,
+    SettingsField,
+    SettingsGroup: SettingsGroupSchema,
+    SettingsDocument,
+    SettingsPatch,
+    ApiKey,
+    AgentDiffRow,
+    RemoteAgentState,
+    PurgeResult,
+    SetupStep,
     LatencyMs,
     HistoryTurn,
     VoiceAnswerRequest,
@@ -1424,7 +1668,7 @@ export const openapi = buildOpenApi({
       get: {
         operationId: "adminLogs",
         tags: ["admin"],
-        summary: "Recent log records",
+        summary: "Recent log records, filtered and paged",
         parameters: [
           {
             name: "level",
@@ -1433,11 +1677,24 @@ export const openapi = buildOpenApi({
           },
           { name: "contains", in: "query", schema: { type: "string", maxLength: 200 } },
           { name: "limit", in: "query", schema: { type: "integer", minimum: 1, maximum: 500, default: 200 } },
+          {
+            name: "offset",
+            in: "query",
+            description: "Records to skip, newest first — the log page's pager",
+            schema: { type: "integer", minimum: 0, default: 0 },
+          },
         ],
         responses: {
           200: jsonResponse({
             type: "object",
-            properties: { items: { type: "array", items: { $ref: "#/components/schemas/LogRecord" } } },
+            required: ["items", "total", "offset", "limit"],
+            properties: {
+              items: { type: "array", items: { $ref: "#/components/schemas/LogRecord" } },
+              total: { type: "integer", description: "Matching records in the ring buffer" },
+              offset: { type: "integer" },
+              limit: { type: "integer" },
+              ring: { type: "integer", description: "Size of the ring buffer itself" },
+            },
           }),
           ...standardResponses,
         },
@@ -1606,6 +1863,339 @@ export const openapi = buildOpenApi({
               },
             },
           }),
+          ...standardResponses,
+        },
+        security: adminSecurity,
+      },
+    },
+    "/api/v1/listen/sessions/{id}/brief-history": {
+      parameters: [pathId],
+      get: {
+        operationId: "listenBriefHistory",
+        tags: ["listen"],
+        summary: "Every version of this conversation's brief",
+        description:
+          "The brief is rebuilt as the call moves, and the interesting question in review is not " +
+          "what it ended as but when it changed its mind. Each snapshot carries the version, the " +
+          "instant and the whole brief, so two versions can be compared field by field.",
+        responses: {
+          200: jsonResponse({
+            type: "object",
+            required: ["items"],
+            properties: {
+              items: { type: "array", items: { $ref: "#/components/schemas/BriefSnapshot" } },
+            },
+          }),
+          ...standardResponses,
+        },
+        security: publicSecurity,
+      },
+    },
+    "/api/v1/setup": {
+      get: {
+        operationId: "getSetup",
+        tags: ["system"],
+        summary: "First-run checklist for this deployment",
+        description:
+          "What the onboarding wizard renders: each step with whether this deployment has already " +
+          "done it, checked against the live configuration rather than a stored 'dismissed' flag.",
+        responses: {
+          200: jsonResponse({
+            type: "object",
+            required: ["steps", "complete"],
+            properties: {
+              steps: { type: "array", items: { $ref: "#/components/schemas/SetupStep" } },
+              complete: { type: "boolean", description: "Every required step is done" },
+              required_done: { type: "integer" },
+              required_total: { type: "integer" },
+            },
+          }),
+          ...standardResponses,
+        },
+        security: publicSecurity,
+      },
+    },
+    "/api/v1/admin/settings": {
+      get: {
+        operationId: "adminGetSettings",
+        tags: ["admin"],
+        summary: "Every editable setting, with its effective value and where it came from",
+        responses: {
+          200: jsonResponse({ $ref: "#/components/schemas/SettingsDocument" }),
+          ...standardResponses,
+        },
+        security: adminSecurity,
+      },
+      patch: {
+        operationId: "adminUpdateSettings",
+        tags: ["admin"],
+        summary: "Change settings; they take effect immediately",
+        description:
+          "The store is the authority and the environment is only the default, so a change here " +
+          "survives a restart and needs none. A change that would make every turn dead air (a " +
+          "voice turn budget at or above the agent tool timeout) is rejected and rolled back.",
+        requestBody: jsonBody({ $ref: "#/components/schemas/SettingsPatch" }),
+        responses: {
+          200: jsonResponse({ $ref: "#/components/schemas/SettingsDocument" }),
+          ...standardResponses,
+        },
+        security: adminSecurity,
+      },
+    },
+    "/api/v1/admin/settings/reset": {
+      post: {
+        operationId: "adminResetSettings",
+        tags: ["admin"],
+        summary: "Drop stored overrides and fall back to the environment",
+        requestBody: jsonBody({
+          type: "object",
+          properties: {
+            group: {
+              type: "string",
+              enum: ["branding", "connection", "limits", "elevenlabs", "retention"],
+              description: "Omit to reset every group",
+            },
+          },
+          additionalProperties: false,
+        }),
+        responses: {
+          200: jsonResponse({ $ref: "#/components/schemas/SettingsDocument" }),
+          ...standardResponses,
+        },
+        security: adminSecurity,
+      },
+    },
+    "/api/v1/admin/settings/logo": {
+      post: {
+        operationId: "adminUploadLogo",
+        tags: ["admin"],
+        summary: "Upload a partner logo and point branding at it",
+        description:
+          "Stores the file under DATA_DIR/branding/ (served at /branding/) and sets the branding " +
+          "logo URL to it. SVG, PNG, JPEG, WebP and GIF only, 1 MB max.",
+        requestBody: {
+          required: true,
+          content: {
+            "multipart/form-data": {
+              schema: {
+                type: "object",
+                required: ["file"],
+                properties: { file: { type: "string", format: "binary" } },
+              },
+            },
+          },
+        },
+        responses: {
+          200: jsonResponse({
+            type: "object",
+            required: ["logoUrl", "bytes", "contentType"],
+            properties: {
+              logoUrl: { type: "string" },
+              bytes: { type: "integer" },
+              contentType: { type: "string" },
+            },
+          }),
+          ...standardResponses,
+        },
+        security: adminSecurity,
+      },
+      delete: {
+        operationId: "adminDeleteLogo",
+        tags: ["admin"],
+        summary: "Remove the uploaded logo and fall back to the wordmark",
+        responses: { 204: { description: "Removed" }, ...standardResponses },
+        security: adminSecurity,
+      },
+    },
+    "/api/v1/admin/api-keys": {
+      get: {
+        operationId: "adminListApiKeys",
+        tags: ["admin"],
+        summary: "The API key store",
+        description:
+          "`API_KEYS` seeds this store on first boot and then stops being the authority: keys " +
+          "created or revoked here take effect on the next request.",
+        responses: {
+          200: jsonResponse({
+            type: "object",
+            required: ["items", "open"],
+            properties: {
+              items: { type: "array", items: { $ref: "#/components/schemas/ApiKey" } },
+              open: {
+                type: "boolean",
+                description: "No active key: the public API is open to anyone who can reach it",
+              },
+              active: { type: "integer" },
+            },
+          }),
+          ...standardResponses,
+        },
+        security: adminSecurity,
+      },
+      post: {
+        operationId: "adminCreateApiKey",
+        tags: ["admin"],
+        summary: "Mint an API key",
+        description: "The secret is in this response and nowhere else, ever again.",
+        requestBody: jsonBody({
+          type: "object",
+          required: ["name"],
+          properties: { name: { type: "string", minLength: 1, maxLength: 80 } },
+          additionalProperties: false,
+        }),
+        responses: {
+          201: jsonResponse(
+            {
+              type: "object",
+              required: ["key", "secret"],
+              properties: {
+                key: { $ref: "#/components/schemas/ApiKey" },
+                secret: { type: "string", description: "Shown once. Store it now." },
+              },
+            },
+            "Key created",
+          ),
+          ...standardResponses,
+        },
+        security: adminSecurity,
+      },
+    },
+    "/api/v1/admin/api-keys/{id}": {
+      parameters: [pathId],
+      patch: {
+        operationId: "adminRenameApiKey",
+        tags: ["admin"],
+        summary: "Rename a key",
+        requestBody: jsonBody({
+          type: "object",
+          required: ["name"],
+          properties: { name: { type: "string", minLength: 1, maxLength: 80 } },
+          additionalProperties: false,
+        }),
+        responses: {
+          200: jsonResponse({ $ref: "#/components/schemas/ApiKey" }),
+          ...standardResponses,
+        },
+        security: adminSecurity,
+      },
+      delete: {
+        operationId: "adminRevokeApiKey",
+        tags: ["admin"],
+        summary: "Revoke a key",
+        description:
+          "The record stays, marked revoked — a revoked key that vanished would take its own " +
+          "audit trail with it — but it stops authenticating immediately.",
+        responses: {
+          200: jsonResponse({ $ref: "#/components/schemas/ApiKey" }),
+          ...standardResponses,
+        },
+        security: adminSecurity,
+      },
+    },
+    "/api/v1/admin/voice-agent": {
+      get: {
+        operationId: "adminGetVoiceAgent",
+        tags: ["admin"],
+        summary: "Compare this prospect's desired agent with what ElevenLabs has",
+        parameters: [
+          {
+            name: "prospect",
+            in: "query",
+            required: true,
+            schema: { type: "string", pattern: prospectKeyPattern },
+          },
+        ],
+        responses: {
+          200: jsonResponse({
+            type: "object",
+            required: ["desired", "remote", "diff", "in_sync"],
+            properties: {
+              desired: { $ref: "#/components/schemas/VoiceAgentConfig" },
+              remote: { $ref: "#/components/schemas/RemoteAgentState" },
+              diff: { type: "array", items: { $ref: "#/components/schemas/AgentDiffRow" } },
+              in_sync: { type: "boolean" },
+              reachable: { type: "boolean", description: "ElevenLabs answered" },
+            },
+          }),
+          ...standardResponses,
+        },
+        security: adminSecurity,
+      },
+    },
+    "/api/v1/admin/voice-agent/push": {
+      post: {
+        operationId: "adminPushVoiceAgent",
+        tags: ["admin"],
+        summary: "Write this prospect's agent configuration to ElevenLabs",
+        description:
+          "Creates or patches the custom server tool (URL, X-API-Key header, timeout, body " +
+          "schema), then the agent (router prompt, greeting, voice, tool link). Everything is " +
+          "merged into what the remote already has, so configuration this product does not own " +
+          "is left alone.",
+        requestBody: jsonBody({
+          type: "object",
+          required: ["prospect"],
+          properties: {
+            prospect: { type: "string", pattern: prospectKeyPattern },
+            api_key_id: {
+              type: "string",
+              maxLength: 80,
+              description: "Which stored key the tool's X-API-Key header carries; omit to reuse or pick one",
+            },
+          },
+          additionalProperties: false,
+        }),
+        responses: {
+          200: jsonResponse({
+            type: "object",
+            required: ["applied", "agent", "tool"],
+            properties: {
+              applied: { type: "array", items: { type: "string" } },
+              created_agent: { type: "boolean" },
+              created_tool: { type: "boolean" },
+              tool_id: { type: ["string", "null"] },
+              agent: { type: "object", additionalProperties: true },
+              tool: { type: "object", additionalProperties: true },
+              prospect: { $ref: "#/components/schemas/ProspectRecord" },
+            },
+          }),
+          ...standardResponses,
+        },
+        security: adminSecurity,
+      },
+    },
+    "/api/v1/admin/listen-sessions/{id}": {
+      parameters: [pathId],
+      delete: {
+        operationId: "adminDeleteListenSession",
+        tags: ["admin"],
+        summary: "Delete a conversation and everything recorded with it",
+        description:
+          "The transcript, the brief history and the citations go with it. Open subscribers are " +
+          "told the session ended before the record is removed.",
+        responses: { 204: { description: "Deleted" }, ...standardResponses },
+        security: adminSecurity,
+      },
+    },
+    "/api/v1/admin/purge": {
+      post: {
+        operationId: "adminPurge",
+        tags: ["admin"],
+        summary: "Apply the retention windows, or delete a class of records now",
+        requestBody: jsonBody({
+          type: "object",
+          properties: {
+            scope: {
+              type: "string",
+              enum: ["retention", "turns", "sessions", "evals", "all"],
+              default: "retention",
+              description: "`retention` applies the configured windows; the rest delete regardless of age",
+            },
+          },
+          additionalProperties: false,
+        }),
+        responses: {
+          200: jsonResponse({ $ref: "#/components/schemas/PurgeResult" }),
           ...standardResponses,
         },
         security: adminSecurity,

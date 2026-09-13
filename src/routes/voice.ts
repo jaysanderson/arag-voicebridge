@@ -6,7 +6,7 @@ import { type App, type Ctx, operationSchemas } from "../../vendor/arag-platform
 import { openapi } from "../openapi.ts";
 import type { ProductDeps } from "../server.ts";
 import { runBrief } from "../services/brief.ts";
-import { runTurn } from "../services/pipeline.ts";
+import { runTurn, TurnTrace } from "../services/pipeline.ts";
 import type { VoiceAnswerRequest } from "../types.ts";
 
 /** Abort the upstream ARAG call when the client hangs up (barge-in cancels the turn). */
@@ -31,8 +31,11 @@ export function registerVoiceRoutes(app: App, deps: ProductDeps): void {
     const body = ctx.body as VoiceAnswerRequest;
     const prospect = deps.registry.require(body.prospect);
     const { signal, done } = abortOnClose(ctx);
+    // Tracing is opt-in per request: the agent's tool call never asks for it, the Ask tester
+    // always does, and the collected steps are what the pipeline stepper renders.
+    const trace = body.trace === true ? new TurnTrace() : undefined;
     try {
-      const { response, guardTrip } = await runTurn(body, prospect, deps.turnDeps(), { signal });
+      const { response, guardTrip } = await runTurn(body, prospect, deps.turnDeps(), { signal, trace });
       deps.metrics.record({
         prospect: body.prospect,
         conversation_id: body.conversation_id,
@@ -47,6 +50,10 @@ export function registerVoiceRoutes(app: App, deps: ProductDeps): void {
         reason: response.handoff_reason,
         source: "voice-answer",
       });
+      if (trace) {
+        trace.add("record", "Return and record", "ok", `${response.latency_ms.total} ms end to end`);
+        return { ...response, pipeline: trace.steps };
+      }
       return response;
     } finally {
       done();

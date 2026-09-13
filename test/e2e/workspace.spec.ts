@@ -38,12 +38,12 @@ test.describe("Conversations", () => {
     await expect(page.locator("#cvCount")).toContainText("conversation");
 
     await page.click(`#cvTable tbody tr[data-id="${id}"]`);
-    const drawer = page.locator(".vb-drawer");
+    const drawer = page.locator(".arag-drawer");
     await expect(drawer).toBeVisible();
     await expect(drawer).toContainText("Final brief");
     await expect(drawer).toContainText("How the brief evolved");
     await expect(drawer).toContainText("Transcript");
-    await expect(drawer.locator(".vb-timeline .vb-tl-item").first()).toContainText("v1");
+    await expect(drawer.locator(".arag-timeline li").first()).toContainText("v1");
     await expect(drawer).toContainText("vacuum sintering");
     await expect(drawer.locator('a[href*="format=markdown"]')).toBeVisible();
   });
@@ -78,15 +78,15 @@ test.describe("Conversations", () => {
 
     // Opening a record is a history entry, so Back closes the drawer rather than leaving the list.
     await page.click(`#cvTable tbody tr[data-id="${id}"]`);
-    await expect(page.locator(".vb-drawer")).toBeVisible();
+    await expect(page.locator(".arag-drawer")).toBeVisible();
     await expect(page).toHaveURL(new RegExp(`[?&]id=${id}`));
     await page.goBack();
-    await expect(page.locator(".vb-drawer")).toHaveCount(0);
+    await expect(page.locator(".arag-drawer")).toHaveCount(0);
     await expect(page.locator("#cvSearch")).toHaveValue("vacuum sintering");
 
     // And a record URL opens straight into it — the link Live hands over when a session ends.
     await page.goto(`/conversations/?id=${id}`);
-    await expect(page.locator(".vb-drawer")).toContainText("How the brief evolved", { timeout: 20_000 });
+    await expect(page.locator(".arag-drawer")).toContainText("How the brief evolved", { timeout: 20_000 });
   });
 
   test("filters by status", async ({ page, request }) => {
@@ -134,7 +134,7 @@ test.describe("Knowledge", () => {
 
     await expect(page.locator("#kbRuns tbody tr[data-eval]").first()).toBeVisible({ timeout: 20_000 });
     await page.locator("#kbRuns tbody tr[data-eval]").first().click();
-    const drawer = page.locator(".vb-drawer");
+    const drawer = page.locator(".arag-drawer");
     await expect(drawer).toContainText("Gate open");
     await expect(drawer).toContainText("pass");
   });
@@ -165,7 +165,7 @@ test.describe("Quality", () => {
     await expect(page.locator("#qTable tbody")).not.toContainText("Ignore all previous instructions");
 
     await page.locator("#qTable tbody tr[data-turn]").first().click();
-    await expect(page.locator(".vb-drawer")).toContainText("A turn whose input tripped a safety guard");
+    await expect(page.locator(".arag-drawer")).toContainText("A turn whose input tripped a safety guard");
   });
 });
 
@@ -208,7 +208,7 @@ test.describe("Prospects", () => {
     await expect(page.locator("#prResult")).toContainText("e2e-acme_voice", { timeout: 20_000 });
 
     await page.click("#prDelete");
-    await page.click(".arag-modal [data-yes]");
+    await page.click(".arag-modal [data-ok]");
     await expect(page.locator('#prTable tr[data-key="e2e-acme"]')).toHaveCount(0, { timeout: 20_000 });
   });
 
@@ -272,7 +272,7 @@ test.describe("ElevenLabs", () => {
   test("the voice call tool shows the agent it would use", async ({ page }) => {
     await open(page, "/");
     await page.click("#vbCallTool");
-    const drawer = page.locator(".vb-drawer");
+    const drawer = page.locator(".arag-drawer");
     await expect(drawer).toContainText("ElevenLabs Conversational AI", { timeout: 20_000 });
     await expect(drawer.locator("#vbAgentCard")).toContainText("voice-answer", { timeout: 20_000 });
   });

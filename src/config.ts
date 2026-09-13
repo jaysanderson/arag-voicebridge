@@ -11,6 +11,11 @@ function str(src: Src, name: string, fallback = ""): string {
   const v = src[name];
   return v === undefined || v === "" ? fallback : v;
 }
+function bool(src: Src, name: string, fallback = false): boolean {
+  const v = src[name];
+  if (v === undefined || v === "") return fallback;
+  return ["1", "true", "yes", "on"].includes(v.toLowerCase());
+}
 function num(src: Src, name: string, fallback: number): number {
   const v = src[name];
   if (v === undefined || v === "") return fallback;
@@ -67,6 +72,14 @@ export interface VoiceConfig {
   /** Per-IP budget for text-to-speech (it costs money per character). */
   ttsRps: number;
   ttsBurst: number;
+  /** Days a recorded turn is kept (0 = until the ring evicts it). */
+  retentionTurnDays: number;
+  /** Days an ended listen session and its transcript are kept. */
+  retentionSessionDays: number;
+  /** Days a golden-set evaluation result is kept. */
+  retentionEvalDays: number;
+  /** Apply the retention windows on a timer as well as on demand. */
+  retentionAutoPurge: boolean;
   /** White-label branding for this deployment. */
   branding: Branding;
 }
@@ -93,6 +106,10 @@ export function readVoiceEnv(src: Src = process.env): VoiceConfig {
     ttsModelId: str(src, "ELEVENLABS_TTS_MODEL", "eleven_flash_v2_5"),
     ttsRps: num(src, "VOICE_TTS_RATE_RPS", 1),
     ttsBurst: num(src, "VOICE_TTS_RATE_BURST", 6),
+    retentionTurnDays: num(src, "VOICE_RETENTION_TURN_DAYS", 0),
+    retentionSessionDays: num(src, "VOICE_RETENTION_SESSION_DAYS", 0),
+    retentionEvalDays: num(src, "VOICE_RETENTION_EVAL_DAYS", 0),
+    retentionAutoPurge: bool(src, "VOICE_RETENTION_AUTO_PURGE", false),
     branding: readVoiceBranding(src),
   };
 }
@@ -138,6 +155,12 @@ export function describeVoiceConfig(v: VoiceConfig): Record<string, unknown> {
       scribeModel: v.scribeModel,
       ttsModel: v.ttsModelId,
       ttsVoiceId: v.ttsVoiceId,
+    },
+    retention: {
+      turnDays: v.retentionTurnDays,
+      sessionDays: v.retentionSessionDays,
+      evalDays: v.retentionEvalDays,
+      autoPurge: v.retentionAutoPurge,
     },
     // Non-secret: the same value is served to browsers on /api/v1/prospects.
     defaultAgentId: v.defaultAgentId,

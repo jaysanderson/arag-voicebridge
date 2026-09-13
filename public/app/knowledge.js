@@ -33,25 +33,25 @@ const $ = (s) => document.querySelector(s);
 
 function chrome() {
   return `
-    <div class="vb-grid" style="margin-bottom:20px">
-      <div id="kbCard"><div class="vb-skeleton" style="height:150px"></div></div>
+    <div class="arag-grid" style="margin-bottom:20px">
+      <div id="kbCard"><div class="arag-skeleton" style="height:150px"></div></div>
     </div>
-    <div class="vb-split">
-      <section class="vb-card">
-        <header>
+    <div class="arag-split">
+      <section class="arag-card">
+        <div class="head">
           <h2>Golden set</h2>
           <span class="spacer"></span>
           <span id="kbGoldenChip" class="arag-chip neutral">not run</span>
           <button class="arag-btn sm" id="kbRunGolden">Run golden set</button>
-        </header>
-        <div class="vb-card-body">
+        </div>
+        <div class="body">
           <p class="muted small">The gate before a prospect is trusted to answer: every question runs
             through the same pipeline a live turn uses. Answerable questions must answer, cite a
             source and stay inside three spoken sentences; out-of-scope questions must hand off.</p>
           <div id="kbGoldenRun"></div>
-          <div class="vb-table-wrap" style="margin-top:14px">
-            <div class="vb-scroll">
-              <table class="vb-table" id="kbGoldenTable">
+          <div class="arag-datatable" style="margin-top:14px">
+            <div class="scroll">
+              <table id="kbGoldenTable">
                 <thead><tr><th>Question</th><th>Expected</th><th>Result</th><th class="num">ms</th></tr></thead>
                 <tbody><tr><td colspan="4">${empty({
                   icon: "check",
@@ -64,15 +64,15 @@ function chrome() {
         </div>
       </section>
 
-      <div class="vb-grid">
-        <section class="vb-card">
-          <header><h2>Ask it something</h2><span class="spacer"></span>${chip("same pipeline as a call", "info")}</header>
-          <div class="vb-card-body">
+      <div class="arag-grid">
+        <section class="arag-card">
+          <div class="head"><h2>Ask it something</h2><span class="spacer"></span>${chip("same pipeline as a call", "info")}</div>
+          <div class="body">
             <div class="arag-row" style="flex-wrap:nowrap">
               <input id="kbQuestion" class="arag-input" placeholder="Ask something the Knowledge Box can answer…" style="min-width:0" />
               <button id="kbAsk" class="arag-btn" style="flex:none">Ask</button>
             </div>
-            <div class="vb-chip-row" id="kbSuggestions" style="margin-top:10px"></div>
+            <div class="arag-chips" id="kbSuggestions" style="margin-top:10px"></div>
             <div id="kbAnswers" class="arag-chat" style="margin-top:12px;min-height:120px;max-height:44vh;overflow-y:auto">${empty(
               {
                 icon: "knowledge",
@@ -83,15 +83,17 @@ function chrome() {
           </div>
         </section>
 
-        <section class="vb-card">
-          <header><h2>Run history</h2><span class="spacer"></span>
-            <button class="arag-btn ghost sm" id="kbReloadRuns">${icon("refresh", 14)}</button></header>
-          <div class="vb-card-body" style="padding:0">
-            <div class="vb-scroll">
-              <table class="vb-table" id="kbRuns">
-                <thead><tr><th>When</th><th>Result</th><th class="num">p50</th><th class="num">p95</th></tr></thead>
-                <tbody>${skeletonRows(3, 4)}</tbody>
-              </table>
+        <section class="arag-card">
+          <div class="head"><h2>Run history</h2><span class="spacer"></span>
+            <button class="arag-btn ghost sm" id="kbReloadRuns">${icon("refresh", 14)}</button></div>
+          <div class="body" style="padding:0">
+            <div class="arag-datatable vb-flat">
+              <div class="scroll">
+                <table id="kbRuns">
+                  <thead><tr><th>When</th><th>Result</th><th class="num">p50</th><th class="num">p95</th></tr></thead>
+                  <tbody>${skeletonRows(3, 4)}</tbody>
+                </table>
+              </div>
             </div>
           </div>
         </section>
@@ -101,8 +103,8 @@ function chrome() {
 
 function kbCard(k) {
   const ok = k.kb.ok;
-  return `<section class="vb-card">
-    <header>
+  return `<section class="arag-card">
+    <div class="head">
       <h2>Knowledge Box</h2>
       <span class="spacer"></span>
       ${
@@ -111,24 +113,24 @@ function kbCard(k) {
           : `<span class="arag-chip danger">unreachable</span>`
       }
       ${k.kb.mock ? chip("sample content", "warn") : ""}
-    </header>
-    <div class="vb-card-body">
+    </div>
+    <div class="body">
       ${
         ok
           ? ""
           : `<div class="arag-alert error" style="margin-bottom:14px">${esc(k.kb.error ?? "The Knowledge Box did not answer.")} Check the connection under Settings.</div>`
       }
-      <dl class="vb-kv">
+      <dl class="arag-kv">
         <dt>Answers for</dt><dd>${esc(k.display_name)}</dd>
-        <dt>Knowledge Box</dt><dd class="vb-mono">${esc(k.kb.id_masked ?? "—")}${k.kb.title ? ` · ${esc(k.kb.title)}` : ""}</dd>
-        <dt>Region</dt><dd class="vb-mono">${esc(k.kb.region)}</dd>
+        <dt>Knowledge Box</dt><dd class="mono">${esc(k.kb.id_masked ?? "—")}${k.kb.title ? ` · ${esc(k.kb.title)}` : ""}</dd>
+        <dt>Region</dt><dd class="mono">${esc(k.kb.region)}</dd>
         <dt>Resources</dt><dd>${k.kb.resources ?? "—"}</dd>
         <dt>Answer model</dt><dd>${esc(k.kb.generative_model ?? "Knowledge Box default")}</dd>
         <dt>Brief model</dt><dd>${esc(k.kb.brief_model ?? "fast default")}</dd>
         <dt>Reranker</dt><dd>${esc(k.kb.reranker ?? "noop")}</dd>
         <dt>Retrieval config</dt><dd>${
           k.kb.provisioned
-            ? 'a stored search configuration <span class="vb-sub">(named under Prospects)</span>'
+            ? 'a stored search configuration <span class="subtle small">(named under Prospects)</span>'
             : "inline — not provisioned"
         }</dd>
       </dl>
@@ -179,7 +181,7 @@ async function ask() {
   if (!q || !state.current) return;
   $("#kbAsk").disabled = true;
   const box = $("#kbAnswers");
-  if (box.querySelector(".vb-empty")) box.innerHTML = "";
+  if (box.querySelector(".arag-emptystate")) box.innerHTML = "";
   box.insertAdjacentHTML(
     "beforeend",
     `<div class="arag-bubble user">${esc(q)}</div><div class="arag-bubble assistant" id="kbPending">Thinking…</div>`,
@@ -194,7 +196,7 @@ async function ask() {
       ? `<span class="arag-chip warn">handoff · ${esc(r.handoff_reason ?? "")}</span>`
       : '<span class="arag-chip ok">answered</span>';
     $("#kbPending").outerHTML = `<div class="arag-bubble assistant">${esc(r.answer)}
-        <div class="vb-chip-row" style="margin-top:8px">${badge}${r.citations.map(citeChip).join("")}
+        <div class="arag-chips" style="margin-top:8px">${badge}${r.citations.map(citeChip).join("")}
         <span class="subtle small">retrieve ${fmtMs(r.latency_ms.retrieve)} · first token ${fmtMs(
           r.latency_ms.first_token,
         )} · total ${fmtMs(r.latency_ms.total)}</span></div></div>`;
@@ -224,7 +226,7 @@ async function loadRuns() {
                 r.ok
                   ? '<span class="arag-chip ok">all passed</span>'
                   : `<span class="arag-chip danger">${r.failed} failed</span>`
-              } <span class="vb-sub">${r.passed}/${r.total}</span></td>
+              } <span class="subtle small">${r.passed}/${r.total}</span></td>
               <td class="num">${r.latency_ms?.p50 ?? "—"}</td>
               <td class="num">${r.latency_ms?.p95 ?? "—"}</td>
             </tr>`,
@@ -244,13 +246,13 @@ async function loadRuns() {
 async function showEval(id) {
   const close = openDrawer({
     title: "Golden run",
-    sub: `<span class="vb-mono">${esc(id)}</span>`,
-    body: '<div class="vb-skeleton" style="height:200px"></div>',
+    sub: `<span class="mono">${esc(id)}</span>`,
+    body: '<div class="arag-skeleton" style="height:200px"></div>',
   });
   try {
     const r = await api(`/api/v1/golden-evals/${encodeURIComponent(id)}`);
-    document.querySelector(".vb-drawer-body").innerHTML = `
-      <div class="vb-stats" style="margin-bottom:18px">
+    document.querySelector(".arag-drawer .body").innerHTML = `
+      <div class="arag-statstrip" style="margin-bottom:18px">
         ${stat("Result", r.ok ? "Gate open" : "Gate closed")}
         ${stat("Passed", `${r.passed}/${r.total}`)}
         ${stat("p50", `${r.latency_ms.p50} ms`, `p95 ${r.latency_ms.p95} ms`)}
@@ -258,21 +260,21 @@ async function showEval(id) {
       </div>
       ${r.cases.map(caseBlock).join("")}`;
   } catch (e) {
-    document.querySelector(".vb-drawer-body").innerHTML = errorState(e.message);
+    document.querySelector(".arag-drawer .body").innerHTML = errorState(e.message);
   }
   return close;
 }
 
 function caseBlock(c) {
   const failures = c.checks.filter((x) => !x.ok);
-  return `<div class="vb-card" style="margin-bottom:10px">
-    <header>
+  return `<div class="arag-card" style="margin-bottom:10px">
+    <div class="head">
       <h3 style="font-weight:550">${esc(c.q)}</h3>
       <span class="spacer"></span>
       ${c.passed ? '<span class="arag-chip ok">pass</span>' : '<span class="arag-chip danger">fail</span>'}
       <span class="arag-chip neutral">${c.latency_ms} ms</span>
-    </header>
-    <div class="vb-card-body">
+    </div>
+    <div class="body">
       <p class="muted small" style="margin:0 0 8px">Expected <strong>${esc(c.expect)}</strong> · got
         <strong>${c.handoff ? "handoff" : "answer"}</strong>${c.handoff_reason ? ` (${esc(c.handoff_reason)})` : ""} ·
         ${c.citations} citation${c.citations === 1 ? "" : "s"}</p>
@@ -294,7 +296,7 @@ async function runGolden() {
   $("#kbGoldenChip").className = "arag-chip info";
   $("#kbGoldenChip").textContent = "running";
   $("#kbGoldenTable").querySelector("tbody").innerHTML =
-    '<tr><td colspan="4"><span class="vb-skeleton" style="display:block;width:60%"></span></td></tr>';
+    '<tr><td colspan="4"><span class="arag-skeleton" style="display:block;width:60%"></span></td></tr>';
   $("#kbGoldenRun").innerHTML = '<arag-job-timeline id="kbTimeline"></arag-job-timeline>';
   try {
     const { job } = await api("/api/v1/golden-evals", {
@@ -334,7 +336,7 @@ async function renderGoldenResult(jobId) {
         `<tr><td>${esc(c.q)}</td><td>${esc(c.expect)}</td><td>${
           c.passed
             ? '<span class="arag-chip ok">pass</span>'
-            : `<span class="arag-chip danger">fail</span> <span class="vb-sub">${esc(
+            : `<span class="arag-chip danger">fail</span> <span class="subtle small">${esc(
                 c.checks
                   .filter((x) => !x.ok)
                   .map((x) => x.label)

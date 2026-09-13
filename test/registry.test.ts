@@ -35,10 +35,18 @@ describe("validateProspect", () => {
     expect(validateProspect(valid)).toEqual([]);
   });
 
-  it("requires the six core fields", () => {
+  it("requires the five core fields, and kb_id is not one of them", () => {
     const errors = validateProspect({ display_name: "Acme" });
-    expect(errors.length).toBe(5);
-    expect(errors.map((e) => e.path)).toContain("/kb_id");
+    expect(errors.length).toBe(4);
+    expect(errors.map((e) => e.path)).toEqual(["/region", "/locale", "/greeting", "/handoff_msg"]);
+  });
+
+  // A prospect without its own Knowledge Box answers from the deployment default, which is what
+  // makes Settings → Connection → "Knowledge Box id" a setting with a visible effect.
+  it("accepts an entry with no kb_id of its own", () => {
+    const { kb_id, ...noKb } = valid as Record<string, unknown>;
+    expect(typeof kb_id).toBe("string");
+    expect(validateProspect(noKb)).toEqual([]);
   });
 
   it("rejects an unknown reranker and out-of-range numbers", () => {

@@ -37,7 +37,7 @@ if (existsSync(dataFile)) {
   registry = JSON.parse(readFileSync(exampleFile, "utf8")) as Registry;
   // The shipped example carries a placeholder Knowledge Box id; use the deployment's own.
   const first = Object.values(registry)[0];
-  if (first && /REPLACE_ME/i.test(first.kb_id) && env.arag.kbId) first.kb_id = env.arag.kbId;
+  if (first && /REPLACE_ME/i.test(first.kb_id ?? "") && env.arag.kbId) first.kb_id = env.arag.kbId;
 }
 
 const key = keyArg ?? Object.keys(registry)[0];
@@ -54,7 +54,9 @@ if (questions.length === 0) {
 
 const clients = new AragClientPool({ env, voice, log });
 console.log(`\n━━ LIVE smoke · ${prospect.display_name} (${key}) · ${questions.length} questions ━━`);
-console.log(`   KB ${prospect.kb_id.slice(0, 8)}… in ${prospect.region || voice.aragRegionDefault}\n`);
+console.log(
+  `   KB ${(prospect.kb_id || env.arag.kbId).slice(0, 8)}… in ${prospect.region || voice.aragRegionDefault}\n`,
+);
 
 const latencies: number[] = [];
 let failed = 0;

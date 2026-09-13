@@ -40,9 +40,9 @@ const TEMPLATE = {
 function chrome() {
   return `
     ${operator ? "" : signInBanner()}
-    <div class="vb-table-wrap">
-      <div class="vb-scroll">
-        <table class="vb-table" id="prTable">
+    <div class="arag-datatable">
+      <div class="scroll">
+        <table id="prTable">
           <thead><tr>
             <th>Prospect</th><th>Knowledge Box</th><th>Region</th><th>Search config</th>
             <th>Golden set</th><th>Branding</th><th></th>
@@ -54,9 +54,9 @@ function chrome() {
 }
 
 function signInBanner() {
-  return `<div class="vb-card pad" style="margin-bottom:18px">
+  return `<div class="arag-card pad" style="margin-bottom:18px">
     <div class="arag-row" style="align-items:flex-start;gap:14px">
-      <span class="vb-empty-icon" style="width:34px;height:34px">${icon("operator", 17)}</span>
+      <span class="arag-icon-box" style="width:34px;height:34px">${icon("operator", 17)}</span>
       <div style="flex:1;min-width:220px">
         <strong>Viewing the registry read-only</strong>
         <p class="muted small" style="margin:4px 0 0">Adding, editing, provisioning and deleting a
@@ -85,12 +85,12 @@ function row(p) {
       );
   return `<tr data-key="${esc(p.id ?? p.key)}">
     <td>
-      <span class="vb-primary">${esc(p.display_name)}</span>
-      <div class="vb-sub vb-mono">${esc(p.id ?? p.key)}</div>
+      <span class="cell-title">${esc(p.display_name)}</span>
+      <div class="cell-sub mono">${esc(p.id ?? p.key)}</div>
     </td>
-    <td class="vb-mono">${esc(operator ? (p.kb_id ?? "—") : "—")}</td>
-    <td class="vb-mono">${esc(p.region ?? "—")}</td>
-    <td>${p.ask_config ? `<span class="vb-mono">${esc(p.ask_config)}</span>` : chip("inline", "neutral")}</td>
+    <td class="mono">${esc(operator ? (p.kb_id ?? "—") : "—")}</td>
+    <td class="mono">${esc(p.region ?? "—")}</td>
+    <td>${p.ask_config ? `<span class="mono">${esc(p.ask_config)}</span>` : chip("inline", "neutral")}</td>
     <td>${(p.golden_questions ?? []).length} question${(p.golden_questions ?? []).length === 1 ? "" : "s"}</td>
     <td>${overlay ? chip("overlay set", "info") : '<span class="muted small">deployment default</span>'}</td>
     <td class="num">${
@@ -135,7 +135,7 @@ function editor(key) {
     : TEMPLATE;
   const close = openDrawer({
     title: key ? `Edit ${record?.display_name ?? key}` : "New prospect",
-    sub: key ? `<span class="vb-mono">${esc(key)}</span>` : "A registry key, then its configuration.",
+    sub: key ? `<span class="mono">${esc(key)}</span>` : "A registry key, then its configuration.",
     body: `
       ${
         key
@@ -218,7 +218,7 @@ function editor(key) {
   });
 
   $("#prProvision")?.addEventListener("click", async () => {
-    $("#prResult").innerHTML = '<div class="vb-skeleton" style="height:60px"></div>';
+    $("#prResult").innerHTML = '<div class="arag-skeleton" style="height:60px"></div>';
     try {
       const r = await api(`/api/v1/admin/prospects/${encodeURIComponent(key)}/provision`, {
         method: "POST",
@@ -257,13 +257,13 @@ function viewer(key) {
   if (!p) return;
   openDrawer({
     title: p.display_name,
-    sub: `<span class="vb-mono">${esc(key)}</span>`,
+    sub: `<span class="mono">${esc(key)}</span>`,
     body: `
-      <dl class="vb-kv">
+      <dl class="arag-kv">
         <dt>Locale</dt><dd>${esc(p.locale ?? "—")}</dd>
         <dt>Greeting</dt><dd>${esc(p.greeting ?? "—")}</dd>
         <dt>Handoff line</dt><dd>${esc(p.handoff_msg ?? "—")}</dd>
-        <dt>Voice agent</dt><dd>${p.agent_id ? `<span class="vb-mono">${esc(p.agent_id)}</span>` : "not configured"}</dd>
+        <dt>Voice agent</dt><dd>${p.agent_id ? `<span class="mono">${esc(p.agent_id)}</span>` : "not configured"}</dd>
         <dt>Microphone</dt><dd>${p.scribe_ready ? "available" : "needs an ElevenLabs key"}</dd>
       </dl>
       <h3 style="margin-top:22px">Golden set</h3>

@@ -108,14 +108,51 @@ export interface TurnOutcome {
   guardTrip: boolean;
 }
 
+/**
+ * One recorded step of the pipeline.
+ *
+ * The nine steps are the product's explanation of itself — "grounded, cited and governed" is a
+ * claim until you can watch the guards fire and the handoff decision land. The Ask tester renders
+ * these as a stepper, so a stranger can see *why* a turn handed off rather than only that it did.
+ */
+export interface PipelineStep {
+  step: number;
+  id: string;
+  label: string;
+  status: "ok" | "skipped" | "tripped" | "handoff" | "error";
+  ms: number;
+  detail?: string;
+}
+
+/** Collects the steps of one turn. Passing none costs nothing — tracing is opt-in per request. */
+export class TurnTrace {
+  readonly steps: PipelineStep[] = [];
+  private readonly t0 = performance.now();
+  private n = 0;
+
+  add(id: string, label: string, status: PipelineStep["status"], detail?: string): void {
+    this.n += 1;
+    this.steps.push({
+      step: this.n,
+      id,
+      label,
+      status,
+      ms: Math.round(performance.now() - this.t0),
+      detail,
+    });
+  }
+}
+
 /** Run one turn. Always resolves — failures become a graceful handoff. */
 export async function runTurn(
   req: VoiceAnswerRequest,
   prospect: ProspectConfig,
   deps: TurnDeps,
-  opts: { signal?: AbortSignal } = {},
+  opts: { signal?: AbortSignal; trace?: TurnTrace } = {},
 ): Promise<TurnOutcome> {
   const t0 = performance.now();
+  const trace = opts.trace;
+  trace?.add("resolve", "Resolve prospect", "ok", `${prospect.display_name} · ${prospect.locale}`);
   const latency = (firstToken = 0, retrieve = 0) => ({
     retrieve: Math.round(retrieve),
     first_token: Math.round(firstToken),
@@ -134,6 +171,12 @@ export async function runTurn(
 
   // Step 2 — input safety guard (before ARAG, so unsafe text is never forwarded or stored).
   const inGuard = guardInput(req.question);
+  trace?.add(
+    "guard-input",
+    "Input safety guard",
+    inGuard.ok ? "ok" : "tripped",
+    inGuard.ok ? "question passed" : `blocked: ${inGuard.reason}`,
+  );
   if (!inGuard.ok) {
     deps.log.warn("guard.input.trip", {
       prospect: req.prospect,
@@ -145,6 +188,14 @@ export async function runTurn(
 
   // Step 3 — build the ARAG request.
   const body = buildAskRequest(req, prospect, deps.voice);
+  trace?.add(
+    "build-request",
+    "Build the ARAG request",
+    "ok",
+    prospect.ask_config
+      ? `stored configuration "${prospect.ask_config}"`
+      : `inline prompt · reranker ${body.reranker} · ${body.max_tokens} tokens`,
+  );
 
   // Step 4 — call ARAG. Failures → graceful handoff.
   let result: AskResult;
@@ -161,15 +212,36 @@ export async function runTurn(
       message: e.message,
       conversation_id: req.conversation_id,
     });
+    trace?.add("ask", "Ask the Knowledge Box", "error", e.message ?? "upstream error");
     return finish(prospect.handoff_msg || DEGRADE_LINE, "upstream-error", latency());
   }
 
   const citations = citationsFrom(result.retrieval);
   const retrievalCount = Object.keys(result.retrieval?.resources ?? {}).length;
   const lat = latency(result.timings.firstTokenMs, result.timings.retrieveMs);
+  trace?.add(
+    "ask",
+    "Ask the Knowledge Box",
+    "ok",
+    `${retrievalCount} resource${retrievalCount === 1 ? "" : "s"} retrieved · first token ${Math.round(
+      result.timings.firstTokenMs,
+    )} ms`,
+  );
+  trace?.add(
+    "citations",
+    "Extract citations",
+    citations.length ? "ok" : "skipped",
+    citations.length ? citations.map((c) => c.title).join(", ") : "no cited source",
+  );
 
   // Step 7 — deterministic handoff (sentinel | stock refusal | empty | no retrieval).
   const handoff = decideHandoff(result.answerText, retrievalCount);
+  trace?.add(
+    "handoff",
+    "Handoff decision",
+    handoff.handoff ? "handoff" : "ok",
+    handoff.handoff ? `hand off: ${handoff.reason}` : "answer is grounded — speak it",
+  );
   if (handoff.handoff) {
     deps.log.info("turn.handoff", {
       prospect: req.prospect,
@@ -182,9 +254,21 @@ export async function runTurn(
 
   // Step 5 — shape for voice (≤3 sentences, no URLs/markdown/markers).
   const spoken = shapeForVoice(result.answerText);
+  trace?.add(
+    "shape",
+    "Shape for voice",
+    "ok",
+    `${spoken.split(/(?<=[.!?])\s+/).filter(Boolean).length} sentence(s), no markup or URLs`,
+  );
 
   // Step 8 — output safety guard (before TTS).
   const outGuard = guardOutput(spoken);
+  trace?.add(
+    "guard-output",
+    "Output safety guard",
+    outGuard.ok ? "ok" : "tripped",
+    outGuard.ok ? "line is speakable" : `blocked: ${outGuard.reason}`,
+  );
   if (!outGuard.ok) {
     deps.log.warn("guard.output.trip", {
       prospect: req.prospect,

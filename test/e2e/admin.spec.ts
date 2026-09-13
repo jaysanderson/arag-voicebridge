@@ -7,7 +7,7 @@ async function signIn(page: Page, hash = "") {
   await page.goto(`/admin/${hash}`);
   await page.fill("#token", TOKEN);
   await page.click("#signin");
-  await expect(page.locator(".vb-app")).toBeVisible({ timeout: 20_000 });
+  await expect(page.locator(".arag-app")).toBeVisible({ timeout: 20_000 });
 }
 
 test.describe("operator views", () => {
@@ -19,13 +19,13 @@ test.describe("operator views", () => {
     await expect(page.locator("#loginError")).toContainText("not accepted");
     await page.fill("#token", TOKEN);
     await page.click("#signin");
-    await expect(page.locator(".vb-app")).toBeVisible({ timeout: 20_000 });
+    await expect(page.locator(".arag-app")).toBeVisible({ timeout: 20_000 });
     await expect(page.locator("h1")).toHaveText("Overview");
   });
 
   test("carries the same shell, with operator navigation and a way back", async ({ page }) => {
     await signIn(page);
-    const nav = page.locator("nav.vb-nav");
+    const nav = page.locator(".arag-railnav");
     for (const label of [
       "Overview",
       "Connection",
@@ -88,7 +88,7 @@ test.describe("operator views", () => {
     await signIn(page, "#sessions");
     await expect(page.locator("#seTable tbody tr[data-session]").first()).toBeVisible({ timeout: 20_000 });
     await page.locator(`#seTable tbody tr[data-session="${id}"]`).click();
-    const drawer = page.locator(".vb-drawer");
+    const drawer = page.locator(".arag-drawer");
     await expect(drawer).toContainText("Brief history", { timeout: 20_000 });
     await expect(drawer).toContainText("v1");
   });

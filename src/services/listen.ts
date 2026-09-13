@@ -604,6 +604,42 @@ export class ListenService {
     return this.view(session);
   }
 
+  /**
+   * Delete a session and everything recorded with it: the transcript, the brief history and the
+   * citations. An operator deleting a conversation means the conversation is gone, so the timer
+   * is cleared and any open SSE subscriber is told the session ended before the record goes.
+   */
+  delete(id: string): boolean {
+    const session = this.col.get(id);
+    if (!session) return false;
+    const timer = this.timers.get(id);
+    if (timer) {
+      clearTimeout(timer);
+      this.timers.delete(id);
+    }
+    this.emit(id, { type: "status", status: "ended" });
+    this.listeners.delete(id);
+    const ok = this.col.delete(id);
+    if (ok) this.deps.log.info("listen.session.deleted", { id, prospect: session.prospect });
+    return ok;
+  }
+
+  /** Delete every session started before `cutoff` (retention). Returns how many went. */
+  purgeBefore(cutoff: Date): number {
+    let removed = 0;
+    for (const s of this.col.list({ filter: (x) => x.createdAt < cutoff.toISOString() })) {
+      if (this.delete(s.id)) removed++;
+    }
+    return removed;
+  }
+
+  /** Delete every stored session (the operator's danger zone). */
+  purgeAll(): number {
+    const ids = this.col.list().map((s) => s.id);
+    for (const id of ids) this.delete(id);
+    return ids.length;
+  }
+
   require(id: string): ListenSession {
     const session = this.col.get(id);
     if (!session) throw new ListenSessionNotFound(id);

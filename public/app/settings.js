@@ -19,19 +19,19 @@ const $ = (s) => document.querySelector(s);
 
 function chrome() {
   return `
-    <div class="vb-grid cols-2">
-      <section class="vb-card" id="stConnection"><div class="vb-card-body"><div class="vb-skeleton" style="height:150px"></div></div></section>
-      <section class="vb-card" id="stBrand"><div class="vb-card-body"><div class="vb-skeleton" style="height:150px"></div></div></section>
+    <div class="arag-grid cols-2">
+      <section class="arag-card" id="stConnection"><div class="body"><div class="arag-skeleton" style="height:150px"></div></div></section>
+      <section class="arag-card" id="stBrand"><div class="body"><div class="arag-skeleton" style="height:150px"></div></div></section>
     </div>
-    <section class="vb-card" id="stIntegrations" style="margin-top:20px">
-      <div class="vb-card-body"><div class="vb-skeleton" style="height:120px"></div></div>
+    <section class="arag-card" id="stIntegrations" style="margin-top:20px">
+      <div class="body"><div class="arag-skeleton" style="height:120px"></div></div>
     </section>
-    <section class="vb-card" style="margin-top:20px">
-      <header><h2>API</h2></header>
-      <div class="vb-card-body">
+    <section class="arag-card" style="margin-top:20px">
+      <div class="head"><h2>API</h2></div>
+      <div class="body">
         <p class="muted small">Everything this workspace does, your own application can do. The
           session API is transport-agnostic: any source that can post JSON can drive a brief.</p>
-        <div class="vb-chip-row">
+        <div class="arag-chips">
           <a class="arag-btn secondary sm" href="/api/v1/docs">${icon("source", 14)} API reference</a>
           <a class="arag-btn ghost sm" href="/api/v1/swagger">Try it out</a>
           <a class="arag-btn ghost sm" href="/api/v1/openapi.json">OpenAPI document</a>
@@ -50,12 +50,12 @@ async function loadConnection() {
     const r = await api("/readyz");
     const a = r.arag ?? {};
     card.innerHTML = `
-      <header>
+      <div class="head">
         <h2>Connection</h2><span class="spacer"></span>
         ${a.ok ? '<span class="arag-chip ok">connected</span>' : '<span class="arag-chip danger">unreachable</span>'}
         ${a.mock ? chip("mock Knowledge Box", "warn") : ""}
-      </header>
-      <div class="vb-card-body">
+      </div>
+      <div class="body">
         ${
           a.mock
             ? `<div class="arag-alert warn" style="margin-bottom:14px">This deployment is running against
@@ -63,10 +63,10 @@ async function loadConnection() {
                 and <code>ARAG_REGION</code> to point it at your own content.</div>`
             : ""
         }
-        <dl class="vb-kv">
+        <dl class="arag-kv">
           <dt>Service</dt><dd>${esc(r.version ?? "—")}</dd>
           <dt>Knowledge Box</dt><dd>${a.ok ? `responded in ${esc(fmtMs(a.ms ?? 0))}` : esc(a.error ?? "no response")}</dd>
-          <dt>Endpoint</dt><dd class="vb-mono">${esc(a.baseUrl ?? "—")}</dd>
+          <dt>Endpoint</dt><dd class="mono">${esc(a.baseUrl ?? "—")}</dd>
           <dt>Resources</dt><dd>${a.resources ?? "—"}</dd>
           <dt>Answer model</dt><dd>${esc(a.generativeModel ?? "Knowledge Box default")}</dd>
           <dt>Prospects</dt><dd>${r.prospects ?? 0}</dd>
@@ -75,7 +75,7 @@ async function loadConnection() {
           under <a href="/admin/#connection">Operator → Connection</a>.</p>
       </div>`;
   } catch (e) {
-    card.innerHTML = `<div class="vb-card-body">${errorState(e.message, "stConnRetry")}</div>`;
+    card.innerHTML = `<div class="body">${errorState(e.message, "stConnRetry")}</div>`;
     $("#stConnRetry")?.addEventListener("click", loadConnection);
   }
 }
@@ -89,17 +89,17 @@ function brandCard() {
         )}"></span><span class="muted small">${esc(label)}</span><code>${esc(value)}</code></div>`
       : "";
   $("#stBrand").innerHTML = `
-    <header><h2>Branding</h2><span class="spacer"></span>
-      ${b.poweredBy === false ? chip("white-labelled", "info") : chip("Progress default", "neutral")}</header>
-    <div class="vb-card-body">
-      <div class="vb-card pad" style="background:var(--arag-ink-950);color:#fff;margin-bottom:16px">
+    <div class="head"><h2>Branding</h2><span class="spacer"></span>
+      ${b.poweredBy === false ? chip("white-labelled", "info") : chip("Progress default", "neutral")}</div>
+    <div class="body">
+      <div class="arag-card pad" style="background:var(--arag-ink-950);color:#fff;margin-bottom:16px">
         <div class="arag-row" style="gap:10px">
           ${
             b.logoUrl
               ? `<img src="${esc(b.logoUrl)}" alt="" style="height:20px" />`
               : b.poweredBy === false
                 ? ""
-                : '<img src="/brand/arag-logo-alt.svg" alt="Progress Agentic RAG" style="height:16px" />'
+                : '<img src="/ui/brand/arag-logo-alt.svg" alt="Progress Agentic RAG" style="height:16px" />'
           }
         </div>
         <div style="margin-top:12px">
@@ -107,7 +107,7 @@ function brandCard() {
           <div style="opacity:.6;font-size:12px">${esc(b.tagline ?? "")}</div>
         </div>
         <div style="margin-top:14px;display:flex;gap:8px;align-items:center">
-          <span style="background:var(--vb-accent);width:34px;height:6px;border-radius:3px"></span>
+          <span style="background:var(--arag-green);width:34px;height:6px;border-radius:3px"></span>
           <span style="background:var(--arag-brand-500);width:34px;height:6px;border-radius:3px"></span>
           <span style="opacity:.5;font-size:11px">accent · primary</span>
         </div>
@@ -135,8 +135,8 @@ function brandCard() {
 
 /** One integration, shown in full: what it powers here, whether it is on, and what to set. */
 function integrationCard(i) {
-  return `<section class="vb-card" style="margin-top:16px">
-    <header>
+  return `<section class="arag-card" style="margin-top:16px">
+    <div class="head">
       <h2>${esc(i.name)}</h2>
       ${i.primary ? '<span class="vb-powered">Primary</span>' : ""}
       <span class="spacer"></span>
@@ -145,17 +145,18 @@ function integrationCard(i) {
           ? '<span class="arag-chip ok">configured</span>'
           : '<span class="arag-chip neutral">not configured</span>'
       }
-    </header>
-    <div class="vb-card-body">
+    </div>
+    <div class="body">
       <p class="muted small" style="margin:0 0 12px">${esc(i.purpose)}</p>
-      <div class="vb-scroll">
-        <table class="vb-table">
+      <div class="arag-datatable">
+        <div class="scroll">
+        <table>
           <thead><tr><th>Capability</th><th>What it does here</th><th>Status</th></tr></thead>
           <tbody>${(i.capabilities ?? [])
             .map(
               (c) => `<tr>
-                <td class="vb-primary">${esc(c.name)}</td>
-                <td class="vb-sub">${esc(c.detail)}</td>
+                <td><span class="cell-title">${esc(c.name)}</span></td>
+                <td class="subtle small">${esc(c.detail)}</td>
                 <td>${
                   c.enabled
                     ? '<span class="arag-chip ok">in use</span>'
@@ -165,12 +166,13 @@ function integrationCard(i) {
             )
             .join("")}</tbody>
         </table>
+        </div>
       </div>
-      <dl class="vb-kv" style="margin-top:14px">
+      <dl class="arag-kv" style="margin-top:14px">
         ${Object.entries(i.config ?? {})
-          .map(([k, v]) => `<dt>${esc(k)}</dt><dd class="vb-mono">${esc(String(v))}</dd>`)
+          .map(([k, v]) => `<dt>${esc(k)}</dt><dd class="mono">${esc(String(v))}</dd>`)
           .join("")}
-        <dt>Switch it on with</dt><dd class="vb-mono">${esc(i.setup)}</dd>
+        <dt>Switch it on with</dt><dd class="mono">${esc(i.setup)}</dd>
       </dl>
       ${i.id === "elevenlabs" ? '<div id="stAgent"></div>' : ""}
     </div>
@@ -193,7 +195,7 @@ async function loadIntegrations() {
     </div>`;
     await loadAgent();
   } catch (e) {
-    card.innerHTML = `<div class="vb-card-body">${errorState(e.message, "stIntRetry")}</div>`;
+    card.innerHTML = `<div class="body">${errorState(e.message, "stIntRetry")}</div>`;
     $("#stIntRetry")?.addEventListener("click", loadIntegrations);
   }
 }
@@ -209,13 +211,13 @@ async function loadAgent() {
       <p class="muted small">The agent lives in ElevenLabs Conversational AI and calls this service
         as a custom server tool, so every spoken answer still comes from the Knowledge Box. Paste
         these two into the agent.</p>
-      <dl class="vb-kv" style="margin-bottom:12px">
+      <dl class="arag-kv" style="margin-bottom:12px">
         <dt>Agent id</dt><dd>${
           cfg.ready
-            ? `<span class="vb-mono">${esc(cfg.agent_id)}</span>`
+            ? `<span class="mono">${esc(cfg.agent_id)}</span>`
             : '<span class="arag-chip warn">not wired — set agent_id under Prospects</span>'
         }</dd>
-        <dt>Voice</dt><dd class="vb-mono">${esc(cfg.voice_id ?? "agent default")}</dd>
+        <dt>Voice</dt><dd class="mono">${esc(cfg.voice_id ?? "agent default")}</dd>
         <dt>Tool timeout</dt><dd>${cfg.tool.timeoutMs} ms</dd>
       </dl>
       <p class="muted small" style="margin-bottom:6px">Custom server tool</p>

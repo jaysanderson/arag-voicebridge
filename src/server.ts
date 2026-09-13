@@ -30,7 +30,9 @@ import { registerListenRoutes } from "./routes/listen.ts";
 import { registerProspectRoutes } from "./routes/prospects.ts";
 import { GOLDEN_EVAL_JOB, registerQualityRoutes } from "./routes/quality.ts";
 import { registerRealtimeRoutes } from "./routes/realtime.ts";
+import { registerSettingsRoutes } from "./routes/settings.ts";
 import { registerVoiceRoutes } from "./routes/voice.ts";
+import { ApiKeyStore } from "./services/apiKeys.ts";
 import { runBrief } from "./services/brief.ts";
 import { AragClientPool } from "./services/clientPool.ts";
 import { type GoldenEvalResult, GoldenEvalStore, runGoldenEval } from "./services/goldenEval.ts";
@@ -38,7 +40,10 @@ import { ListenService, ListenSessionNotFound } from "./services/listen.ts";
 import { MetricsService } from "./services/metrics.ts";
 import type { AskCapable, TurnDeps } from "./services/pipeline.ts";
 import { ProspectNotFoundError, ProspectRegistry, ValidationFailed } from "./services/registry.ts";
+import { RetentionService } from "./services/retention.ts";
 import { mockSeed } from "./services/seed.ts";
+import { SettingsService } from "./services/settings.ts";
+import { buildSetup } from "./services/setup.ts";
 import type { ProspectConfig } from "./types.ts";
 
 export interface Usage {
@@ -61,6 +66,9 @@ export interface ProductDeps {
   metrics: MetricsService;
   evals: GoldenEvalStore;
   listen: ListenService;
+  settings: SettingsService;
+  apiKeys: ApiKeyStore;
+  retention: RetentionService;
   usage: Usage;
   platformVersion: string;
   /** Pipeline dependencies (client resolver + config + logger). */
@@ -121,6 +129,15 @@ export async function createProduct(
 
   const store = new Store(env.dataDir, { persist: opts.persist ?? true });
   const jobs = new JobManager(store, log);
+  // The key store takes over from API_KEYS: it seeds from the variable, then rewrites
+  // `env.apiKeys` in place, which is the array the platform authenticates against.
+  const apiKeys = new ApiKeyStore({ store, env, log });
+  apiKeys.seedFromEnv(env.apiKeys);
+  // Settings: the store is the authority, the environment is only the default. `apply()` writes
+  // the effective values into `env` and `voice` — the same objects everything else holds — so a
+  // change takes effect on the next request with no restart and no re-wiring.
+  const settings = new SettingsService({ store, log, env, voice, onRewire: () => clients.clear() });
+  settings.apply();
   const registry = new ProspectRegistry({ store, log, voice });
   registry.seedFromFile(opts.registrySeedFile ?? resolve(HERE, "config", "prospects.example.json"), {
     kbId: env.arag.kbId,
@@ -137,6 +154,9 @@ export async function createProduct(
     brief: (req, prospect) => runBrief(req, prospect, { client: clients.for(prospect), voice, log }),
   });
 
+  const retention = new RetentionService({ voice, log, metrics, listen, evals });
+  if (opts.persist !== false) retention.start();
+
   const deps: ProductDeps = {
     env,
     voice,
@@ -148,6 +168,9 @@ export async function createProduct(
     metrics,
     evals,
     listen,
+    settings,
+    apiKeys,
+    retention,
     usage,
     platformVersion: PLATFORM_VERSION,
     turnDeps: () => ({
@@ -204,9 +227,14 @@ export async function createProduct(
     }),
     cors(),
   );
-  app.use(async (_ctx, next) => {
+  app.use(async (ctx, next) => {
     usage.requests++;
     await next();
+    // "Last used" for the key store, recorded *after* the chain: the platform authenticates
+    // inside its own dispatch, so `ctx.auth` is still anonymous on the way in (reported to the
+    // platform team). Sampled at 30 s per key so a busy deployment does not pay a store write
+    // per request.
+    if (ctx.auth.apiKey) apiKeys.touch(ctx.auth.apiKey, ctx.ip);
   });
   // Product-specific error mapping (registry + integration errors → problem+json).
   app.errorMapper = (err: unknown): HttpError | null => {
@@ -252,6 +280,12 @@ export async function createProduct(
   registerQualityRoutes(app, deps);
   registerJobRoutes(app, deps);
   registerAdminRoutes(app, deps);
+  registerSettingsRoutes(app, deps);
+
+  // The first-run checklist. Public (the wizard runs before anyone signs in as an operator) and
+  // computed from the live configuration, never from a stored "dismissed" flag — a deployment
+  // that loses its Knowledge Box should see the step come back.
+  app.get("/api/v1/setup", () => buildSetup(deps), { auth: "api", operationId: "getSetup" });
 
   // White-label branding: public, unauthenticated and uncached-by-default so a partner can change
   // it with a restart. The UI kit shell fetches this at boot.
@@ -354,6 +388,7 @@ export async function createProduct(
     app,
     deps,
     async close() {
+      retention.stop();
       listen.close();
       store.flushAll();
       await app.close();

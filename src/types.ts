@@ -24,6 +24,8 @@ export interface VoiceAnswerRequest {
   history?: HistoryTurn[];
   /** Optional per-request generative model override (from the UI model dropdown). */
   generative_model?: string;
+  /** Ask for the per-step pipeline trace (the Ask tester's stepper). Never set by the agent. */
+  trace?: boolean;
 }
 
 /** A citation surfaced in the UI — never spoken. */
@@ -82,7 +84,8 @@ export interface GoldenQuestion {
 /** A single prospect entry in the registry (persisted in DATA_DIR/prospects.json). */
 export interface ProspectConfig {
   display_name: string;
-  kb_id: string;
+  /** Knowledge Box for this prospect. Empty falls back to the deployment default (Settings → Connection). */
+  kb_id?: string;
   region: string;
   /** Stored ask search_configuration name. Optional — omit to use the inline config below. */
   ask_config?: string;
@@ -99,6 +102,12 @@ export interface ProspectConfig {
   /** Non-secret ElevenLabs identifiers (used by the browser, not the server). */
   agent_id?: string;
   voice_id?: string;
+  /** The custom server tool's id in ElevenLabs, once the product has created or adopted one. */
+  tool_id?: string;
+  /** Router prompt override. Empty = the generated default for this prospect's display name. */
+  system_prompt?: string;
+  /** Which stored API key the pushed tool's X-API-Key header carries. */
+  agent_api_key_id?: string;
   locale: string;
   greeting: string;
   handoff_msg: string;

@@ -9,52 +9,52 @@
   },
   "format": "mp3_44100_128",
   "script": "showcase/SCRIPT.md",
-  "generated": "2026-09-13T01:50:14.634Z",
+  "generated": "2026-09-13T02:01:49.426Z",
   "cues": [
     {
       "index": 1,
       "start": "00:00.0",
       "startSeconds": 0,
       "title": "The problem",
-      "hash": "7c30eba2a07ef892",
+      "hash": "68b9cc5f68dbb4d7",
       "file": "01.mp3",
-      "duration": 21.409,
-      "text": "Someone on a live call needs to know what is true right now, not after it ends. This is Live, the screen VoiceBridge opens on. Nothing is running yet — the banner says what starting a session will do, and just as importantly what it will not: it never speaks, and a failed refresh leaves the last good brief in place rather than blanking it."
+      "duration": 10.96,
+      "text": "Someone on a live call needs to know what is true right now, not after it ends. This is Live, the screen VoiceBridge opens on, and the banner says plainly what it will not do."
     },
     {
       "index": 2,
-      "start": "00:15.0",
-      "startSeconds": 15,
+      "start": "00:10.5",
+      "startSeconds": 10.5,
       "title": "Play the sample conversation, and watch the brief evolve",
-      "hash": "8fc865d5abcea5db",
+      "hash": "1b5ec71dd1cbfe8b",
       "file": "02.mp3",
-      "duration": 34.226,
-      "text": "Press play. The brief is not being redrawn from scratch on every line — the version number in its header only moves forward when the server's own throttle decides a refresh is actually worth an LLM call, so a burst of turns produces one refresh, not nine. Watch it climb through several real versions as the caller says more: a machine shop, then binder jetting, then a furnace, then titanium and budget. Every claim in it is grounded, and the sources are listed right there, building up underneath as the call goes on."
+      "duration": 30.697,
+      "text": "Press play. The brief is not redrawn from scratch on every line — the version number only moves forward when the server's own throttle decides a refresh is worth an LLM call, so a burst of turns produces one refresh, not nine. Watch it climb through several real versions as the caller says more: a machine shop, then binder jetting, then a furnace, then titanium and budget. Every claim is grounded, and the sources build up underneath as the call goes on."
     },
     {
       "index": 3,
-      "start": "01:00.0",
-      "startSeconds": 60,
+      "start": "00:43.5",
+      "startSeconds": 43.5,
       "title": "The transcript and the session's own numbers",
-      "hash": "6ddf025f9cfa21f3",
+      "hash": "c8f009d7279ea5c4",
       "file": "03.mp3",
-      "duration": 23.266,
-      "text": "Next to the brief, the actual transcript, and the numbers behind what just happened: how many refreshes ran, how many the throttle skipped, and how long the last one took. Against the mock Knowledge Box that is a handful of milliseconds — against a real one, expect a few seconds, which is still comfortable against a caller speaking for eight to fifteen seconds a turn."
+      "duration": 9.52,
+      "text": "Next to the brief, the transcript, and the session's own numbers: refreshes run, refreshes the throttle skipped, and the last refresh's latency."
     },
     {
       "index": 4,
-      "start": "01:16.0",
-      "startSeconds": 76,
+      "start": "00:51.5",
+      "startSeconds": 51.5,
       "title": "End the call, then find it again in Conversations",
-      "hash": "9b0d9242ad7f8bcc",
+      "hash": "d0b549e6ffc827df",
       "file": "04.mp3",
-      "duration": 27.4,
-      "text": "Ending a session does not lose anything — the brief, its sources and how it developed are kept. Conversations lists every call this deployment has listened to. Searching for something the caller actually said finds this one. Opening it shows the same final brief, the transcript in full, and — scrolling down — every version the brief passed through on the way there, oldest at the bottom, each one timestamped and timed."
+      "duration": 23.545,
+      "text": "Ending a session loses nothing — the brief, its sources and how it developed are kept. Conversations lists every call this deployment has listened to, and searching for something the caller actually said finds this one. Opening it shows the same final brief, the full transcript, and every version the brief passed through on the way there, each timestamped and timed."
     },
     {
       "index": 5,
-      "start": "01:36.0",
-      "startSeconds": 96,
+      "start": "01:16.0",
+      "startSeconds": 76,
       "title": "Knowledge: what it is grounded in, and a cited answer",
       "hash": "361a74ba02e523d3",
       "file": "05.mp3",
@@ -63,28 +63,28 @@
     },
     {
       "index": 6,
-      "start": "01:54.0",
-      "startSeconds": 114,
+      "start": "01:44.2",
+      "startSeconds": 104.2,
       "title": "The quality gate: the golden set, live",
-      "hash": "3bd264ba8286005e",
+      "hash": "b7cefeef20c4bd68",
       "file": "06.mp3",
-      "duration": 22.709,
-      "text": "Before a prospect is trusted to answer, it has to clear this gate: the same ten questions, run right now, through the same pipeline used on a real call. All ten pass, so the gate opens. This is the one automated quality check in the product today — there is no equivalent gate yet for the live brief itself, only for this deflection path."
+      "duration": 12.307,
+      "text": "Before a prospect is trusted to answer it has to clear this gate: ten questions, run right now, through the same pipeline a real call uses. All ten pass, so the gate opens."
     },
     {
       "index": 7,
-      "start": "02:07.0",
-      "startSeconds": 127,
+      "start": "01:54.6",
+      "startSeconds": 114.6,
       "title": "Quality: the numbers, and a guard trip redacted",
-      "hash": "ad8ef3d429b32a3b",
+      "hash": "9580e507ad21ea00",
       "file": "07.mp3",
-      "duration": 14.164,
-      "text": "Quality is where all of that gets checked in aggregate. And when someone tries an injection, the guard trips before the model ever sees it — the log keeps the reason, never the text, so the log itself cannot leak what was attempted."
+      "duration": 9.892,
+      "text": "Quality checks all of that in aggregate. And when someone tries an injection, the guard trips before the model sees it — the log keeps the reason, never the text."
     },
     {
       "index": 8,
-      "start": "02:19.0",
-      "startSeconds": 139,
+      "start": "02:05.0",
+      "startSeconds": 125,
       "title": "Into the Operator panel",
       "hash": "d84d6d31d6ebe6dd",
       "file": "08.mp3",
@@ -93,13 +93,13 @@
     },
     {
       "index": 9,
-      "start": "02:33.0",
-      "startSeconds": 153,
+      "start": "02:33.5",
+      "startSeconds": 153.5,
       "title": "White-label, and the ElevenLabs stack",
-      "hash": "4cad89caeb4d8a96",
+      "hash": "7496c1081f564fd2",
       "file": "09.mp3",
-      "duration": 23.731,
-      "text": "This deployment is white-labelled by configuration alone, and everything voice runs on ElevenLabs: Scribe for transcription, Conversational AI for the channel, text-to-speech for the optional spoken cue. None of it is switched on here, and the page says so plainly rather than pretending — but the tool definition an agent needs is generated and ready to paste in the moment it is."
+      "duration": 12.725,
+      "text": "White-labelled by configuration alone, and everything voice runs on ElevenLabs — Scribe, Conversational AI, text-to-speech. None switched on here, and the page says so plainly."
     }
   ]
 }

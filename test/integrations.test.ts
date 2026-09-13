@@ -13,10 +13,9 @@ import {
 } from "../src/services/tts.ts";
 import { systemPrompt, voiceAgentConfig } from "../src/services/voiceAgent.ts";
 import { fetchVoices, VoicesError } from "../src/services/voices.ts";
-import { Logger } from "../vendor/arag-platform/src/index.ts";
+
 import { describe, expect, it } from "./_expect.ts";
 
-const log = new Logger({ level: "error", ringSize: 0, write: () => {} });
 const configured = readVoiceEnv({ ELEVENLABS_API_KEY: "xi-test" });
 
 function reply(status: number, body: unknown, capture?: (url: string, init?: RequestInit) => void) {

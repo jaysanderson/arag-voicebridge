@@ -175,6 +175,14 @@ export function registerListenRoutes(app: App, deps: ProductDeps): void {
     },
   );
 
+  // Every version of the brief, so a conversation can be reviewed for when it changed its mind
+  // rather than only for what it ended as. The record view diffs two of these field by field.
+  app.get(
+    "/api/v1/listen/sessions/:id/brief-history",
+    (ctx) => ({ items: deps.listen.require(ctx.params.id!).briefHistory }),
+    { auth: "api", operationId: "listenBriefHistory" },
+  );
+
   app.post(
     "/api/v1/listen/sessions/:id/transcript",
     (ctx) => {

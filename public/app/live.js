@@ -107,22 +107,22 @@ function view() {
       </section>
 
       <div class="vb-side">
-        <section class="vb-card" id="vbSessionCard">
-          <header>
+        <section class="arag-card" id="vbSessionCard">
+          <div class="head">
             <h3>Session</h3>
             <span class="spacer"></span>
             <span id="vbSessionChip" class="arag-chip neutral">not started</span>
-          </header>
-          <div class="vb-card-body" id="vbSessionBody"></div>
+          </div>
+          <div class="body" id="vbSessionBody"></div>
         </section>
 
-        <section class="vb-card">
-          <header>
+        <section class="arag-card">
+          <div class="head">
             <h3>Transcript</h3>
             <span class="spacer"></span>
             <span id="vbTranscriptCount" class="muted small"></span>
-          </header>
-          <div class="vb-card-body">
+          </div>
+          <div class="body">
             <div id="vbInterim" class="muted small" hidden></div>
             <div class="vb-transcript" id="vbTranscript"></div>
           </div>
@@ -144,7 +144,7 @@ function onboarding() {
         <li><span>Watch the brief rewrite itself as the conversation develops, sources gathering underneath.</span></li>
         <li><span>End the session — the brief, its sources and how it developed are kept in Conversations.</span></li>
       </ol>
-      <div class="vb-chip-row" style="margin-top:16px">
+      <div class="arag-chips" style="margin-top:16px">
         <button class="arag-btn lg" id="vbSampleOnboard">${icon("play", 16)} Play sample conversation</button>
         <button class="arag-btn ghost" id="vbDismissOnboard">Skip</button>
       </div>
@@ -235,8 +235,8 @@ function scribeStrip() {
       <span class="arag-chip ${tone}">${s.state === "connected" ? '<span class="vb-live-dot" style="margin-right:5px"></span>' : ""}${esc(s.state)}</span>
       <span class="label">Transcription: ElevenLabs Scribe</span>
     </div>
-    <dl class="vb-kv" style="font-size:12.5px">
-      <dt>Model</dt><dd class="vb-mono">${esc(s.model)}</dd>
+    <dl class="arag-kv" style="font-size:12.5px">
+      <dt>Model</dt><dd class="mono">${esc(s.model)}</dd>
       <dt>Language</dt><dd>${esc(s.language || "detecting…")}</dd>
       <dt>Last final</dt><dd>${s.latencyMs ? esc(fmtMs(s.latencyMs)) : "—"}</dd>
     </dl>
@@ -271,7 +271,7 @@ function typedBox() {
 function runningPanel(s) {
   const ended = s.status === "ended";
   return `
-    <div class="vb-chip-row" style="margin-bottom:12px">
+    <div class="arag-chips" style="margin-bottom:12px">
       ${
         ended
           ? ""
@@ -291,14 +291,14 @@ function runningPanel(s) {
     ${ended ? "" : `<div id="vbScribe" hidden>${scribeStrip()}</div>`}
     ${ended ? "" : speakToggle()}
     ${ended ? "" : typedBox()}
-    <dl class="vb-kv" id="vbStats" style="margin-top:14px"></dl>`;
+    <dl class="arag-kv" id="vbStats" style="margin-top:14px"></dl>`;
 }
 
 function renderStats(s) {
   const el = $("#vbStats");
   if (!el || !s) return;
   el.innerHTML = `
-    <dt>Session</dt><dd class="vb-mono">${esc(s.id.slice(0, 8))}</dd>
+    <dt>Session</dt><dd class="mono">${esc(s.id.slice(0, 8))}</dd>
     <dt>Started</dt><dd>${ago(s.createdAt)}</dd>
     <dt>Turns heard</dt><dd>${s.stats.chunks}</dd>
     <dt>Brief refreshes</dt><dd>${s.stats.refreshes}</dd>

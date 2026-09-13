@@ -7,6 +7,7 @@ import {
   conflict,
   constantTimeEqual,
   describeEnv,
+  type LogLevel,
   notFound,
   operationSchemas,
   unauthorized,
@@ -15,6 +16,9 @@ import { describeVoiceConfig } from "../config.ts";
 import { openapi, VERSION } from "../openapi.ts";
 import type { ProductDeps } from "../server.ts";
 import { configName, provisionProspect } from "../services/provision.ts";
+
+/** Log levels in severity order, so a `level` filter means "this level and worse". */
+const LOG_ORDER: Record<string, number> = { debug: 0, info: 1, warn: 2, error: 3 };
 
 export function registerAdminRoutes(app: App, deps: ProductDeps): void {
   app.post(
@@ -108,15 +112,32 @@ export function registerAdminRoutes(app: App, deps: ProductDeps): void {
     { auth: "admin", operationId: "adminUsage" },
   );
 
+  // Paged rather than "the last N": the ring holds 500 records and an operator chasing one
+  // request needs to walk past the noise, not raise the limit until the page is unusable. The
+  // filter is applied first so `total` is the number of matches, not the ring size.
   app.get(
     "/api/v1/admin/logs",
-    (ctx) => ({
-      items: deps.log.recent({
-        level: ctx.queryObj.level as never,
-        contains: ctx.queryObj.contains as string | undefined,
-        limit: ctx.queryObj.limit as number | undefined,
-      }),
-    }),
+    (ctx) => {
+      const level = ctx.queryObj.level as LogLevel | undefined;
+      const contains = String(ctx.queryObj.contains ?? "").toLowerCase();
+      const limit = Math.max(1, Math.min((ctx.queryObj.limit as number | undefined) ?? 200, 500));
+      const offset = Math.max(0, (ctx.queryObj.offset as number | undefined) ?? 0);
+      const min = (level ? LOG_ORDER[level] : 0) ?? 0;
+      const matches = deps.log.ring.filter(
+        (r) =>
+          (LOG_ORDER[r.level] ?? 0) >= min &&
+          (!contains || JSON.stringify(r).toLowerCase().includes(contains)),
+      );
+      // Newest first, which is the only order an operator reads a log in.
+      matches.reverse();
+      return {
+        items: matches.slice(offset, offset + limit),
+        total: matches.length,
+        offset,
+        limit,
+        ring: deps.log.ringSize,
+      };
+    },
     {
       auth: "admin",
       validate: operationSchemas(openapi, "/api/v1/admin/logs", "get"),

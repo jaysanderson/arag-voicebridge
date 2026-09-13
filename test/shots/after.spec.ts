@@ -40,7 +40,7 @@ test("after: the workspace", async ({ page, request }) => {
   // ── Live, the webhook integration drawer ───────────────────────────────────
   await page.goto("/");
   await page.click("#vbWebhook");
-  await expect(page.locator(".vb-drawer")).toBeVisible();
+  await expect(page.locator(".arag-drawer")).toBeVisible();
   await page.waitForTimeout(500);
   await page.screenshot({ path: `${OUT}/after-03-live-webhook.png`, fullPage: true });
   await page.keyboard.press("Escape");
@@ -51,7 +51,7 @@ test("after: the workspace", async ({ page, request }) => {
   await page.waitForTimeout(400);
   await page.screenshot({ path: `${OUT}/after-04-conversations.png`, fullPage: true });
   await page.locator("#cvTable tbody tr[data-id]").first().click();
-  await expect(page.locator(".vb-drawer")).toContainText("How the brief evolved", { timeout: 20_000 });
+  await expect(page.locator(".arag-drawer")).toContainText("How the brief evolved", { timeout: 20_000 });
   await page.waitForTimeout(500);
   await page.screenshot({ path: `${OUT}/after-05-conversation-detail.png`, fullPage: true });
   await page.keyboard.press("Escape");

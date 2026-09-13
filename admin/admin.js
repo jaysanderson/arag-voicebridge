@@ -55,22 +55,21 @@ const TITLES = {
 // ── sign-in ──────────────────────────────────────────────────────────────────
 
 function signInView() {
-  document.body.className = "arag vb-body";
+  document.body.className = "arag";
+  // The kit's bandless sign-in: full-bleed ink, and the card carries the only wordmark on the page.
   document.body.innerHTML = `
-    <div style="min-height:100vh;display:grid;place-items:center;background:var(--arag-ink-950);padding:24px">
-      <div class="vb-card" style="width:min(420px,100%)">
-        <div class="vb-card-body">
-          <img src="/brand/arag-logo.svg" alt="Progress Agentic RAG" style="height:15px;margin-bottom:20px" />
-          <h1 style="font-size:1.15rem;margin:0 0 6px">Operator sign-in</h1>
-          <p class="muted small">Enter the <code>ADMIN_TOKEN</code> configured for this deployment. It is
-            exchanged for an HttpOnly cookie and never stored in the page.</p>
-          <div class="arag-row" style="margin-top:16px;flex-wrap:nowrap">
-            <input id="token" class="arag-input" type="password" placeholder="Admin token" autocomplete="current-password" />
-            <button id="signin" class="arag-btn" style="flex:none">Sign in</button>
-          </div>
-          <p id="loginError" class="arag-alert error" hidden style="margin-top:12px"></p>
-          <p class="muted small" style="margin-top:18px"><a href="/">Back to the product</a></p>
+    <div class="arag-signin standalone">
+      <div class="card">
+        <img class="wordmark" src="/ui/brand/arag-logo.svg" alt="Progress Agentic RAG" />
+        <h1>Operator sign-in</h1>
+        <p class="muted small">Enter the <code>ADMIN_TOKEN</code> configured for this deployment. It is
+          exchanged for an HttpOnly cookie and never stored in the page.</p>
+        <div class="arag-row" style="margin-top:16px;flex-wrap:nowrap">
+          <input id="token" class="arag-input" type="password" placeholder="Admin token" autocomplete="current-password" />
+          <button id="signin" class="arag-btn" style="flex:none">Sign in</button>
         </div>
+        <div class="error-slot"><p id="loginError" class="arag-alert error" hidden></p></div>
+        <p class="muted small" style="margin-top:6px"><a href="/">Back to the product</a></p>
       </div>
     </div>`;
   const attempt = async () => {
@@ -92,13 +91,13 @@ function signInView() {
 // ── views ────────────────────────────────────────────────────────────────────
 
 async function renderOverview(el) {
-  el.innerHTML = `<div class="vb-stats" id="ovStats">${Array.from(
+  el.innerHTML = `<div class="arag-statstrip" id="ovStats">${Array.from(
     { length: 6 },
-    () => '<div class="vb-stat"><span class="vb-skeleton" style="width:70%"></span></div>',
+    () => '<div><span class="arag-skeleton" style="width:70%"></span></div>',
   ).join("")}</div>
-    <div class="vb-split" style="margin-top:20px">
-      <section class="vb-card"><header><h2>Jobs</h2></header><div class="vb-card-body" id="ovJobs"></div></section>
-      <section class="vb-card"><header><h2>Stores</h2></header><div class="vb-card-body" id="ovStores"></div></section>
+    <div class="arag-split" style="margin-top:20px">
+      <section class="arag-card"><div class="head"><h2>Jobs</h2></div><div class="body" id="ovJobs"></div></section>
+      <section class="arag-card"><div class="head"><h2>Stores</h2></div><div class="body" id="ovStores"></div></section>
     </div>`;
   try {
     const [usage, config] = await Promise.all([api("/api/v1/admin/usage"), api("/api/v1/admin/config")]);
@@ -114,20 +113,20 @@ async function renderOverview(el) {
       stat("Listen sessions", usage.listenSessions),
       stat("Turns recorded", usage.turns),
     ].join("");
-    $("#ovJobs").innerHTML = `<dl class="vb-kv">
+    $("#ovJobs").innerHTML = `<dl class="arag-kv">
         <dt>Queued</dt><dd>${usage.jobs.queued}</dd>
         <dt>Running</dt><dd>${usage.jobs.running}</dd>
         <dt>Succeeded</dt><dd>${usage.jobs.succeeded}</dd>
         <dt>Failed</dt><dd>${usage.jobs.failed}</dd>
       </dl>`;
-    $("#ovStores").innerHTML = `<dl class="vb-kv">
+    $("#ovStores").innerHTML = `<dl class="arag-kv">
         <dt>Service</dt><dd>${esc(config.version)}</dd>
         <dt>Platform</dt><dd>${esc(config.platformVersion)}</dd>
         ${Object.entries(config.stores ?? {})
           .map(
             ([k, v]) =>
               `<dt>${esc(k)}</dt><dd>${esc(String(v?.count ?? 0))} record${v?.count === 1 ? "" : "s"}` +
-              `${v?.file ? ` <span class="vb-sub vb-mono">${esc(v.file)}</span>` : ""}</dd>`,
+              `${v?.file ? ` <span class="mono subtle small">${esc(v.file)}</span>` : ""}</dd>`,
           )
           .join("")}
       </dl>`;
@@ -138,27 +137,27 @@ async function renderOverview(el) {
 
 async function renderConnection(el) {
   el.innerHTML = `
-    <div class="vb-table-wrap">
-      <div class="vb-scroll">
-        <table class="vb-table" id="cnTable">
+    <div class="arag-datatable">
+      <div class="scroll">
+        <table id="cnTable">
           <thead><tr><th>Prospect</th><th>Knowledge Box</th><th>Endpoint</th><th>Model</th><th>Status</th><th class="num">ms</th></tr></thead>
           <tbody>${skeletonRows(3, 6)}</tbody>
         </table>
       </div>
     </div>
-    <section class="vb-card" style="margin-top:20px">
-      <header><h2>Effective configuration</h2><span class="spacer"></span>${chip("secrets redacted", "neutral")}</header>
-      <div class="vb-card-body"><arag-json src="/api/v1/admin/config"></arag-json></div>
+    <section class="arag-card" style="margin-top:20px">
+      <div class="head"><h2>Effective configuration</h2><span class="spacer"></span>${chip("secrets redacted", "neutral")}</div>
+      <div class="body"><arag-json src="/api/v1/admin/config"></arag-json></div>
     </section>`;
   try {
     const h = await api("/api/v1/admin/health");
     $("#cnTable tbody").innerHTML = h.prospects
       .map(
         (p) => `<tr>
-          <td><span class="vb-primary">${esc(p.display_name)}</span><div class="vb-sub vb-mono">${esc(p.key)}</div></td>
-          <td class="vb-mono">${esc(p.kbId ?? "—")}</td>
-          <td class="vb-mono vb-sub">${esc(p.baseUrl ?? "—")}</td>
-          <td class="vb-sub">${esc(p.generativeModel ?? "KB default")}</td>
+          <td><span class="cell-title">${esc(p.display_name)}</span><div class="cell-sub mono">${esc(p.key)}</div></td>
+          <td class="mono">${esc(p.kbId ?? "—")}</td>
+          <td class="mono subtle small">${esc(p.baseUrl ?? "—")}</td>
+          <td class="subtle small">${esc(p.generativeModel ?? "KB default")}</td>
           <td>${
             p.ok
               ? '<span class="arag-chip ok">connected</span>'
@@ -175,7 +174,7 @@ async function renderConnection(el) {
 
 async function renderSessions(el) {
   el.innerHTML = `
-    <div class="vb-filters">
+    <div class="arag-filterbar">
       <select id="seProspect" class="arag-select" aria-label="Prospect">
         <option value="">All prospects</option>
         ${prospects.map((p) => `<option value="${esc(p.id)}">${esc(p.display_name)}</option>`).join("")}
@@ -183,11 +182,11 @@ async function renderSessions(el) {
       <select id="seStatus" class="arag-select" aria-label="Status">
         <option value="">Any status</option><option value="live">Live</option><option value="ended">Ended</option>
       </select>
-      <span class="vb-result-count" id="seCount"></span>
+      <span class="spacer"></span><span class="count" id="seCount"></span>
     </div>
-    <div class="vb-table-wrap">
-      <div class="vb-scroll">
-        <table class="vb-table" id="seTable">
+    <div class="arag-datatable">
+      <div class="scroll">
+        <table id="seTable">
           <thead><tr><th>Started</th><th>Prospect</th><th>Status</th><th class="num">chunks</th>
             <th class="num">refreshes</th><th class="num">skipped</th><th class="num">failures</th><th class="num">p50</th></tr></thead>
           <tbody>${skeletonRows(5, 8)}</tbody>
@@ -205,7 +204,7 @@ async function renderSessions(el) {
         ? page.items
             .map(
               (s) => `<tr tabindex="0" data-session="${esc(s.id)}">
-                <td>${ago(s.createdAt)}<div class="vb-sub vb-mono">${esc(s.id.slice(0, 8))}</div></td>
+                <td>${ago(s.createdAt)}<div class="cell-sub mono">${esc(s.id.slice(0, 8))}</div></td>
                 <td>${esc(s.prospect)}</td>
                 <td>${s.status === "live" ? '<span class="arag-chip ok">live</span>' : '<span class="arag-chip neutral">ended</span>'}</td>
                 <td class="num">${s.stats.chunks}</td>
@@ -230,14 +229,14 @@ async function renderSessions(el) {
 async function sessionDrawer(id) {
   openDrawer({
     title: "Listen session",
-    sub: `<span class="vb-mono">${esc(id)}</span>`,
+    sub: `<span class="mono">${esc(id)}</span>`,
     actions: `<a class="arag-btn secondary sm" href="/api/v1/listen/sessions/${encodeURIComponent(id)}/export?format=markdown">Export</a>`,
-    body: '<div class="vb-skeleton" style="height:220px"></div>',
+    body: '<div class="arag-skeleton" style="height:220px"></div>',
   });
   try {
     const s = await api(`/api/v1/listen/sessions/${encodeURIComponent(id)}/export`);
-    document.querySelector(".vb-drawer-body").innerHTML = `
-      <div class="vb-stats" style="margin-bottom:18px">
+    document.querySelector(".arag-drawer .body").innerHTML = `
+      <div class="arag-statstrip" style="margin-bottom:18px">
         ${stat("Prospect", s.prospect)}
         ${stat("Duration", duration(s.durationSec))}
         ${stat("Brief versions", s.briefVersion)}
@@ -253,24 +252,24 @@ async function sessionDrawer(id) {
               .slice()
               .reverse()
               .map(
-                (h) => `<div class="vb-card" style="margin-bottom:10px">
-                  <header><h3>v${h.version}</h3><span class="spacer"></span>
+                (h) => `<div class="arag-card" style="margin-bottom:10px">
+                  <div class="head"><h3>v${h.version}</h3><span class="spacer"></span>
                     <span class="muted small">${ago(h.at)}</span>
-                    <span class="arag-chip neutral">${esc(fmtMs(h.latencyMs))}</span></header>
-                  <div class="vb-card-body"><div class="vb-brief">${renderBrief(h.brief)}</div></div>
+                    <span class="arag-chip neutral">${esc(fmtMs(h.latencyMs))}</span></div>
+                  <div class="body"><div class="vb-brief">${renderBrief(h.brief)}</div></div>
                 </div>`,
               )
               .join("")
           : '<p class="muted small">No refresh produced a usable brief.</p>'
       }`;
   } catch (e) {
-    document.querySelector(".vb-drawer-body").innerHTML = errorState(e.message);
+    document.querySelector(".arag-drawer .body").innerHTML = errorState(e.message);
   }
 }
 
 async function renderTurns(el) {
   el.innerHTML = `
-    <div class="vb-filters">
+    <div class="arag-filterbar">
       <select id="tuProspect" class="arag-select" aria-label="Prospect">
         <option value="">All prospects</option>
         ${prospects.map((p) => `<option value="${esc(p.id)}">${esc(p.display_name)}</option>`).join("")}
@@ -279,13 +278,13 @@ async function renderTurns(el) {
         <option value="">Every turn</option><option value="answered">Answered</option>
         <option value="handoff">Handed off</option><option value="guard">Guard trips</option>
       </select>
-      <span class="vb-result-count" id="tuCount"></span>
+      <span class="spacer"></span><span class="count" id="tuCount"></span>
     </div>
     <p class="muted small">The question text is stored only for turns that passed the input guard — an
       unsafe or injected prompt is recorded as a reason, never as text.</p>
-    <div class="vb-table-wrap">
-      <div class="vb-scroll">
-        <table class="vb-table" id="tuTable">
+    <div class="arag-datatable">
+      <div class="scroll">
+        <table id="tuTable">
           <thead><tr><th>When</th><th>Prospect</th><th>Question</th><th>Result</th>
             <th class="num">total</th><th class="num">1st token</th><th class="num">cites</th></tr></thead>
           <tbody>${skeletonRows(8, 7)}</tbody>
@@ -303,9 +302,9 @@ async function renderTurns(el) {
         ? page.items
             .map(
               (t) => `<tr>
-                <td>${ago(t.createdAt)}<div class="vb-sub">${esc(t.source)}</div></td>
+                <td>${ago(t.createdAt)}<div class="cell-sub">${esc(t.source)}</div></td>
                 <td>${esc(t.prospect)}</td>
-                <td><span class="vb-truncate" style="max-width:44ch">${
+                <td><span class="arag-truncate" style="max-width:44ch">${
                   t.question ? esc(t.question) : '<span class="muted">redacted (guard trip)</span>'
                 }</span></td>
                 <td>${
@@ -331,19 +330,19 @@ async function renderTurns(el) {
 
 async function renderEvals(el) {
   el.innerHTML = `
-    <div class="vb-split">
-      <section class="vb-card">
-        <header><h2>Run history</h2></header>
-        <div class="vb-card-body" style="padding:0"><div class="vb-scroll">
-          <table class="vb-table" id="evTable">
+    <div class="arag-split">
+      <section class="arag-card">
+        <div class="head"><h2>Run history</h2></div>
+        <div class="body" style="padding:0"><div class="arag-datatable vb-flat"><div class="scroll">
+          <table id="evTable">
             <thead><tr><th>When</th><th>Prospect</th><th>Result</th><th class="num">p50</th></tr></thead>
             <tbody>${skeletonRows(4, 4)}</tbody>
           </table>
-        </div></div>
+        </div></div></div>
       </section>
-      <section class="vb-card">
-        <header><h2>Detail</h2><span class="spacer"></span><span id="evMeta" class="muted small"></span></header>
-        <div class="vb-card-body" id="evDetail">${empty({ icon: "check", title: "Select a run" })}</div>
+      <section class="arag-card">
+        <div class="head"><h2>Detail</h2><span class="spacer"></span><span id="evMeta" class="muted small"></span></div>
+        <div class="body" id="evDetail">${empty({ icon: "check", title: "Select a run" })}</div>
       </section>
     </div>`;
   try {
@@ -354,7 +353,7 @@ async function renderEvals(el) {
             (r) => `<tr tabindex="0" data-eval="${esc(r.id)}">
               <td>${ago(r.createdAt)}</td><td>${esc(r.display_name ?? r.prospect)}</td>
               <td>${r.ok ? '<span class="arag-chip ok">all passed</span>' : `<span class="arag-chip danger">${r.failed} failed</span>`}
-                <span class="vb-sub">${r.passed}/${r.total}</span></td>
+                <span class="subtle small">${r.passed}/${r.total}</span></td>
               <td class="num">${r.latency_ms?.p50 ?? "—"}</td>
             </tr>`,
           )
@@ -364,11 +363,11 @@ async function renderEvals(el) {
     $("#evTable tbody").innerHTML = `<tr><td colspan="4">${errorState(e.message)}</td></tr>`;
   }
   activatableRows("#evTable tbody tr[data-eval]", async (tr) => {
-    $("#evDetail").innerHTML = '<div class="vb-skeleton" style="height:180px"></div>';
+    $("#evDetail").innerHTML = '<div class="arag-skeleton" style="height:180px"></div>';
     try {
       const r = await api(`/api/v1/golden-evals/${encodeURIComponent(tr.dataset.eval)}`);
       $("#evMeta").textContent = `${r.passed}/${r.total} passed · p50 ${r.latency_ms.p50} ms`;
-      $("#evDetail").innerHTML = `<div class="vb-scroll"><table class="vb-table">
+      $("#evDetail").innerHTML = `<div class="arag-datatable vb-flat"><div class="scroll"><table>
           <thead><tr><th>Question</th><th>Expected</th><th>Result</th><th class="num">ms</th></tr></thead>
           <tbody>${r.cases
             .map(
@@ -376,7 +375,7 @@ async function renderEvals(el) {
                 <td>${
                   c.passed
                     ? '<span class="arag-chip ok">pass</span>'
-                    : `<span class="arag-chip danger">fail</span> <span class="vb-sub">${esc(
+                    : `<span class="arag-chip danger">fail</span> <span class="subtle small">${esc(
                         c.checks
                           .filter((x) => !x.ok)
                           .map((x) => x.label)
@@ -385,7 +384,7 @@ async function renderEvals(el) {
                 }</td>
                 <td class="num">${c.latency_ms}</td></tr>`,
             )
-            .join("")}</tbody></table></div>`;
+            .join("")}</tbody></table></div></div>`;
     } catch (err) {
       $("#evDetail").innerHTML = errorState(err.message);
     }
@@ -393,8 +392,8 @@ async function renderEvals(el) {
 }
 
 async function renderJobs(el) {
-  el.innerHTML = `<div class="vb-table-wrap"><div class="vb-scroll">
-      <table class="vb-table" id="jbTable">
+  el.innerHTML = `<div class="arag-datatable"><div class="scroll">
+      <table id="jbTable">
         <thead><tr><th>Submitted</th><th>Kind</th><th>Reference</th><th>Status</th><th></th></tr></thead>
         <tbody>${skeletonRows(4, 5)}</tbody>
       </table></div></div>`;
@@ -405,7 +404,7 @@ async function renderJobs(el) {
         ? items
             .map(
               (j) => `<tr>
-                <td>${ago(j.createdAt)}</td><td>${esc(j.kind)}</td><td class="vb-mono vb-sub">${esc(j.ref ?? "—")}</td>
+                <td>${ago(j.createdAt)}</td><td>${esc(j.kind)}</td><td class="mono subtle small">${esc(j.ref ?? "—")}</td>
                 <td><span class="arag-chip ${{ succeeded: "ok", failed: "danger", cancelled: "warn" }[j.status] ?? "info"}">${esc(j.status)}</span></td>
                 <td class="num">${
                   ["queued", "running"].includes(j.status)
@@ -441,14 +440,14 @@ async function renderJobs(el) {
 
 function renderLogs(el) {
   el.innerHTML = `
-    <div class="vb-filters">
+    <div class="arag-filterbar">
       <select id="lgLevel" class="arag-select" aria-label="Level">
         <option value="">All levels</option><option>info</option><option>warn</option><option>error</option>
       </select>
-      <label class="vb-search">${icon("search", 15)}
-        <input id="lgContains" class="arag-input" placeholder="Filter log lines…" /></label>
+      <label class="arag-search">${icon("search", 15)}
+        <input id="lgContains" placeholder="Filter log lines…" /></label>
     </div>
-    <div class="vb-card"><div class="vb-card-body" style="padding:0">
+    <div class="arag-card"><div class="body" style="padding:0">
       <arag-log id="lgLog" src="/api/v1/admin/logs" limit="200" refresh="5000"></arag-log>
     </div></div>`;
   const apply = () => {
@@ -462,25 +461,25 @@ function renderLogs(el) {
 }
 
 async function renderBranding(el) {
-  el.innerHTML = '<div class="vb-skeleton" style="height:200px"></div>';
+  el.innerHTML = '<div class="arag-skeleton" style="height:200px"></div>';
   try {
     const config = await api("/api/v1/admin/config");
     const b = config.branding?.deployment ?? {};
     const per = config.branding?.perProspect ?? {};
     el.innerHTML = `
-      <section class="vb-card">
-        <header><h2>Effective branding</h2><span class="spacer"></span>
-          ${b.poweredBy === false ? chip("white-labelled", "info") : chip("Progress default", "neutral")}</header>
-        <div class="vb-card-body">
-          <dl class="vb-kv">
+      <section class="arag-card">
+        <div class="head"><h2>Effective branding</h2><span class="spacer"></span>
+          ${b.poweredBy === false ? chip("white-labelled", "info") : chip("Progress default", "neutral")}</div>
+        <div class="body">
+          <dl class="arag-kv">
             <dt>Product name</dt><dd>${esc(b.productName ?? "—")}</dd>
             <dt>Tagline</dt><dd>${esc(b.tagline ?? "—")}</dd>
-            <dt>Logo</dt><dd>${b.logoUrl ? `<span class="vb-mono">${esc(b.logoUrl)}</span>` : "Progress Agentic RAG wordmark"}</dd>
-            <dt>Primary colour</dt><dd class="vb-mono">${esc(b.primaryColor ?? "UI kit default")}</dd>
-            <dt>Accent colour</dt><dd class="vb-mono">${esc(b.accentColor ?? "#5ce500 (Progress green)")}</dd>
+            <dt>Logo</dt><dd>${b.logoUrl ? `<span class="mono">${esc(b.logoUrl)}</span>` : "Progress Agentic RAG wordmark"}</dd>
+            <dt>Primary colour</dt><dd class="mono">${esc(b.primaryColor ?? "UI kit default")}</dd>
+            <dt>Accent colour</dt><dd class="mono">${esc(b.accentColor ?? "#5ce500 (Progress green)")}</dd>
             <dt>Progress credit</dt><dd>${b.poweredBy === false ? "hidden" : "shown"}</dd>
             <dt>Footer</dt><dd>${esc(b.footerText ?? "—")}</dd>
-            <dt>Docs link</dt><dd class="vb-mono">${esc(b.docsUrl ?? "/api/v1/docs")}</dd>
+            <dt>Docs link</dt><dd class="mono">${esc(b.docsUrl ?? "/api/v1/docs")}</dd>
           </dl>
           <p class="muted small" style="margin-top:14px">Set with <code>BRAND_*</code> environment
             variables; brand assets dropped into <code>DATA_DIR/branding/</code> are served from
@@ -488,21 +487,21 @@ async function renderBranding(el) {
             <code>LICENSE</code> and <code>THIRD_PARTY_NOTICES.md</code> whatever the toggle says.</p>
         </div>
       </section>
-      <section class="vb-card" style="margin-top:20px">
-        <header><h2>Per-prospect overlays</h2></header>
-        <div class="vb-card-body" style="padding:0"><div class="vb-scroll">
-          <table class="vb-table">
+      <section class="arag-card" style="margin-top:20px">
+        <div class="head"><h2>Per-prospect overlays</h2></div>
+        <div class="body" style="padding:0"><div class="arag-datatable vb-flat"><div class="scroll">
+          <table>
             <thead><tr><th>Prospect</th><th>Presents as</th></tr></thead>
             <tbody>${Object.entries(per)
               .map(
                 ([k, name]) =>
-                  `<tr><td class="vb-mono">${esc(k)}</td><td>${esc(name)}${
-                    name === b.productName ? ' <span class="vb-sub">(deployment default)</span>' : ""
+                  `<tr><td class="mono">${esc(k)}</td><td>${esc(name)}${
+                    name === b.productName ? ' <span class="subtle small">(deployment default)</span>' : ""
                   }</td></tr>`,
               )
               .join("")}</tbody>
           </table>
-        </div></div>
+        </div></div></div>
       </section>`;
   } catch (e) {
     el.innerHTML = errorState(e.message);
@@ -510,7 +509,7 @@ async function renderBranding(el) {
 }
 
 async function renderSecurity(el) {
-  el.innerHTML = '<div class="vb-skeleton" style="height:200px"></div>';
+  el.innerHTML = '<div class="arag-skeleton" style="height:200px"></div>';
   try {
     const config = await api("/api/v1/admin/config");
     const env = config.env ?? {};
@@ -522,26 +521,26 @@ async function renderSecurity(el) {
       set(v) ? '<span class="arag-chip ok">on</span>' : '<span class="arag-chip warn">off</span>';
     const list = (v) => (Array.isArray(v) && v.length ? v.join(", ") : "");
     el.innerHTML = `
-      <div class="vb-split">
-        <section class="vb-card">
-          <header><h2>Access</h2></header>
-          <div class="vb-card-body">
-            <dl class="vb-kv">
+      <div class="arag-split">
+        <section class="arag-card">
+          <div class="head"><h2>Access</h2></div>
+          <div class="body">
+            <dl class="arag-kv">
               <dt>Admin token</dt><dd>${yes(env.adminToken)} required for every operator route</dd>
               <dt>API keys</dt><dd>${yes(env.apiKeys)} ${
                 set(env.apiKeys)
                   ? "<code>X-API-Key</code> required on /api/v1"
                   : "/api/v1 open to same-origin sessions"
               }</dd>
-              <dt>CORS origins</dt><dd class="vb-mono">${esc(list(env.allowedOrigins) || "same-origin only")}</dd>
-              <dt>Proxy trust</dt><dd class="vb-mono">${esc(String(env.trustProxy || "none"))}</dd>
+              <dt>CORS origins</dt><dd class="mono">${esc(list(env.allowedOrigins) || "same-origin only")}</dd>
+              <dt>Proxy trust</dt><dd class="mono">${esc(String(env.trustProxy || "none"))}</dd>
             </dl>
           </div>
         </section>
-        <section class="vb-card">
-          <header><h2>Budgets</h2></header>
-          <div class="vb-card-body">
-            <dl class="vb-kv">
+        <section class="arag-card">
+          <div class="head"><h2>Budgets</h2></div>
+          <div class="body">
+            <dl class="arag-kv">
               <dt>Global rate limit</dt><dd>${esc(String(env.rateLimitRps ?? "—"))} rps · burst ${esc(String(env.rateLimitBurst ?? "—"))}</dd>
               <dt>Brief and sessions</dt><dd>${esc(String(voice.rateLimits?.brief?.rps ?? "—"))} rps · burst ${esc(String(voice.rateLimits?.brief?.burst ?? "—"))}</dd>
               <dt>Speech tokens</dt><dd>${esc(String(voice.rateLimits?.scribeToken?.rps ?? "—"))} rps · burst ${esc(String(voice.rateLimits?.scribeToken?.burst ?? "—"))}</dd>
@@ -551,10 +550,10 @@ async function renderSecurity(el) {
           </div>
         </section>
       </div>
-      <section class="vb-card" style="margin-top:20px">
-        <header><h2>Data kept</h2></header>
-        <div class="vb-card-body">
-          <dl class="vb-kv">
+      <section class="arag-card" style="margin-top:20px">
+        <div class="head"><h2>Data kept</h2></div>
+        <div class="body">
+          <dl class="arag-kv">
             <dt>Turn log</dt><dd>Last ${esc(String(voice.turnLogLimit ?? "—"))} turns. A turn whose input tripped a safety guard keeps the reason and never the text.</dd>
             <dt>Listen sessions</dt><dd>Transcript, brief history (last 20 versions), citations and stats, until the session store rolls over.</dd>
             <dt>Secrets</dt><dd>Only in the environment. Never sent to a browser, never written to the stores, never logged.</dd>

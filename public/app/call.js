@@ -226,11 +226,11 @@ export function openCallDrawer(prospect) {
     .then((cfg) => {
       const card = $("#vbAgentCard");
       if (!card) return;
-      card.innerHTML = `<dl class="vb-kv" style="margin:14px 0">
+      card.innerHTML = `<dl class="arag-kv" style="margin:14px 0">
           <dt>Provider</dt><dd>ElevenLabs Conversational AI</dd>
           <dt>Agent</dt><dd>${
             cfg.ready
-              ? `<span class="vb-mono">${esc(cfg.agent_id)}</span>`
+              ? `<span class="mono">${esc(cfg.agent_id)}</span>`
               : '<span class="arag-chip warn">not wired</span>'
           }</dd>
           <dt>Tool timeout</dt><dd>${cfg.tool.timeoutMs} ms</dd>

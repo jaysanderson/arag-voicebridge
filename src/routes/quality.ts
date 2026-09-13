@@ -83,7 +83,7 @@ export function registerQualityRoutes(app: App, deps: ProductDeps): void {
         display_name: prospect.display_name,
         kb: {
           ok: health.ok,
-          id_masked: maskId(prospect.kb_id),
+          id_masked: maskId(prospect.kb_id || deps.env.arag.kbId),
           title: deps.voice.kbTitle || undefined,
           region: prospect.region || deps.voice.aragRegionDefault,
           resources: typeof health.resources === "number" ? health.resources : null,

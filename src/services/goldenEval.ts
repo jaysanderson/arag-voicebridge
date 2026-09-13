@@ -199,6 +199,23 @@ export class GoldenEvalStore {
     return { total: matches.length, items: matches.slice(offset, offset + limit).map(summarise) };
   }
 
+  /** Delete every run recorded before `cutoff` (retention). Returns how many went. */
+  purgeBefore(cutoff: Date): number {
+    const iso = cutoff.toISOString();
+    let removed = 0;
+    for (const r of this.col.list({ filter: (x) => x.createdAt < iso })) {
+      if (this.col.delete(r.id)) removed++;
+    }
+    return removed;
+  }
+
+  /** Delete every stored run (the operator's danger zone). */
+  purgeAll(): number {
+    const n = this.col.size;
+    this.col.clear();
+    return n;
+  }
+
   /** The most recent run for a prospect, as the Knowledge view's gate indicator. */
   latest(prospect: string): GoldenEvalSummary | null {
     const [first] = this.col.list({ filter: (r) => r.prospect === prospect, limit: 1 });

@@ -58,10 +58,10 @@ const $ = (s) => document.querySelector(s);
 
 function chrome() {
   return `
-    <div class="vb-filters">
-      <label class="vb-search">
+    <div class="arag-filterbar">
+      <label class="arag-search">
         ${icon("search", 15)}
-        <input id="cvSearch" class="arag-input" type="search" placeholder="Search what was said, the brief, or a source…"
+        <input id="cvSearch" type="search" placeholder="Search what was said, the brief, or a source…"
           aria-label="Search conversations" value="${esc(filters.q)}" />
       </label>
       <select id="cvProspect" class="arag-select" aria-label="Prospect">
@@ -73,29 +73,30 @@ function chrome() {
         <option value="live">Live</option>
         <option value="ended">Ended</option>
       </select>
-      <span class="vb-result-count" id="cvCount"></span>
+      <span class="spacer"></span>
+      <span class="count" id="cvCount"></span>
     </div>
-    <div class="vb-table-wrap">
-      <div class="vb-scroll">
-        <table class="vb-table" id="cvTable">
+    <div class="arag-datatable">
+      <div class="scroll">
+        <table id="cvTable">
           <thead><tr>
-            <th data-sort="started" aria-sort="descending">Started ${icon("sortArrow", 12, "vb-sort")}</th>
+            <th data-sort="started" aria-sort="descending"><button type="button">Started ${icon("sortArrow", 12, "sortic")}</button></th>
             <th>Prospect</th>
             <th>Topic</th>
             <th>Status</th>
-            <th class="num" data-sort="refreshes" aria-sort="none">Refreshes ${icon("sortArrow", 12, "vb-sort")}</th>
-            <th class="num" data-sort="duration" aria-sort="none">Duration ${icon("sortArrow", 12, "vb-sort")}</th>
+            <th class="num" data-sort="refreshes" aria-sort="none"><button type="button">Refreshes ${icon("sortArrow", 12, "sortic")}</button></th>
+            <th class="num" data-sort="duration" aria-sort="none"><button type="button">Duration ${icon("sortArrow", 12, "sortic")}</button></th>
             <th class="num">Sources</th>
           </tr></thead>
           <tbody>${skeletonRows(6, 7)}</tbody>
         </table>
       </div>
-      <div class="vb-pager" id="cvPager" hidden>
+      <nav class="arag-pagination" id="cvPager" hidden>
         <button class="arag-btn ghost sm" id="cvPrev">Previous</button>
         <button class="arag-btn ghost sm" id="cvNext">Next</button>
         <span class="spacer"></span>
-        <span id="cvRange"></span>
-      </div>
+        <span class="range" id="cvRange"></span>
+      </nav>
     </div>`;
 }
 
@@ -114,15 +115,15 @@ function row(s) {
   );
   const name = state.prospects.find((p) => p.key === s.prospect)?.display_name ?? s.prospect;
   return `<tr tabindex="0" data-id="${esc(s.id)}">
-    <td>${ago(s.createdAt)}<div class="vb-sub vb-mono">${esc(s.id.slice(0, 8))}</div></td>
+    <td>${ago(s.createdAt)}<div class="cell-sub mono">${esc(s.id.slice(0, 8))}</div></td>
     <td>${esc(name)}</td>
-    <td class="vb-primary"><span class="vb-truncate" style="max-width:38ch">${esc(topic || "No brief yet")}</span></td>
+    <td><span class="cell-title arag-truncate" style="max-width:38ch">${esc(topic || "No brief yet")}</span></td>
     <td>${
       s.status === "live"
         ? '<span class="arag-chip ok"><span class="vb-live-dot" style="margin-right:5px"></span>live</span>'
         : '<span class="arag-chip neutral">ended</span>'
     }</td>
-    <td class="num">${s.stats.refreshes}${s.stats.failures ? `<div class="vb-sub">${s.stats.failures} failed</div>` : ""}</td>
+    <td class="num">${s.stats.refreshes}${s.stats.failures ? `<div class="cell-sub">${s.stats.failures} failed</div>` : ""}</td>
     <td class="num">${esc(duration(dur))}</td>
     <td class="num">${s.citations.length}</td>
   </tr>`;
@@ -187,18 +188,18 @@ async function openDetail(id) {
       if (params().id) go({ id: "" });
     },
     title: "Conversation",
-    sub: `<span class="vb-mono">${esc(id)}</span>`,
+    sub: `<span class="mono">${esc(id)}</span>`,
     actions: `<a class="arag-btn secondary sm" href="/api/v1/listen/sessions/${encodeURIComponent(id)}/export?format=markdown">${icon("download", 14)} Export</a>`,
-    body: `<div class="vb-skeleton" style="height:220px"></div>`,
+    body: `<div class="arag-skeleton" style="height:220px"></div>`,
   });
   closeDetail = close;
   try {
     const s = await api(`/api/v1/listen/sessions/${encodeURIComponent(id)}/export`);
-    const body = document.querySelector(".vb-drawer-body");
+    const body = document.querySelector(".arag-drawer .body");
     const name = state.prospects.find((p) => p.key === s.prospect)?.display_name ?? s.prospect;
     const briefHtml = renderBrief(s.brief);
     body.innerHTML = `
-      <div class="vb-stats" style="margin-bottom:20px">
+      <div class="arag-statstrip" style="margin-bottom:20px">
         ${stat("Prospect", name)}
         ${stat("Duration", duration(s.durationSec))}
         ${stat("Brief versions", s.briefVersion)}
@@ -211,7 +212,7 @@ async function openDetail(id) {
       ${
         briefHtml
           ? `<div class="vb-brief" style="margin-bottom:8px">${briefHtml}</div>
-             <div class="vb-chip-row">${s.citations.map(citeChip).join("")}</div>`
+             <div class="arag-chips">${s.citations.map(citeChip).join("")}</div>`
           : empty({
               icon: "info",
               title: "This session never produced a brief",
@@ -222,21 +223,21 @@ async function openDetail(id) {
       <h3 style="margin-top:24px">How the brief evolved</h3>
       ${
         s.briefHistory.length
-          ? `<div class="vb-timeline">${s.briefHistory
+          ? `<ol class="arag-timeline">${s.briefHistory
               .slice()
               .reverse()
               .map(
-                (h, i) => `<div class="vb-tl-item${i === 0 ? " current" : ""}">
-                  <span class="vb-tl-dot"></span>
+                (h, i) => `<li${i === 0 ? ' class="current"' : ""}>
+                  <span class="dot"></span>
                   <div>
-                    <div class="vb-tl-head"><strong>v${h.version}</strong>${ago(h.at)}<span class="arag-chip neutral">${esc(fmtMs(h.latencyMs))}</span></div>
-                    <div class="vb-tl-body">${esc(
+                    <div class="head"><strong>v${h.version}</strong>${ago(h.at)}<span class="arag-chip neutral">${esc(fmtMs(h.latencyMs))}</span></div>
+                    <div class="body">${esc(
                       (h.brief && typeof h.brief === "object" && (h.brief.topic || h.brief.summary)) || "—",
                     )}</div>
                   </div>
-                </div>`,
+                </li>`,
               )
-              .join("")}</div>`
+              .join("")}</ol>`
           : '<p class="muted small">No refresh produced a usable brief.</p>'
       }
 
@@ -252,7 +253,7 @@ async function openDetail(id) {
           : '<p class="muted small">Nothing was heard in this session.</p>'
       }</div>`;
   } catch (e) {
-    const body = document.querySelector(".vb-drawer-body");
+    const body = document.querySelector(".arag-drawer .body");
     if (body) body.innerHTML = errorState(e.message);
     toast(e.message, "error");
   }

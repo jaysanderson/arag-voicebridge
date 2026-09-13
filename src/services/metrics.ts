@@ -125,7 +125,19 @@ export class MetricsService {
     };
   }
 
-  reset(): void {
+  /** Delete every turn recorded before `cutoff` (retention). Returns how many went. */
+  purgeBefore(cutoff: Date): number {
+    const iso = cutoff.toISOString();
+    let removed = 0;
+    for (const t of this.col.list({ filter: (r) => r.createdAt < iso })) {
+      if (this.col.delete(t.id)) removed++;
+    }
+    return removed;
+  }
+
+  reset(): number {
+    const n = this.col.size;
     this.col.clear();
+    return n;
   }
 }

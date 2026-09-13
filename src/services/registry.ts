@@ -34,20 +34,17 @@ export interface FieldError {
 }
 
 export const PROSPECT_KEY_RE = /^[a-z0-9][a-z0-9_-]{1,40}$/;
-const REQUIRED: Array<keyof ProspectConfig> = [
-  "display_name",
-  "kb_id",
-  "region",
-  "locale",
-  "greeting",
-  "handoff_msg",
-];
+const REQUIRED: Array<keyof ProspectConfig> = ["display_name", "region", "locale", "greeting", "handoff_msg"];
 const OPTIONAL_STRINGS: Array<keyof ProspectConfig> = [
+  "kb_id",
   "ask_config",
   "generative_model",
   "brief_model",
   "agent_id",
   "voice_id",
+  "tool_id",
+  "system_prompt",
+  "agent_api_key_id",
 ];
 
 /** The branding fields a prospect may override (see `ProspectBrand`). */
@@ -142,7 +139,6 @@ export function validateKey(key: string): FieldError[] {
 export function normaliseProspect(cfg: Record<string, unknown>): ProspectConfig {
   const out: ProspectConfig = {
     display_name: String(cfg.display_name),
-    kb_id: String(cfg.kb_id),
     region: String(cfg.region),
     locale: String(cfg.locale),
     greeting: String(cfg.greeting),
@@ -218,7 +214,7 @@ export class ProspectRegistry {
         if (this.cfg.defaultAgentId && (!cfg.agent_id || /REPLACE_ME/i.test(cfg.agent_id))) {
           cfg.agent_id = this.cfg.defaultAgentId;
         }
-        if (defaults.kbId && /REPLACE_ME/i.test(cfg.kb_id)) cfg.kb_id = defaults.kbId;
+        if (defaults.kbId && /REPLACE_ME/i.test(cfg.kb_id ?? "")) cfg.kb_id = defaults.kbId;
       }
       this.col.put({ id: key, createdAt: new Date(base + seeded).toISOString(), ...cfg });
       seeded++;

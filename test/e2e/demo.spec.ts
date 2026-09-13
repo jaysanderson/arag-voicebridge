@@ -71,7 +71,7 @@ test.describe("Live", () => {
   test("the telephony webhook option explains the integration without leaving the page", async ({ page }) => {
     await returning(page);
     await page.click("#vbWebhook");
-    const drawer = page.locator(".vb-drawer");
+    const drawer = page.locator(".arag-drawer");
     await expect(drawer).toBeVisible();
     await expect(drawer).toContainText("/api/v1/listen/sessions");
     await expect(drawer).toContainText("transcript");
@@ -168,9 +168,9 @@ test.describe("Live", () => {
 
   test("the voice-agent call is a tool inside Live, not a destination", async ({ page }) => {
     await returning(page);
-    await expect(page.locator("nav.vb-nav")).not.toContainText("Call");
+    await expect(page.locator(".arag-railnav")).not.toContainText("Call");
     await page.click("#vbCallTool");
-    await expect(page.locator(".vb-drawer")).toContainText("Start a voice call");
+    await expect(page.locator(".arag-drawer")).toContainText("Start a voice call");
     // No agent configured in the mock deployment: it says so instead of failing on click.
     await expect(page.locator("#vbCallStatus")).toContainText("No voice agent is configured");
   });
@@ -184,9 +184,9 @@ test.describe("Live", () => {
       ["Quality", "Quality"],
       ["Settings", "Settings"],
     ] as const) {
-      await page.click(`nav.vb-nav a:has-text("${label}")`);
+      await page.click(`.arag-railnav a:has-text("${label}")`);
       await expect(page.locator("h1")).toHaveText(heading);
-      await expect(page.locator(`nav.vb-nav a[aria-current="page"]`)).toContainText(label);
+      await expect(page.locator(`.arag-railnav a[aria-current="page"]`)).toContainText(label);
     }
   });
 });
