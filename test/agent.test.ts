@@ -19,6 +19,7 @@ import {
   getTool,
   headerNames,
   pushAgent,
+  redactSecrets,
   summariseAgent,
   summariseTool,
   toolConfigBody,
@@ -464,6 +465,40 @@ describe("pushing to ElevenLabs", () => {
     const result = await pushAgent(cfg(), wanted);
     expect(result.created_tool).toBe(true);
     expect(result.created_agent).toBe(true);
+  });
+
+  /**
+   * A validation failure from the Agents API quotes the request that caused it, and the request we
+   * send carries two secrets: the ElevenLabs key, and this deployment's own API key as the value
+   * of the tool's X-API-Key header. The error message reaches a browser and the log.
+   */
+  it("never lets a secret come back inside an upstream error message", async () => {
+    // Reads succeed; the write that carries the secrets is the one that fails, echoing the body.
+    const echoing: typeof fetch = async (_url, init) => {
+      const json = (body: unknown, status = 200) =>
+        new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
+      if (!init?.body) return json({ id: "tool_live_1", tool_config: {} });
+      return json({ detail: [{ msg: "Value error", input: JSON.parse(String(init.body)) }] }, 422);
+    };
+    const wanted = desiredAgent(PROSPECT, cfg(), "https://x.test", "vbk_the_deployments_own_key");
+    let message = "";
+    try {
+      await pushAgent(cfg(), wanted, echoing);
+    } catch (err) {
+      message = (err as AgentError).message;
+    }
+    expect(message).toContain("422");
+    expect(message).not.toContain("vbk_the_deployments_own_key");
+    expect(message).not.toContain("xi-test");
+    expect(message).toContain("•••");
+  });
+
+  it("redacts only values long enough to be a secret", () => {
+    expect(redactSecrets("the url is /api/v1 and the key is abcdefghij", ["abcdefghij"])).toBe(
+      "the url is /api/v1 and the key is •••",
+    );
+    // A short value is not treated as a secret at all, so an error message stays readable.
+    expect(redactSecrets("POST /v1/convai/tools", [])).toBe("POST /v1/convai/tools");
   });
 
   it("surfaces an upstream failure with its status, not as a silent success", async () => {

@@ -93,6 +93,40 @@ export interface AgentDiffRow {
   matches: boolean;
 }
 
+/**
+ * Every secret that could be in this request, so none of them can come back in an error.
+ *
+ * A validation failure from the Agents API quotes the offending part of the request — we have seen
+ * a 422 echo an `"input"` object verbatim. The request we send carries two secrets: the ElevenLabs
+ * key in a header, and *this deployment's own API key* as the value of the tool's `X-API-Key`
+ * header. An upstream error message reaches the operator's browser and the log, so anything that
+ * could be one of those is replaced before the message is built.
+ */
+function secretsIn(cfg: VoiceConfig, body: unknown): string[] {
+  const out = [cfg.elevenLabsApiKey];
+  if (typeof body === "string") {
+    try {
+      const headers = (JSON.parse(body) as { tool_config?: { api_schema?: { request_headers?: unknown } } })
+        .tool_config?.api_schema?.request_headers;
+      if (Array.isArray(headers)) {
+        for (const h of headers) out.push(String(obj(h).value ?? ""));
+      } else {
+        for (const v of Object.values(obj(headers))) out.push(String(v ?? ""));
+      }
+    } catch {
+      /* not a JSON body we recognise — the ElevenLabs key alone is what we know about */
+    }
+  }
+  return out.filter((v) => v.length >= 8);
+}
+
+/** Replace any of `secrets` wherever it appears. Long values only, so this cannot eat a word. */
+export function redactSecrets(text: string, secrets: readonly string[]): string {
+  let out = text;
+  for (const secret of secrets) out = out.split(secret).join("•••");
+  return out;
+}
+
 async function call(cfg: VoiceConfig, path: string, init: RequestInit, fetchImpl: FetchLike): Promise<Json> {
   if (!cfg.elevenLabsApiKey) throw new AgentError("ElevenLabs is not configured (no API key)", 503);
   const url = `${cfg.elevenLabsApiBase.replace(/\/$/, "")}${path}`;
@@ -111,8 +145,9 @@ async function call(cfg: VoiceConfig, path: string, init: RequestInit, fetchImpl
   }
   const text = await res.text();
   if (!res.ok) {
-    // The body can carry a useful validation message; it never carries our key.
-    const detail = text.slice(0, 400).replace(/\s+/g, " ").trim();
+    // The body carries a useful validation message — and can quote the request that caused it,
+    // which is why every secret that went out is scrubbed before the message is built.
+    const detail = redactSecrets(text, secretsIn(cfg, init.body)).slice(0, 400).replace(/\s+/g, " ").trim();
     throw new AgentError(
       `${init.method ?? "GET"} ${path} -> HTTP ${res.status}${detail ? `: ${detail}` : ""}`,
       res.status,
