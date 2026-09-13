@@ -36,6 +36,7 @@ export const SECTIONS = [
   { id: "knowledge", label: "Knowledge", href: "/knowledge/", icon: "knowledge" },
   { id: "prospects", label: "Prospects", href: "/prospects/", icon: "prospects" },
   { id: "quality", label: "Quality", href: "/quality/", icon: "quality" },
+  { id: "api", label: "API", href: "/api/", icon: "api" },
   { id: "settings", label: "Settings", href: "/settings/", icon: "settings" },
 ];
 

@@ -22,6 +22,7 @@ const KIT = {
   filter: "filter",
   info: "info",
   jobs: "jobs",
+  key: "key",
   knowledge: "book",
   logs: "logs",
   menu: "menu",
@@ -56,6 +57,7 @@ const PATHS = {
   prospects:
     "M16 20v-1.5a4 4 0 0 0-4-4H7a4 4 0 0 0-4 4V20M9.5 7.5a3 3 0 1 1-6 0 3 3 0 0 1 6 0zM17 11l2 2 4-4",
   usage: "M3 3v18h18M7 15l4-5 3 3 5-7",
+  api: "M9 7l-5 5 5 5M15 7l5 5-5 5M13 4l-2 16",
   brand: "M4 7h16v10H4zM8 11h8M8 14h5",
   // Brief vocabulary.
   target:

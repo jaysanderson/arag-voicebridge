@@ -173,14 +173,28 @@ function paramField(p) {
          type="${s.type === "integer" || s.type === "number" ? "number" : "text"}"
          placeholder="${esc(s.pattern ? String(s.pattern) : (s.format ?? s.type ?? ""))}"
          value="${esc(defaultParam(p, s))}" />`;
-  return `<div class="vb-field">
+  return `<div class="arag-field">
     <label class="arag-label" for="${esc(id)}">${esc(p.name)}
       ${p.required ? '<span class="vb-req" title="required">*</span>' : ""}
-      <span class="muted small">${esc(p.in)}</span>
+      <span class="vb-param-in">in ${esc(p.in)}</span>
     </label>
     ${opts}
-    ${p.description ? `<p class="muted small">${esc(p.description)}</p>` : ""}
+    ${p.description ? `<p class="arag-help">${esc(p.description)}</p>` : ""}
   </div>`;
+}
+
+/**
+ * Fill in what the viewer would otherwise have to look up. The selected prospect is the one thing
+ * every body here needs and nobody should have to type; a question is seeded so "Send" on the
+ * voice turn works on the first click.
+ */
+function prefill(body) {
+  if (!body || typeof body !== "object" || Array.isArray(body)) return body;
+  if ("prospect" in body && !body.prospect && state.current) body.prospect = state.current.key;
+  if ("question" in body && !body.question) body.question = "What is binder jetting?";
+  if ("text" in body && !body.text) body.text = "We print metal parts and are looking at binder jetting.";
+  if ("name" in body && !body.name) body.name = "My integration";
+  return body;
 }
 
 /** Prefill what we can: the selected prospect, sensible defaults from the schema. */
@@ -195,7 +209,7 @@ function renderDetail(op) {
   const a = authLabel(op);
   const bodySchema = op.requestBody?.content?.["application/json"]?.schema;
   const multipart = op.requestBody?.content?.["multipart/form-data"];
-  const example = bodySchema ? exampleFor(bodySchema) : null;
+  const example = bodySchema ? prefill(exampleFor(bodySchema)) : null;
   const params = op.parameters.filter((p) => p.in === "path" || p.in === "query");
   const responses = Object.entries(op.responses).map(
     ([code, r]) => `<tr><td><code>${esc(code)}</code></td><td>${esc(r.description ?? "")}</td></tr>`,
@@ -213,27 +227,27 @@ function renderDetail(op) {
       <p class="muted small"><code>operationId: ${esc(op.id)}</code></p>
     </header>
 
-    <form id="apiForm" class="vb-card pad" novalidate>
+    <form id="apiForm" class="arag-card pad" novalidate>
       <h3>Try it</h3>
       ${
         params.length
-          ? `<div class="vb-grid cols-2">${params.map(paramField).join("")}</div>`
+          ? `<div class="arag-grid cols-2">${params.map(paramField).join("")}</div>`
           : '<p class="muted small">No parameters.</p>'
       }
       ${
         bodySchema
-          ? `<div class="vb-field" style="margin-top:12px">
+          ? `<div class="arag-field" style="margin-top:12px">
               <label class="arag-label" for="apiBody">Request body <span class="muted small">application/json</span></label>
-              <textarea class="arag-input vb-mono" id="apiBody" rows="10" spellcheck="false">${esc(
+              <textarea class="arag-input mono" id="apiBody" rows="10" spellcheck="false">${esc(
                 JSON.stringify(example, null, 2),
               )}</textarea>
-              <p class="muted small">Prefilled from the schema. Edit it before sending.</p>
+              <p class="arag-help">Prefilled from the schema. Edit it before sending.</p>
             </div>`
           : ""
       }
       ${
         multipart
-          ? `<div class="vb-field" style="margin-top:12px">
+          ? `<div class="arag-field" style="margin-top:12px">
               <label class="arag-label" for="apiFile">File <span class="muted small">multipart/form-data</span></label>
               <input class="arag-input" type="file" id="apiFile" />
             </div>`
@@ -247,18 +261,18 @@ function renderDetail(op) {
 
     <div id="apiResult" class="vb-result" hidden></div>
 
-    <section class="vb-card" style="margin-top:18px">
-      <header><h2>curl</h2></header>
-      <div class="vb-card-body" id="apiCurl"></div>
+    <section class="arag-card" style="margin-top:18px">
+      <div class="head"><h2>curl</h2></div>
+      <div class="body" id="apiCurl"></div>
     </section>
 
-    <section class="vb-card" style="margin-top:18px">
-      <header><h2>Responses</h2></header>
-      <div class="vb-card-body">
-        <div class="vb-scroll"><table class="vb-table">
+    <section class="arag-card" style="margin-top:18px">
+      <div class="head"><h2>Responses</h2></div>
+      <div class="body">
+        <div class="arag-datatable"><div class="scroll"><table>
           <thead><tr><th>Status</th><th>Meaning</th></tr></thead>
           <tbody>${responses.join("")}</tbody>
-        </table></div>
+        </table></div></div>
       </div>
     </section>`;
 
@@ -344,10 +358,10 @@ async function send(op) {
 
   const host = $("#apiResult");
   host.hidden = false;
-  host.innerHTML = '<div class="vb-skeleton" style="height:80px"></div>';
+  host.innerHTML = '<div class="arag-skeleton" style="height:80px"></div>';
   const headers = {};
   if (apiKey) headers["X-API-Key"] = apiKey;
-  let init = { method: op.method.toUpperCase(), headers, credentials: "same-origin" };
+  const init = { method: op.method.toUpperCase(), headers, credentials: "same-origin" };
   if (file) {
     const form = new FormData();
     form.append("file", file);
@@ -411,28 +425,27 @@ async function send(op) {
 const host = mountShell({
   section: "api",
   title: "API",
-  description:
-    "Every operation this deployment exposes, with a try-it form that calls the live endpoint.",
+  description: "Every operation this deployment exposes, with a try-it form that calls the live endpoint.",
   actions: `<a class="arag-btn ghost sm" href="/api/v1/docs">${icon("source", 14)} Reference</a>
     <a class="arag-btn ghost sm" href="/api/v1/openapi.json">OpenAPI</a>`,
 });
 
 await boot();
 host.innerHTML = `
-  <div class="vb-split vb-api">
+  <div class="arag-split rail-left vb-api">
     <aside class="vb-api-side">
-      <div class="vb-filters">
-        <label class="vb-search">
+      <div class="arag-filterbar">
+        <label class="arag-search">
           ${icon("search", 15)}
           <input id="apiSearch" type="search" placeholder="Search operations" aria-label="Search operations" />
         </label>
-        <span class="vb-result-count" id="apiCount"></span>
+        <span class="count" id="apiCount"></span>
       </div>
-      <div class="vb-field" style="margin:10px 0 14px">
-        <label class="arag-label" for="apiKeyInput">API key for try-it <span class="muted small">optional</span></label>
-        <input class="arag-input vb-mono" id="apiKeyInput" type="password" placeholder="vbk_…"
+      <div class="arag-field" style="margin:10px 0 14px">
+        <label class="arag-label" for="apiKeyInput">API key for try-it (optional)</label>
+        <input class="arag-input mono" id="apiKeyInput" type="password" placeholder="vbk_…"
           autocomplete="off" />
-        <p class="muted small">Kept in this page only. Without one, calls use your browser session.</p>
+        <p class="arag-help">Kept in this page only. Without one, calls use your browser session.</p>
       </div>
       <div id="apiList"></div>
     </aside>
