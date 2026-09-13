@@ -29,8 +29,11 @@ export default defineConfig({
       // ENV_FILE=/dev/null keeps a developer's real .env out of the run: the suite must behave the
       // same on a laptop with live credentials as it does on a clean clone or in CI.
       command:
+        // LOG_LEVEL=info, not warn: the operator log is a product surface now — settings changes
+        // and agent pushes are audited into it, and the Logs view pages over it — so the suite has
+        // to be able to read what the product wrote.
         `ENV_FILE=/dev/null ARAG_MOCK=1 ADMIN_TOKEN=e2e-admin-token DATA_DIR=${dataDir} ` +
-        `LOG_LEVEL=warn RATE_LIMIT_RPS=100 RATE_LIMIT_BURST=200 PORT=${port} node src/index.ts`,
+        `LOG_LEVEL=info RATE_LIMIT_RPS=100 RATE_LIMIT_BURST=200 PORT=${port} node src/index.ts`,
       url: `http://127.0.0.1:${port}/healthz`,
       reuseExistingServer: !process.env.CI,
       timeout: 30_000,

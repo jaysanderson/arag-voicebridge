@@ -254,11 +254,12 @@ export async function runTurn(
 
   // Step 5 — shape for voice (≤3 sentences, no URLs/markdown/markers).
   const spoken = shapeForVoice(result.answerText);
+  const sentences = spoken.split(/(?<=[.!?])\s+/).filter(Boolean).length;
   trace?.add(
     "shape",
     "Shape for voice",
     "ok",
-    `${spoken.split(/(?<=[.!?])\s+/).filter(Boolean).length} sentence(s), no markup or URLs`,
+    `${sentences} sentence${sentences === 1 ? "" : "s"}, no markup or URLs`,
   );
 
   // Step 8 — output safety guard (before TTS).

@@ -1,7 +1,9 @@
 // Conversations — every call this deployment has listened to, searchable by what was said in it,
 // with the full record behind each row: how the brief evolved, the transcript, the sources it drew
 // on and how long each refresh took.
-import { renderBrief } from "./brief.js";
+
+import { wireSegmented } from "/ui/arag-ui.js";
+import { countChanges, diffBriefs, renderBrief } from "./brief.js";
 import { go, onRoute, params } from "./route.js";
 import {
   activatableRows,
@@ -241,6 +243,29 @@ async function openDetail(id) {
           : '<p class="muted small">No refresh produced a usable brief.</p>'
       }
 
+      <h3 style="margin-top:24px">Compare two versions</h3>
+      ${
+        s.briefHistory.length > 1
+          ? `<div class="vb-compare" id="cvCompare">
+              <div class="arag-filterbar">
+                <label class="arag-label" for="cvFrom">From</label>
+                <select class="arag-select" id="cvFrom">${versionOptions(s.briefHistory)}</select>
+                <label class="arag-label" for="cvTo">To</label>
+                <select class="arag-select" id="cvTo">${versionOptions(s.briefHistory)}</select>
+                <span class="spacer"></span>
+                <div class="arag-segmented" role="group" aria-label="Which fields to show" id="cvScope">
+                  <button type="button" data-value="changed" aria-selected="true">What moved</button>
+                  <button type="button" data-value="all" aria-selected="false">Every field</button>
+                </div>
+                <span class="count" id="cvChanges"></span>
+              </div>
+              <div id="cvDiff"></div>
+            </div>`
+          : `<p class="muted small">A comparison needs two versions; this conversation produced ${
+              s.briefHistory.length === 1 ? "one" : "none"
+            }.</p>`
+      }
+
       <h3 style="margin-top:24px">Transcript</h3>
       <div class="vb-transcript" style="max-height:none">${
         s.transcript.length
@@ -252,12 +277,97 @@ async function openDetail(id) {
               .join("")
           : '<p class="muted small">Nothing was heard in this session.</p>'
       }</div>`;
+    wireCompare(s.briefHistory);
   } catch (e) {
     const body = document.querySelector(".arag-drawer .body");
     if (body) body.innerHTML = errorState(e.message);
     toast(e.message, "error");
   }
   return close;
+}
+
+function versionOptions(history) {
+  return history
+    .slice()
+    .reverse()
+    .map(
+      (h) =>
+        `<option value="${h.version}">v${h.version} · ${esc(new Date(h.at).toLocaleTimeString())}</option>`,
+    )
+    .join("");
+}
+
+/** One field's worth of difference between two versions. */
+function diffRow(r) {
+  if (r.kind === "empty") return "";
+  const badge = {
+    same: ["unchanged", "neutral"],
+    changed: ["changed", "info"],
+    added: ["new", "ok"],
+    removed: ["dropped", "warn"],
+  }[r.kind];
+  const body = r.list
+    ? `<ul class="vb-diff-list">${r.items
+        .map((i) => `<li class="${i.kind}">${esc(i.text)}</li>`)
+        .join("")}</ul>`
+    : r.kind === "changed"
+      ? `<p class="was">${esc(r.before)}</p><p class="now">${esc(r.after)}</p>`
+      : `<p class="${r.kind === "removed" ? "was" : "now"}">${esc(r.kind === "removed" ? r.before : r.after)}</p>`;
+  return `<div class="vb-diff-row ${esc(r.kind)}">
+    <div class="head"><strong>${esc(r.label)}</strong><span class="arag-chip ${badge[1]}">${badge[0]}</span></div>
+    ${body}
+  </div>`;
+}
+
+/**
+ * The version comparison. Defaults to "the last refresh that changed something" — comparing the
+ * final brief with the one before it is the question a reviewer actually has, and making them
+ * pick two versions before seeing anything would be a form, not an answer.
+ */
+function wireCompare(history) {
+  const from = $("#cvFrom");
+  const to = $("#cvTo");
+  if (!from || !to) return;
+  const byVersion = new Map(history.map((h) => [String(h.version), h]));
+  const versions = history.map((h) => h.version).sort((a, b) => a - b);
+  const latest = versions[versions.length - 1];
+
+  // Default to the most recent refresh that actually changed something. A brief is rebuilt on a
+  // timer, so the final two versions are very often identical; opening on "0 fields moved" would
+  // make the feature look broken when it is in fact telling the truth about a quiet minute.
+  const latestBrief = byVersion.get(String(latest))?.brief;
+  let firstMoved = versions[versions.length - 2] ?? versions[0];
+  for (let i = versions.length - 2; i >= 0; i--) {
+    firstMoved = versions[i];
+    if (countChanges(diffBriefs(byVersion.get(String(versions[i]))?.brief, latestBrief)) > 0) break;
+  }
+  to.value = String(latest);
+  from.value = String(firstMoved);
+
+  let scope = "changed";
+  const render = () => {
+    const a = byVersion.get(from.value)?.brief;
+    const b = byVersion.get(to.value)?.brief;
+    const rows = diffBriefs(a, b);
+    const changes = countChanges(rows);
+    $("#cvChanges").textContent =
+      from.value === to.value ? "the same version" : `${changes} field${changes === 1 ? "" : "s"} moved`;
+    const shown = scope === "all" ? rows : rows.filter((r) => r.kind !== "same" && r.kind !== "empty");
+    $("#cvDiff").innerHTML =
+      shown.map(diffRow).join("") ||
+      `<p class="muted small">${
+        changes === 0
+          ? "Nothing moved between these two versions — switch to every field to see what they both said."
+          : "Neither version carried anything to compare."
+      }</p>`;
+  };
+  from.addEventListener("change", render);
+  to.addEventListener("change", render);
+  wireSegmented($("#cvScope"), (value) => {
+    scope = value;
+    render();
+  });
+  render();
 }
 
 /** Put the filter controls back in step with the URL (first load, and every Back). */

@@ -146,6 +146,7 @@ function onboarding() {
       </ol>
       <div class="arag-chips" style="margin-top:16px">
         <button class="arag-btn lg" id="vbSampleOnboard">${icon("play", 16)} Play sample conversation</button>
+        <a class="arag-btn secondary" href="/setup/">Set this up for your content</a>
         <button class="arag-btn ghost" id="vbDismissOnboard">Skip</button>
       </div>
     </div>

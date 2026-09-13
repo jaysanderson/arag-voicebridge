@@ -69,7 +69,8 @@ let openPanel = null;
 const registeredRows = new Set();
 const rowHandlers = new Map();
 
-/** The two cross-links between the workspace and the operator area. */
+/** The deployment-level destinations, below the workspace sections. */
+const SETUP_LINK = { label: "Set up", href: "/setup/", icon: "check" };
 const OPERATOR_LINK = { label: "Operator", href: "/admin/", icon: "operator" };
 const BACK_LINK = { label: "Back to the product", href: "/", icon: "live" };
 
@@ -85,8 +86,13 @@ export function mountShell(opts) {
   const items = operator ? OPERATOR_SECTIONS : SECTIONS;
   const nav = operator
     ? navSpec(items, "Operator", ["--Workspace", `${BACK_LINK.label}=${BACK_LINK.href}=`])
-    : navSpec(items, "Workspace", ["--Deployment", `${OPERATOR_LINK.label}=${OPERATOR_LINK.href}=`]);
-  const label = items.find((s) => s.id === section)?.label ?? title ?? "";
+    : navSpec(items, "Workspace", [
+        "--Deployment",
+        `${SETUP_LINK.label}=${SETUP_LINK.href}=`,
+        `${OPERATOR_LINK.label}=${OPERATOR_LINK.href}=`,
+      ]);
+  const label =
+    items.find((s) => s.id === section)?.label ?? (section === "setup" ? SETUP_LINK.label : (title ?? ""));
 
   document.body.className = "arag";
   // `branding-src="none"`: boot() reads the payload once and applyBrand() layers the selected
@@ -127,7 +133,7 @@ export function mountShell(opts) {
   document
     .querySelector(".vb-railmenu")
     ?.addEventListener("click", () => document.querySelector(".arag-rail-menu")?.click());
-  paintNavIcons(operator ? [...items, BACK_LINK] : [...items, OPERATOR_LINK]);
+  paintNavIcons(operator ? [...items, BACK_LINK] : [...items, SETUP_LINK, OPERATOR_LINK]);
   setActive(label);
   return document.getElementById("vbView");
 }

@@ -176,6 +176,51 @@ function suggestions(k) {
   }
 }
 
+/**
+ * The nine-step pipeline, as it ran for this question.
+ *
+ * "Grounded, cited and governed" is a claim until you can watch the guards fire and the handoff
+ * rule land. The server returns the steps only when the request asks to trace (a voice agent's
+ * turn never does), and this is the thing that turns the Ask tester from a chat box into an
+ * explanation of the product.
+ */
+function pipelineStepper(steps, open) {
+  const dot = (s) =>
+    s.status === "ok" ? "ok" : s.status === "tripped" || s.status === "error" ? "error" : "";
+  const badge = {
+    tripped: ["guard tripped", "danger"],
+    error: ["failed", "danger"],
+    handoff: ["handed off", "warn"],
+    skipped: ["nothing to do", "neutral"],
+  };
+  return `<details class="vb-pipeline"${open ? " open" : ""}>
+    <summary>
+      ${icon("chevronRight", 13)}
+      <span>How this turn was answered</span>
+      <span class="muted small">${steps.length} of 9 steps ran</span>
+    </summary>
+    <ol class="arag-timeline">
+      ${steps
+        .map((s) => {
+          const [label, kind] = badge[s.status] ?? [];
+          return `<li class="${dot(s)}">
+            <span class="dot"></span>
+            <div>
+              <div class="head">
+                <strong>${s.step}. ${esc(s.label)}</strong>
+                ${label ? `<span class="arag-chip ${kind}">${esc(label)}</span>` : ""}
+                <span class="spacer"></span>
+                <span class="muted small">${fmtMs(s.ms)}</span>
+              </div>
+              ${s.detail ? `<div class="body">${esc(s.detail)}</div>` : ""}
+            </div>
+          </li>`;
+        })
+        .join("")}
+    </ol>
+  </details>`;
+}
+
 async function ask() {
   const q = $("#kbQuestion").value.trim();
   if (!q || !state.current) return;
@@ -190,16 +235,21 @@ async function ask() {
   try {
     const r = await api("/api/v1/voice-answer", {
       method: "POST",
-      json: { prospect: state.current.key, question: q, history: [] },
+      // `trace` is what makes the stepper possible. The ElevenLabs agent never sets it — the
+      // steps are bytes a spoken turn should not pay for.
+      json: { prospect: state.current.key, question: q, history: [], trace: true },
     });
     const badge = r.handoff
       ? `<span class="arag-chip warn">handoff · ${esc(r.handoff_reason ?? "")}</span>`
       : '<span class="arag-chip ok">answered</span>';
+    // Only the newest turn keeps its stepper open; the ones above it collapse to a summary line.
+    for (const d of box.querySelectorAll("details.vb-pipeline[open]")) d.removeAttribute("open");
     $("#kbPending").outerHTML = `<div class="arag-bubble assistant">${esc(r.answer)}
         <div class="arag-chips" style="margin-top:8px">${badge}${r.citations.map(citeChip).join("")}
         <span class="subtle small">retrieve ${fmtMs(r.latency_ms.retrieve)} · first token ${fmtMs(
           r.latency_ms.first_token,
-        )} · total ${fmtMs(r.latency_ms.total)}</span></div></div>`;
+        )} · total ${fmtMs(r.latency_ms.total)}</span></div>
+        ${Array.isArray(r.pipeline) ? pipelineStepper(r.pipeline, true) : ""}</div>`;
     box.scrollTop = box.scrollHeight;
   } catch (e) {
     $("#kbPending").outerHTML = `<div class="arag-bubble assistant"><span class="arag-chip danger">${esc(

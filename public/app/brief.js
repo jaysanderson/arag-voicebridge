@@ -41,3 +41,62 @@ export function renderBrief(b) {
 export function hasBrief(b) {
   return Boolean(renderBrief(b));
 }
+
+/** The brief's fields, in the order the panel shows them. Drives both rendering and comparison. */
+export const BRIEF_FIELDS = [
+  ["topic", "Topic"],
+  ["caller_profile", "Who is calling"],
+  ["their_goal", "What they want"],
+  ["stage", "Stage"],
+  ["summary", "Summary"],
+  ["key_points", "Key points"],
+  ["suggested_questions", "Ask them"],
+  ["suggested_answers", "You could say"],
+  ["recommended_products", "Recommend"],
+];
+
+const text = (v) => String(v ?? "").trim();
+const arr = (v) => (Array.isArray(v) ? v.map(text).filter(Boolean) : []);
+
+/**
+ * Compare two versions of a brief, field by field.
+ *
+ * The interesting question when you review a call is not what the brief ended as — the record
+ * already shows that — but *when it changed its mind*: the moment the caller said the thing that
+ * moved the topic, or the moment a recommendation appeared. So a list field is compared item by
+ * item (what was added, what was dropped) rather than as one blob of text, and a field that did
+ * not move is reported as unchanged rather than left out, because "this stayed the same across
+ * four refreshes" is itself an answer.
+ */
+export function diffBriefs(before, after) {
+  const a = before && typeof before === "object" ? before : {};
+  const b = after && typeof after === "object" ? after : {};
+  return BRIEF_FIELDS.map(([key, label]) => {
+    const isList = Array.isArray(a[key]) || Array.isArray(b[key]);
+    if (isList) {
+      const from = arr(a[key]);
+      const to = arr(b[key]);
+      const items = [
+        ...to.map((t) => ({ text: t, kind: from.includes(t) ? "same" : "added" })),
+        ...from.filter((t) => !to.includes(t)).map((t) => ({ text: t, kind: "removed" })),
+      ];
+      const moved = items.some((i) => i.kind !== "same");
+      return {
+        key,
+        label,
+        list: true,
+        items,
+        kind: !from.length && !to.length ? "empty" : moved ? "changed" : "same",
+      };
+    }
+    const from = text(a[key]);
+    const to = text(b[key]);
+    const kind = from === to ? (from ? "same" : "empty") : !from ? "added" : !to ? "removed" : "changed";
+    return { key, label, list: false, before: from, after: to, kind };
+  });
+}
+
+/** How many fields actually moved between two versions. */
+export function countChanges(rows) {
+  return rows.filter((r) => r.kind !== "same" && r.kind !== "empty").length;
+}

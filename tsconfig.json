@@ -3,7 +3,10 @@
     "target": "ES2023",
     "module": "NodeNext",
     "moduleResolution": "NodeNext",
-    "lib": ["ES2023", "DOM"],
+    "lib": [
+      "ES2023",
+      "DOM"
+    ],
     "strict": true,
     "noUncheckedIndexedAccess": true,
     "noImplicitOverride": true,
@@ -15,8 +18,22 @@
     "esModuleInterop": true,
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true,
-    "types": ["node"]
+    "types": [
+      "node"
+    ]
   },
-  "include": ["src/**/*.ts", "test/**/*.ts", "showcase/**/*.ts", "scripts/**/*.ts", "playwright.config.ts", "vendor/arag-platform/src/**/*.ts"],
-  "exclude": ["node_modules", "data", "bridge"]
+  "include": [
+    "src/**/*.ts",
+    "test/**/*.ts",
+    "showcase/**/*.ts",
+    "scripts/**/*.ts",
+    "playwright.config.ts",
+    "vendor/arag-platform/src/**/*.ts"
+  ],
+  "exclude": [
+    "node_modules",
+    "data",
+    "bridge",
+    "test/scratch"
+  ]
 }

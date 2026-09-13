@@ -1,5 +1,6 @@
 // Operator views — the same shell as the product, with the operator's own navigation. Everything
 // here needs the deployment's admin token, exchanged once for an HttpOnly cookie.
+
 import { renderBrief } from "/app/brief.js";
 import {
   activatableRows,
@@ -23,6 +24,7 @@ import {
   state,
   toast,
 } from "/app/shell.js";
+import { closeOverlay } from "/ui/arag-ui.js";
 
 const $ = (s) => document.querySelector(s);
 let host;
@@ -188,8 +190,9 @@ async function renderSessions(el) {
       <div class="scroll">
         <table id="seTable">
           <thead><tr><th>Started</th><th>Prospect</th><th>Status</th><th class="num">chunks</th>
-            <th class="num">refreshes</th><th class="num">skipped</th><th class="num">failures</th><th class="num">p50</th></tr></thead>
-          <tbody>${skeletonRows(5, 8)}</tbody>
+            <th class="num">refreshes</th><th class="num">skipped</th><th class="num">failures</th>
+            <th class="num">p50</th><th></th></tr></thead>
+          <tbody>${skeletonRows(5, 9)}</tbody>
         </table>
       </div>
     </div>`;
@@ -212,27 +215,65 @@ async function renderSessions(el) {
                 <td class="num">${s.stats.skipped}</td>
                 <td class="num">${s.stats.failures}</td>
                 <td class="num">${s.stats.p50LatencyMs || "—"}</td>
+                <td class="actions"><button class="arag-btn ghost sm" data-delete="${esc(s.id)}"
+                  aria-label="Delete the conversation started ${esc(s.createdAt)}">${icon("trash", 14)}</button></td>
               </tr>`,
             )
             .join("")
-        : `<tr><td colspan="8">${empty({ icon: "conversations", title: "No sessions recorded" })}</td></tr>`;
+        : `<tr><td colspan="9">${empty({ icon: "conversations", title: "No sessions recorded" })}</td></tr>`;
     } catch (e) {
-      $("#seTable tbody").innerHTML = `<tr><td colspan="8">${errorState(e.message)}</td></tr>`;
+      $("#seTable tbody").innerHTML = `<tr><td colspan="9">${errorState(e.message)}</td></tr>`;
     }
   };
   $("#seProspect").addEventListener("change", load);
   $("#seStatus").addEventListener("change", load);
+  // The delete button lives inside the row, so it must not also open the row it sits in.
+  $("#seTable").addEventListener("click", (e) => {
+    const btn = e.target.closest("[data-delete]");
+    if (!btn) return;
+    e.stopPropagation();
+    deleteSession(btn.dataset.delete);
+  });
   activatableRows("#seTable tbody tr[data-session]", (tr) => sessionDrawer(tr.dataset.session));
   await load();
+}
+
+/**
+ * Delete a conversation and everything recorded with it.
+ *
+ * A transcript is what a real caller said, so this is the one destructive act in the operator
+ * area that is about a person rather than about the deployment: it asks with the id typed back,
+ * and it says plainly what goes.
+ */
+async function deleteSession(id) {
+  const ok = await confirmAction({
+    title: "Delete this conversation?",
+    body: `The transcript, every version of the brief and the sources it gathered are deleted from ${esc(
+      id,
+    )}. This cannot be undone.`,
+    confirmLabel: "Delete the conversation",
+  });
+  if (!ok) return;
+  try {
+    await api(`/api/v1/admin/listen-sessions/${encodeURIComponent(id)}`, { method: "DELETE" });
+    toast("Conversation deleted", "ok");
+    closeOverlay();
+    if (currentView() === "sessions") route();
+  } catch (e) {
+    toast(e.message, "error");
+  }
 }
 
 async function sessionDrawer(id) {
   openDrawer({
     title: "Listen session",
     sub: `<span class="mono">${esc(id)}</span>`,
-    actions: `<a class="arag-btn secondary sm" href="/api/v1/listen/sessions/${encodeURIComponent(id)}/export?format=markdown">Export</a>`,
+    actions:
+      `<a class="arag-btn secondary sm" href="/api/v1/listen/sessions/${encodeURIComponent(id)}/export?format=markdown">Export</a>` +
+      `<button class="arag-btn danger sm" id="seDelete">${icon("trash", 14)} Delete</button>`,
     body: '<div class="arag-skeleton" style="height:220px"></div>',
   });
+  $("#seDelete")?.addEventListener("click", () => deleteSession(id));
   try {
     const s = await api(`/api/v1/listen/sessions/${encodeURIComponent(id)}/export`);
     document.querySelector(".arag-drawer .body").innerHTML = `
@@ -438,7 +479,22 @@ async function renderJobs(el) {
   await load();
 }
 
+/**
+ * The operator log, paged.
+ *
+ * The ring holds 500 records and an operator chasing one request needs to walk past the noise,
+ * not raise a limit until the page is unusable — so this pages rather than showing "the last N",
+ * and the filter is applied before the count so the total is the number of *matches*.
+ *
+ * Live refresh and paging are mutually exclusive on purpose: a log that reloads under you while
+ * you are reading page three is worse than one that waits.
+ */
 function renderLogs(el) {
+  const PAGE = 50;
+  let offset = 0;
+  let live = true;
+  let timer = null;
+
   el.innerHTML = `
     <div class="arag-filterbar">
       <select id="lgLevel" class="arag-select" aria-label="Level">
@@ -446,18 +502,94 @@ function renderLogs(el) {
       </select>
       <label class="arag-search">${icon("search", 15)}
         <input id="lgContains" placeholder="Filter log lines…" /></label>
+      <label class="arag-switch"><input type="checkbox" id="lgLive" checked /> <span>Follow</span></label>
+      <span class="spacer"></span>
+      <span class="count" id="lgCount"></span>
     </div>
     <div class="arag-card"><div class="body" style="padding:0">
-      <arag-log id="lgLog" src="/api/v1/admin/logs" limit="200" refresh="5000"></arag-log>
+      <div class="arag-log" id="lgLog" tabindex="0" role="log" aria-label="Operator log"></div>
+      <nav class="arag-pagination" aria-label="Log pages">
+        <span class="range" id="lgRange"></span>
+        <span class="spacer"></span>
+        <button type="button" id="lgPrev" data-page="prev">Newer</button>
+        <button type="button" id="lgNext" data-page="next">Older</button>
+      </nav>
     </div></div>`;
-  const apply = () => {
-    const log = $("#lgLog");
-    log.setAttribute("level", $("#lgLevel").value);
-    log.setAttribute("contains", $("#lgContains").value);
-    log.load();
+
+  const line = (r) => {
+    const { ts, level, msg, ...rest } = r;
+    const fields = Object.entries(rest)
+      .map(([k, v]) => `${k}=${typeof v === "object" ? JSON.stringify(v) : String(v)}`)
+      .join(" ");
+    return `<div class="line">
+      <span class="muted">${esc(new Date(ts).toLocaleTimeString())}</span>
+      <span class="lvl-${esc(level)}">${esc(level)}</span>
+      <span>${esc(msg)}${fields ? ` <span class="muted">${esc(fields)}</span>` : ""}</span>
+    </div>`;
   };
-  $("#lgLevel").addEventListener("change", apply);
-  $("#lgContains").addEventListener("input", apply);
+
+  const load = async () => {
+    const qs = new URLSearchParams({ limit: String(PAGE), offset: String(offset) });
+    if ($("#lgLevel").value) qs.set("level", $("#lgLevel").value);
+    if ($("#lgContains").value) qs.set("contains", $("#lgContains").value);
+    try {
+      const page = await api(`/api/v1/admin/logs?${qs}`);
+      $("#lgLog").innerHTML = page.items.length
+        ? page.items.map(line).join("")
+        : `<div class="line"><span></span><span></span><span class="muted">Nothing matches that filter.</span></div>`;
+      const from = page.total === 0 ? 0 : page.offset + 1;
+      const to = Math.min(page.offset + page.limit, page.total);
+      $("#lgRange").textContent = `${from}–${to} of ${page.total} · ring holds ${page.ring}`;
+      $("#lgCount").textContent = `${page.total} record${page.total === 1 ? "" : "s"}`;
+      $("#lgPrev").disabled = page.offset === 0;
+      $("#lgNext").disabled = to >= page.total;
+    } catch (e) {
+      $("#lgLog").innerHTML =
+        `<div class="line"><span></span><span class="lvl-error">error</span><span>${esc(e.message)}</span></div>`;
+    }
+  };
+
+  const retime = () => {
+    if (timer) clearInterval(timer);
+    timer = live ? setInterval(load, 5000) : null;
+  };
+  // The operator area re-renders on every hash change; leaving a timer behind would stack one
+  // poller per visit.
+  const stop = () => {
+    if (timer) clearInterval(timer);
+    timer = null;
+    window.removeEventListener("hashchange", stop);
+  };
+  window.addEventListener("hashchange", stop);
+
+  const reset = () => {
+    offset = 0;
+    load();
+  };
+  $("#lgLevel").addEventListener("change", reset);
+  $("#lgContains").addEventListener("input", reset);
+  $("#lgLive").addEventListener("change", (e) => {
+    live = e.target.checked;
+    if (live) offset = 0;
+    retime();
+    load();
+  });
+  $("#lgPrev").addEventListener("click", () => {
+    offset = Math.max(0, offset - PAGE);
+    load();
+  });
+  $("#lgNext").addEventListener("click", () => {
+    offset += PAGE;
+    // Paging away from the newest records means you are reading, not following.
+    if (live) {
+      live = false;
+      $("#lgLive").checked = false;
+      retime();
+    }
+    load();
+  });
+  retime();
+  load();
 }
 
 async function renderBranding(el) {
