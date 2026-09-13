@@ -9,6 +9,7 @@
  */
 import {
   type App,
+  type Ctx,
   conflict,
   constantTimeEqual,
   describeEnv,
@@ -24,6 +25,19 @@ import { configName, provisionProspect } from "../services/provision.ts";
 
 /** Log levels in severity order, so a `level` filter means "this level and worse". */
 const LOG_ORDER: Record<string, number> = { debug: 0, info: 1, warn: 2, error: 3 };
+
+/**
+ * A registry key is logged as `prospect`, never as `key`.
+ *
+ * The platform's log redactor blanks any field whose name matches /token|key|secret|…/, which is
+ * right for a credential and wrong for a prospect's registry id — logging it as `key` produced an
+ * audit line reading `prospect.deleted actor=operator key=•••`, which is not an audit trail.
+ * Reported to the platform team; the product-side fix is to name the field for what it is.
+ */
+/** Who made this change, for the audit line. Operators are identified by how they authenticated. */
+function actorOf(ctx: Ctx): string {
+  return ctx.auth.via === "admin-token" ? "operator" : (ctx.auth.via ?? "unknown");
+}
 
 export function registerAdminRoutes(app: App, deps: ProductDeps): void {
   app.post(
@@ -162,6 +176,7 @@ export function registerAdminRoutes(app: App, deps: ProductDeps): void {
       const { key, config } = ctx.body as { key: string; config: Record<string, unknown> };
       if (deps.registry.get(key)) throw conflict(`Prospect "${key}" already exists`);
       const record = deps.registry.create(key, config);
+      deps.log.info("prospect.created", { actor: actorOf(ctx), prospect: key });
       deps.clients.clear();
       ctx.json(201, record, { Location: `/api/v1/admin/prospects/${key}` });
     },
@@ -182,6 +197,7 @@ export function registerAdminRoutes(app: App, deps: ProductDeps): void {
     "/api/v1/admin/prospects/:key",
     (ctx) => {
       const record = deps.registry.replace(ctx.params.key!, ctx.body);
+      deps.log.info("prospect.replaced", { actor: actorOf(ctx), prospect: ctx.params.key });
       deps.clients.clear();
       return record;
     },
@@ -196,6 +212,7 @@ export function registerAdminRoutes(app: App, deps: ProductDeps): void {
     "/api/v1/admin/prospects/:key",
     (ctx) => {
       if (!deps.registry.delete(ctx.params.key!)) throw notFound("Prospect");
+      deps.log.warn("prospect.deleted", { actor: actorOf(ctx), prospect: ctx.params.key });
       deps.clients.clear();
       ctx.noContent();
     },
@@ -225,7 +242,8 @@ export function registerAdminRoutes(app: App, deps: ProductDeps): void {
         updated = deps.registry.replace(prospect.id, { ...prospect, ask_config: result.name });
       }
       deps.log.info("prospect.provisioned", {
-        key: prospect.id,
+        actor: actorOf(ctx),
+        prospect: prospect.id,
         name: configName(prospect, opts),
         applied: result.applied,
       });

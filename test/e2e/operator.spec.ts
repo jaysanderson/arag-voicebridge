@@ -56,7 +56,7 @@ test.describe("operator: the log", () => {
     await expect(page.locator("#lgRange")).toContainText("of");
   });
 
-  /** Settings changes are audited with who, what and when — readable here, by an operator. */
+  /** Every operator change is audited with who, what and when — readable here, by an operator. */
   test("carries the audit trail for a settings change", async ({ page, request }) => {
     await request.patch("/api/v1/admin/settings", {
       headers: ADMIN,
@@ -67,6 +67,30 @@ test.describe("operator: the log", () => {
     await expect(page.locator("#lgLog")).toContainText("limits.maxHistoryTurns", { timeout: 15_000 });
     await expect(page.locator("#lgLog")).toContainText("operator");
     await request.post("/api/v1/admin/settings/reset", { headers: ADMIN, data: { group: "limits" } });
+  });
+
+  test("carries the audit trail for a registry change too", async ({ page, request }) => {
+    await request.post("/api/v1/admin/prospects", {
+      headers: ADMIN,
+      data: {
+        key: "audit-check",
+        config: {
+          display_name: "Audit check",
+          region: "europe-1",
+          locale: "en-GB",
+          greeting: "Hello",
+          handoff_msg: "One moment",
+        },
+      },
+    });
+    await request.delete("/api/v1/admin/prospects/audit-check", { headers: ADMIN });
+
+    await signIn(page, "#logs");
+    await page.fill("#lgContains", "prospect.");
+    await expect(page.locator("#lgLog")).toContainText("prospect.created", { timeout: 15_000 });
+    await expect(page.locator("#lgLog")).toContainText("prospect.deleted");
+    await expect(page.locator("#lgLog")).toContainText("audit-check");
+    await expect(page.locator("#lgLog")).toContainText("operator");
   });
 });
 

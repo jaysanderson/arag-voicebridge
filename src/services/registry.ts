@@ -224,7 +224,7 @@ export class ProspectRegistry {
     for (const [key, value] of Object.entries(raw)) {
       const errors = [...validateKey(key), ...validateProspect(value)];
       if (errors.length) {
-        this.log.warn("registry.seed.skip", { key, errors: errors.map((e) => e.path) });
+        this.log.warn("registry.seed.skip", { prospect: key, errors: errors.map((e) => e.path) });
         continue;
       }
       const cfg = normaliseProspect(value as Record<string, unknown>);
@@ -267,7 +267,7 @@ export class ProspectRegistry {
     const errors = [...validateKey(key), ...validateProspect(cfg)];
     if (errors.length) throw new ValidationFailed(errors);
     const record = this.col.put({ id: key, ...normaliseProspect(cfg as Record<string, unknown>) });
-    this.log.info("registry.create", { key });
+    this.log.info("registry.create", { prospect: key });
     return record;
   }
 
@@ -277,13 +277,13 @@ export class ProspectRegistry {
     const errors = validateProspect(cfg);
     if (errors.length) throw new ValidationFailed(errors);
     const record = this.col.put({ id: key, ...normaliseProspect(cfg as Record<string, unknown>) });
-    this.log.info("registry.replace", { key });
+    this.log.info("registry.replace", { prospect: key });
     return record;
   }
 
   delete(key: string): boolean {
     const ok = this.col.delete(key);
-    if (ok) this.log.info("registry.delete", { key });
+    if (ok) this.log.info("registry.delete", { prospect: key });
     return ok;
   }
 
