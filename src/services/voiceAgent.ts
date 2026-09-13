@@ -77,9 +77,18 @@ export const TOOL_DESCRIPTION =
   "Answer the caller's question from the customer's Knowledge Box. Always call this for factual " +
   "or support questions and speak the `answer` field verbatim.";
 
+/**
+ * The tool's request body, as ElevenLabs wants it.
+ *
+ * Every property — including the nested ones inside `history` — carries a `description`. That is
+ * not documentation polish: the Agents API rejects a tool whose schema has a property without one
+ * ("Must set one of: description, dynamic_variable, is_system_provided, constant_value, or
+ * is_omitted"), verified live against a throwaway agent.
+ */
 export function toolBodySchema(prospect: string): Record<string, unknown> {
   return {
     type: "object",
+    description: "One caller turn to answer from the Knowledge Box.",
     required: ["prospect", "question"],
     properties: {
       prospect: { type: "string", description: `Always "${prospect}" for this agent.` },
@@ -90,9 +99,14 @@ export function toolBodySchema(prospect: string): Record<string, unknown> {
         description: "Recent prior turns; the bridge caps it to MAX_HISTORY_TURNS.",
         items: {
           type: "object",
+          description: "One prior turn of the conversation.",
           properties: {
-            author: { type: "string", enum: ["USER", "NUCLIA"] },
-            text: { type: "string" },
+            author: {
+              type: "string",
+              description: 'Who spoke: "USER" for the caller, "NUCLIA" for the assistant.',
+              enum: ["USER", "NUCLIA"],
+            },
+            text: { type: "string", description: "What was said, as transcribed." },
           },
         },
       },

@@ -206,6 +206,25 @@ describe("the desired agent configuration", () => {
     expect(props.prospect!.description).toContain('"acme"');
   });
 
+  /**
+   * Regression for a live 422: the Agents API rejects a tool whose request-body schema has any
+   * property without a `description` — nested ones included. Found by `make agent-check`.
+   */
+  it("gives every property in the body schema a description, at every depth", () => {
+    const schema = desiredTool({ publicUrl: "https://x.test", prospect: "acme", timeoutMs: 8000 })
+      .bodySchema as Record<string, unknown>;
+    const walk = (node: Record<string, unknown>, path: string): void => {
+      const props = node.properties as Record<string, Record<string, unknown>> | undefined;
+      for (const [key, value] of Object.entries(props ?? {})) {
+        expect(typeof value.description).toBe("string");
+        expect(String(value.description).length).toBeGreaterThan(0);
+        walk(value, `${path}/${key}`);
+        if (value.items) walk(value.items as Record<string, unknown>, `${path}/${key}[]`);
+      }
+    };
+    walk(schema, "");
+  });
+
   it("uses the generated router prompt unless the prospect overrides it", () => {
     expect(effectiveSystemPrompt(PROSPECT)).toBe(systemPrompt("Acme"));
     expect(effectiveSystemPrompt({ ...PROSPECT, system_prompt: "  Say hello.  " })).toBe("Say hello.");
@@ -296,6 +315,26 @@ describe("merging into what the remote already has", () => {
     // Settings this product does not own survive.
     expect(prompt.llm).toBe("gpt-4o-mini");
     expect(prompt.prompt).toContain("router");
+  });
+
+  /**
+   * Regression for a live 400: a GET returns both the deprecated inline `tools` array and
+   * `tool_ids`, and sending both back is refused ("Cannot specify both tools and tool IDs").
+   */
+  it("drops the deprecated inline tools array when it sets tool_ids", () => {
+    const wanted = desiredAgent(PROSPECT, cfg(), "https://x.test", "vbk_secret");
+    const body = agentPatchBody(
+      wanted,
+      {
+        conversation_config: {
+          agent: { prompt: { tools: [{ name: "voice_answer", type: "webhook" }], tool_ids: [] } },
+        },
+      },
+      "tool_live_1",
+    );
+    const prompt = (body.conversation_config as { agent: { prompt: Record<string, unknown> } }).agent.prompt;
+    expect(prompt.tool_ids).toEqual(["tool_live_1"]);
+    expect("tools" in prompt).toBe(false);
   });
 
   it("does not touch the voice when the deployment has no opinion about it", () => {
@@ -427,6 +466,31 @@ describe("pushing to ElevenLabs", () => {
       status = (err as AgentError).status ?? 0;
     }
     expect(status).toBe(401);
+  });
+
+  /**
+   * Regression: deleting a tool an agent still references is a 409 unless `force` is set, so the
+   * default is forced — the caller always means it.
+   */
+  it("force-deletes a tool by default, and can be asked not to", async () => {
+    reset();
+    await deleteTool(cfg(), "tool_live_1");
+    expect(calls.at(-1)!.path).toBe("/v1/convai/tools/tool_live_1");
+    const forced = calls.at(-1)!;
+    expect(forced.method).toBe("DELETE");
+    reset();
+    tools.tool_keep = { id: "tool_keep", tool_config: {} };
+    let seen = "";
+    await deleteTool(
+      cfg(),
+      "tool_keep",
+      async (url) => {
+        seen = url;
+        return new Response("{}", { status: 200, headers: { "content-type": "application/json" } });
+      },
+      { force: false },
+    );
+    expect(seen).not.toContain("force=true");
   });
 
   it("deletes a throwaway agent and tool cleanly", async () => {

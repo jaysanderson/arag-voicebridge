@@ -250,6 +250,15 @@ export function agentPatchBody(desired: DesiredAgent, existing: Json = {}, toolI
   const tts = obj(conv.tts);
   const toolIds = Array.isArray(prompt.tool_ids) ? [...(prompt.tool_ids as string[])] : [];
   if (toolId && !toolIds.includes(toolId)) toolIds.push(toolId);
+  const nextPrompt: Json = {
+    ...prompt,
+    prompt: desired.systemPrompt,
+    ...(toolIds.length ? { tool_ids: toolIds } : {}),
+  };
+  // A GET returns both the deprecated inline `tools` array and `tool_ids`; sending both back is
+  // rejected ("Cannot specify both tools and tool IDs"), verified live. We speak tool_ids, so the
+  // inline copy is dropped from the patch.
+  if (toolIds.length) delete nextPrompt.tools;
   const body: Json = {
     name: desired.name,
     conversation_config: {
@@ -258,7 +267,7 @@ export function agentPatchBody(desired: DesiredAgent, existing: Json = {}, toolI
         ...agent,
         first_message: desired.greeting,
         ...(desired.language ? { language: desired.language } : {}),
-        prompt: { ...prompt, prompt: desired.systemPrompt, ...(toolIds.length ? { tool_ids: toolIds } : {}) },
+        prompt: nextPrompt,
       },
       ...(desired.voiceId ? { tts: { ...tts, voice_id: desired.voiceId } } : {}),
     },
@@ -361,7 +370,7 @@ export async function pushAgent(
   };
 }
 
-/** Create a bare agent (used by the tests' throwaway agent and by first-time provisioning). */
+/** Delete an agent (used by the throwaway-agent verification, never by the product's UI). */
 export async function deleteAgent(
   cfg: VoiceConfig,
   agentId: string,
@@ -370,12 +379,19 @@ export async function deleteAgent(
   await call(cfg, `/v1/convai/agents/${encodeURIComponent(agentId)}`, { method: "DELETE" }, fetchImpl);
 }
 
+/**
+ * Delete a tool. A tool an agent still references is refused with 409 ("Tool is still in use"),
+ * verified live — `force` is the documented escape hatch, and the only sane default for a
+ * throwaway object whose agent has already gone.
+ */
 export async function deleteTool(
   cfg: VoiceConfig,
   toolId: string,
   fetchImpl: FetchLike = fetch,
+  opts: { force?: boolean } = {},
 ): Promise<void> {
-  await call(cfg, `/v1/convai/tools/${encodeURIComponent(toolId)}`, { method: "DELETE" }, fetchImpl);
+  const query = opts.force === false ? "" : "?force=true";
+  await call(cfg, `/v1/convai/tools/${encodeURIComponent(toolId)}${query}`, { method: "DELETE" }, fetchImpl);
 }
 
 // ── comparison ───────────────────────────────────────────────────────────────

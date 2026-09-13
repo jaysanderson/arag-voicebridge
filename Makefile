@@ -3,7 +3,7 @@ BUN ?= bun
 NODE ?= node
 PORT ?= 8080
 
-.PHONY: help install dev start test coverage e2e lint typecheck check docs showcase smoke eval provision docker fly-validate mock
+.PHONY: help install dev start test coverage e2e lint typecheck check docs showcase smoke agent-check eval provision docker fly-validate mock
 
 help:
 	@echo "make install       bun install (dev tooling, exact pins)"
@@ -18,6 +18,7 @@ help:
 	@echo "make docs          regenerate docs/developer/api-reference.md from the running server"
 	@echo "make showcase      record the showcase walkthrough (video + screenshots) into showcase/out"
 	@echo "make smoke         OPT-IN live test: 3 golden questions against the real KB using .env"
+	@echo "make agent-check   OPT-IN live test: create, configure and delete a throwaway ElevenLabs agent"
 	@echo "make eval P=<key>  run a prospect's golden set against a running server"
 	@echo "make provision P=<key> [ARGS=--dry-run]  write the stored ARAG search configuration"
 	@echo "make docker        build the container image"
@@ -59,6 +60,11 @@ showcase:
 
 smoke:
 	$(NODE) scripts/smoke.ts $(ARGS)
+
+# Creates a throwaway ElevenLabs agent + tool, configures them, then deletes both.
+# It never touches an agent this deployment's registry points at.
+agent-check:
+	$(NODE) scripts/agent-check.ts
 
 eval:
 	@test -n "$(P)" || (echo "Usage: make eval P=<prospect> [BASE_URL=http://localhost:8080]"; exit 1)
