@@ -5,6 +5,9 @@ Every configurable value in VoiceBridge is one row in a single declarative table
 are transcribed from that one source; if this page and `SETTINGS_FIELDS` ever disagree, the code
 wins** (regenerate this page by re-reading it rather than trusting a stale copy).
 
+The **Patch key** column is what `PATCH /api/v1/admin/settings` takes: a patch is keyed by group
+and then by that name, so changing the product name is `{"branding": {"productName": "Acme"}}`.
+
 ## How this works
 
 An environment variable is a **default**, not the authority. `SettingsService` reads the
@@ -58,17 +61,17 @@ the sibling store this pairs with (`ApiKeyStore`), and
 How this deployment identifies itself. A partner rebrands without a fork; per-prospect overlays
 layer on top of these under Prospects (see [`white-label.md`](white-label.md)).
 
-| Setting | Type | Env default | What it affects |
-|---|---|---|---|
-| Product name | string | `BRAND_PRODUCT_NAME` | Shown on the rail, in the tab title and in the docs. |
-| Tagline | string | `BRAND_TAGLINE` | One line under the product name. |
-| Logo | string | `BRAND_LOGO_URL` | Replaces the Progress wordmark on the rail. Upload a file (`POST .../settings/logo`) or paste a URL. |
-| Primary colour | color | `BRAND_PRIMARY_COLOR` | The action colour. |
-| Accent colour | color | `BRAND_ACCENT_COLOR` | The liveness colour on dark surfaces. |
-| Footer text | string | `BRAND_FOOTER_TEXT` | Shown at the foot of the rail. |
-| Docs link | string | `BRAND_DOCS_URL` | Where the rail's API-docs link points. |
-| Support link | string | `BRAND_SUPPORT_URL` | Optional support destination. |
-| Show the Progress credit | boolean | `BRAND_POWERED_BY` | Off removes the wordmark and the credit from the UI. Attribution stays in `LICENSE` and `THIRD_PARTY_NOTICES.md`. |
+| Setting | Patch key | Type | Env default | What it affects |
+|---|---|---|---|---|
+| Product name | `branding.productName` | string | `BRAND_PRODUCT_NAME` | Shown on the rail, in the tab title and in the docs. |
+| Tagline | `branding.tagline` | string | `BRAND_TAGLINE` | One line under the product name. |
+| Logo | `branding.logoUrl` | string | `BRAND_LOGO_URL` | Replaces the Progress wordmark on the rail. Upload a file (`POST .../settings/logo`) or paste a URL. |
+| Primary colour | `branding.primaryColor` | color | `BRAND_PRIMARY_COLOR` | The action colour. |
+| Accent colour | `branding.accentColor` | color | `BRAND_ACCENT_COLOR` | The liveness colour on dark surfaces. |
+| Footer text | `branding.footerText` | string | `BRAND_FOOTER_TEXT` | Shown at the foot of the rail. |
+| Docs link | `branding.docsUrl` | string | `BRAND_DOCS_URL` | Where the rail's API-docs link points. |
+| Support link | `branding.supportUrl` | string | `BRAND_SUPPORT_URL` | Optional support destination. |
+| Show the Progress credit | `branding.poweredBy` | boolean | `BRAND_POWERED_BY` | Off removes the wordmark and the credit from the UI. Attribution stays in `LICENSE` and `THIRD_PARTY_NOTICES.md`. |
 
 ## Connection
 
@@ -76,52 +79,52 @@ How the bridge reaches Progress Agentic RAG. The Knowledge Box here is the deplo
 prospect may point at its own (see
 [`../architecture/arag-integration.md`](../architecture/arag-integration.md)).
 
-| Setting | Type | Env default | What it affects | Rewires clients |
-|---|---|---|---|---|
-| Knowledge Box id | string | `ARAG_KB_ID` | The deployment default. A prospect with no `kb_id` of its own answers from this one. | yes |
-| Service-account token | secret | `ARAG_API_KEY` | Sent as `X-NUCLIA-SERVICEACCOUNT`. Set once, then rotated — never displayed. | yes |
-| Region | string | `ARAG_REGION` | Zone slug, e.g. `aws-us-east-2-1`. Used to build the host when no base URL is set. | yes |
-| Base URL override | string | `ARAG_BASE_URL` | Full API base, e.g. `https://aws-us-east-2-1.dp.progress.cloud/api/v1`. Empty = derive from the region. | yes |
-| Generative model | string | `ARAG_GENERATIVE_MODEL` | Empty = the Knowledge Box default. A prospect may override it. | no |
-| Reranker | enum (`predict`, `noop`) | `ARAG_RERANKER` | `predict` reranks retrieval with the platform model; `noop` keeps the retrieval order. | no |
-| Public URL | string | `PUBLIC_URL` | How the outside world reaches this deployment. The ElevenLabs tool URL is built from it, so getting it wrong is the usual reason a pushed agent cannot call back. | no |
-| Client timeout | number (ms) | `ARAG_TIMEOUT_MS` | Default per-request budget for ARAG calls. The voice turn uses its own, shorter one (see Limits below). | no |
+| Setting | Patch key | Type | Env default | What it affects | Rewires clients |
+|---|---|---|---|---|---|
+| Knowledge Box id | `connection.kbId` | string | `ARAG_KB_ID` | The deployment default. A prospect with no `kb_id` of its own answers from this one. | yes |
+| Service-account token | `connection.apiKey` | secret | `ARAG_API_KEY` | Sent as `X-NUCLIA-SERVICEACCOUNT`. Set once, then rotated — never displayed. | yes |
+| Region | `connection.region` | string | `ARAG_REGION` | Zone slug, e.g. `aws-us-east-2-1`. Used to build the host when no base URL is set. | yes |
+| Base URL override | `connection.baseUrl` | string | `ARAG_BASE_URL` | Full API base, e.g. `https://aws-us-east-2-1.dp.progress.cloud/api/v1`. Empty = derive from the region. | yes |
+| Generative model | `connection.generativeModel` | string | `ARAG_GENERATIVE_MODEL` | Empty = the Knowledge Box default. A prospect may override it. | no |
+| Reranker | `connection.reranker` | enum (`predict`, `noop`) | `ARAG_RERANKER` | `predict` reranks retrieval with the platform model; `noop` keeps the retrieval order. | no |
+| Public URL | `connection.publicUrl` | string | `PUBLIC_URL` | How the outside world reaches this deployment. The ElevenLabs tool URL is built from it, so getting it wrong is the usual reason a pushed agent cannot call back. | no |
+| Client timeout | `connection.timeoutMs` | number (ms) | `ARAG_TIMEOUT_MS` | Default per-request budget for ARAG calls. The voice turn uses its own, shorter one (see Limits below). | no |
 
 ## Limits and timeouts
 
 The budgets that keep a voice turn inside the agent's tool timeout and stop one caller spending
 everyone's quota.
 
-| Setting | Type | Env default | What it affects |
-|---|---|---|---|
-| Voice turn budget | number (ms) | `VOICE_TURN_TIMEOUT_MS` | Per-turn ARAG budget. Must stay below the agent tool timeout or the caller hears silence. |
-| Agent tool timeout | number (ms) | `AGENT_TOOL_TIMEOUT_MS` | The timeout configured on the ElevenLabs custom server tool. Pushed to the agent. |
-| Brief budget | number (ms) | `VOICE_BRIEF_TIMEOUT_MS` | Listen-mode brief budget. Longer than a turn because it never blocks speech. |
-| History turns | number | `MAX_HISTORY_TURNS` | Prior turns forwarded to ARAG as context (one turn = caller + agent). |
-| Turn log size | number | `VOICE_TURN_LOG_LIMIT` | How many recent turns the ring keeps for metrics and the turn log. |
-| API rate limit | number (rps) | `RATE_LIMIT_RPS` | Global per-IP requests per second for `/api/v1`. 0 disables the limiter. |
-| API burst | number | `RATE_LIMIT_BURST` | Bucket size for the global per-IP limiter. |
-| Max request body | number (bytes) | `MAX_BODY_BYTES` | Largest accepted request body. |
-| Brief rate limit | number (rps) | `VOICE_BRIEF_RATE_RPS` | Per-IP requests per second for `/api/v1/brief` and listen transcript ingest — each spends a generation. |
-| Brief burst | number | `VOICE_BRIEF_RATE_BURST` | Bucket size for the brief limiter. |
-| Scribe token rate limit | number (rps) | `VOICE_SCRIBE_RATE_RPS` | Per-IP requests per second for minting ElevenLabs Scribe tokens. |
-| Scribe token burst | number | `VOICE_SCRIBE_RATE_BURST` | Bucket size for the Scribe-token limiter. |
-| Speech rate limit | number (rps) | `VOICE_TTS_RATE_RPS` | Per-IP requests per second for the spoken brief — it costs per character. |
-| Speech burst | number | `VOICE_TTS_RATE_BURST` | Bucket size for the speech limiter. |
+| Setting | Patch key | Type | Env default | What it affects |
+|---|---|---|---|---|
+| Voice turn budget | `limits.turnTimeoutMs` | number (ms) | `VOICE_TURN_TIMEOUT_MS` | Per-turn ARAG budget. Must stay below the agent tool timeout or the caller hears silence. |
+| Agent tool timeout | `limits.agentToolTimeoutMs` | number (ms) | `AGENT_TOOL_TIMEOUT_MS` | The timeout configured on the ElevenLabs custom server tool. Pushed to the agent. |
+| Brief budget | `limits.briefTimeoutMs` | number (ms) | `VOICE_BRIEF_TIMEOUT_MS` | Listen-mode brief budget. Longer than a turn because it never blocks speech. |
+| History turns | `limits.maxHistoryTurns` | number | `MAX_HISTORY_TURNS` | Prior turns forwarded to ARAG as context (one turn = caller + agent). |
+| Turn log size | `limits.turnLogLimit` | number | `VOICE_TURN_LOG_LIMIT` | How many recent turns the ring keeps for metrics and the turn log. |
+| API rate limit | `limits.rateLimitRps` | number (rps) | `RATE_LIMIT_RPS` | Global per-IP requests per second for `/api/v1`. 0 disables the limiter. |
+| API burst | `limits.rateLimitBurst` | number | `RATE_LIMIT_BURST` | Bucket size for the global per-IP limiter. |
+| Max request body | `limits.maxBodyBytes` | number (bytes) | `MAX_BODY_BYTES` | Largest accepted request body. |
+| Brief rate limit | `limits.briefRps` | number (rps) | `VOICE_BRIEF_RATE_RPS` | Per-IP requests per second for `/api/v1/brief` and listen transcript ingest — each spends a generation. |
+| Brief burst | `limits.briefBurst` | number | `VOICE_BRIEF_RATE_BURST` | Bucket size for the brief limiter. |
+| Scribe token rate limit | `limits.scribeRps` | number (rps) | `VOICE_SCRIBE_RATE_RPS` | Per-IP requests per second for minting ElevenLabs Scribe tokens. |
+| Scribe token burst | `limits.scribeBurst` | number | `VOICE_SCRIBE_RATE_BURST` | Bucket size for the Scribe-token limiter. |
+| Speech rate limit | `limits.ttsRps` | number (rps) | `VOICE_TTS_RATE_RPS` | Per-IP requests per second for the spoken brief — it costs per character. |
+| Speech burst | `limits.ttsBurst` | number | `VOICE_TTS_RATE_BURST` | Bucket size for the speech limiter. |
 
 ## ElevenLabs
 
 The default voice stack: Scribe transcription, the Conversational AI agent and the optional spoken
 brief.
 
-| Setting | Type | Env default | What it affects |
-|---|---|---|---|
-| API key | secret | `ELEVENLABS_API_KEY` | Server-side only. Mints Scribe tokens, lists voices, synthesises speech and configures agents. |
-| API base URL | string | `ELEVENLABS_API_BASE` | Override for a regional endpoint or a test double. |
-| Transcription model | string | `ELEVENLABS_SCRIBE_MODEL` | Realtime model used by the Live microphone. |
-| Speech model | string | `ELEVENLABS_TTS_MODEL` | Low-latency model for the spoken brief. |
-| Default voice | string | `ELEVENLABS_TTS_VOICE_ID` | Voice for the spoken brief when a prospect has none of its own. |
-| Default agent id | string | `VOICE_DEFAULT_AGENT_ID` | Agent used by a prospect that has none of its own. |
+| Setting | Patch key | Type | Env default | What it affects |
+|---|---|---|---|---|
+| API key | `elevenlabs.apiKey` | secret | `ELEVENLABS_API_KEY` | Server-side only. Mints Scribe tokens, lists voices, synthesises speech and configures agents. |
+| API base URL | `elevenlabs.apiBase` | string | `ELEVENLABS_API_BASE` | Override for a regional endpoint or a test double. |
+| Transcription model | `elevenlabs.scribeModel` | string | `ELEVENLABS_SCRIBE_MODEL` | Realtime model used by the Live microphone. |
+| Speech model | `elevenlabs.ttsModel` | string | `ELEVENLABS_TTS_MODEL` | Low-latency model for the spoken brief. |
+| Default voice | `elevenlabs.ttsVoiceId` | string | `ELEVENLABS_TTS_VOICE_ID` | Voice for the spoken brief when a prospect has none of its own. |
+| Default agent id | `elevenlabs.defaultAgentId` | string | `VOICE_DEFAULT_AGENT_ID` | Agent used by a prospect that has none of its own. |
 
 ## Retention
 
@@ -129,9 +132,9 @@ How long recorded turns, conversations and golden runs are kept before purging (
 [`../architecture/data-flow.md`](../architecture/data-flow.md#retention-and-purge) for the purge
 mechanics and `POST /api/v1/admin/purge`).
 
-| Setting | Type | Env default | What it affects |
-|---|---|---|---|
-| Keep turns for | number (days) | `VOICE_RETENTION_TURN_DAYS` | Days a recorded turn is kept. 0 keeps them until the ring evicts them. |
-| Keep conversations for | number (days) | `VOICE_RETENTION_SESSION_DAYS` | Days an ended listen session (with its transcript) is kept. |
-| Keep golden runs for | number (days) | `VOICE_RETENTION_EVAL_DAYS` | Days a golden-set evaluation result is kept. |
-| Purge automatically | boolean | `VOICE_RETENTION_AUTO_PURGE` | Apply the retention windows on an hourly timer as well as on demand. |
+| Setting | Patch key | Type | Env default | What it affects |
+|---|---|---|---|---|
+| Keep turns for | `retention.turnDays` | number (days) | `VOICE_RETENTION_TURN_DAYS` | Days a recorded turn is kept. 0 keeps them until the ring evicts them. |
+| Keep conversations for | `retention.sessionDays` | number (days) | `VOICE_RETENTION_SESSION_DAYS` | Days an ended listen session (with its transcript) is kept. |
+| Keep golden runs for | `retention.evalDays` | number (days) | `VOICE_RETENTION_EVAL_DAYS` | Days a golden-set evaluation result is kept. |
+| Purge automatically | `retention.autoPurge` | boolean | `VOICE_RETENTION_AUTO_PURGE` | Apply the retention windows on an hourly timer as well as on demand. |
