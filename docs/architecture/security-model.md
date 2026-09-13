@@ -7,16 +7,20 @@ grounded answer without ever touching an ARAG or ElevenLabs credential, and with
 input turning into a hallucinated or unsafe spoken answer. The assets worth protecting, roughly in
 order:
 
-1. **The ARAG service-account token and the ElevenLabs/LiveAvatar/LiveKit API keys** — never sent
-   to a browser, never logged (the platform logger redacts any field matching
-   `token|key|secret|password`, plus `authorization`/`cookie` headers), read only from environment
-   variables.
-2. **The admin surface** — registry CRUD, provisioning, the turn log, raw logs and effective
-   configuration. Compromise here lets an attacker point a prospect at a different Knowledge Box,
-   read recent (non-guard-tripped) question text, or read redacted-but-structurally-informative
-   configuration.
-3. **Third-party quota** — minting an ElevenLabs Scribe token or a LiveKit/LiveAvatar session
-   spends someone else's paid quota; these routes are treated as more sensitive than a normal read.
+1. **The ARAG service-account token, the ElevenLabs API key, and every VoiceBridge API key** — never
+   sent to a browser, never logged (the platform logger redacts any field matching
+   `token|key|secret|password`, plus `authorization`/`cookie` headers). Each is now backed by a
+   settings/key store rather than only an environment variable (`SettingsService`/`ApiKeyStore`, see
+   [`../developer/settings.md`](../developer/settings.md) and "The API key store" below) — the
+   environment still supplies the boot-time default, and secrets are write-only over the admin API:
+   set once, then reported back as `set` plus a four-character hint, never the value.
+2. **The admin surface** — registry CRUD, provisioning, settings, the API key store, the turn log,
+   raw logs and effective configuration. Compromise here lets an attacker point a prospect at a
+   different Knowledge Box, read recent (non-guard-tripped) question text, mint or revoke API keys,
+   or read redacted-but-structurally-informative configuration.
+3. **Third-party quota** — minting an ElevenLabs Scribe token, or pushing an agent/tool
+   configuration to ElevenLabs, spends or reconfigures someone else's paid account; these routes are
+   treated as more sensitive than a normal read.
 4. **The spoken answer itself** — grounding and the deterministic handoff are the actual
    anti-hallucination control, not a security control in the traditional sense, but they exist for
    the same reason: an ungrounded or unsafe spoken answer is the worst outcome this product can
@@ -44,7 +48,7 @@ random value generated once per process boot (so restarting the server invalidat
 sessions — acceptable for a self-hosted workspace, not a claim of durable session security).
 
 **Credential-minting routes are never anonymous, even when `API_KEYS` is unset.** `POST
-/api/v1/scribe-token` and `POST /api/v1/avatar/sessions` both call `requireIdentified()`
+/api/v1/scribe-token` and `POST /api/v1/speech` both call `requireIdentified()`
 (`src/routes/realtime.ts`), which demands a session, API key or admin token regardless of the
 global `API_KEYS` setting — "open by default" is the right default for reading non-secret prospect
 data, but wrong for spending someone else's third-party quota (`DECISIONS.md` V-06). This is a
@@ -54,6 +58,41 @@ enforces generically.
 Admin token comparison uses `constantTimeEqual()` — a timing side-channel on the admin token
 comparison is a real, practical attack against a static bearer secret, so both the login route and
 `App.authenticate()`'s cookie/bearer checks use constant-time comparison rather than `===`.
+
+## The API key store
+
+`API_KEYS` used to be the entire authentication story for `auth: "api"` routes: a comma-separated
+environment variable, compared as a flat list, with no name, no revocation and no record of which
+key a caller used. `ApiKeyStore` (`src/services/apiKeys.ts`, `DECISIONS.md` V-27) replaces the
+authority while keeping `API_KEYS` as the **seed**: on first boot, any key listed there is recorded
+as an `origin: "env"` key so an existing deployment's key keeps working and simply shows up in
+`GET /api/v1/admin/api-keys` instead of vanishing.
+
+- **Secrets are stored in full**, not hashed, in `api-keys.json`. This is a deliberate trade-off, not
+  an oversight: the platform's authenticator needs the plaintext for a constant-time comparison
+  (see below), and pushing the ElevenLabs agent's custom tool has to put a *real* key into the
+  tool's `X-API-Key` header (`desiredTool()`, `src/services/voiceAgent.ts`) — a one-way hash cannot
+  supply that. This is the same trust level as the `.env` file the store replaces. The one place a
+  secret is returned is the response to `POST /api/v1/admin/api-keys` that creates it — after that,
+  the API only ever shows a `prefix`.
+- **Revocation is live, not eventual.** `revoke()` marks the record and calls `sync()`, which
+  rewrites the live `env.apiKeys` array in place with the remaining active secrets — the platform's
+  `App.authenticate()` reads that same array object, so a revoked key stops authenticating on the
+  very next request, no restart. The revoked record itself stays (marked `revoked`, with
+  `revokedAt`) rather than being deleted, so the audit trail survives the revocation.
+- **Revoking the last key reopens the API.** With zero active keys, `auth: "api"` routes are open by
+  default (see the auth-modes table above) — this is the documented, intentional "no keys = open"
+  behaviour, not a bug, and it is asserted in the test suite. `GET /api/v1/admin/api-keys` reports
+  `open: true` precisely so an operator notices before a caller does.
+- **Last-used is throttled, not per-request.** `touch()` samples at most once per 30 seconds per key
+  (`TOUCH_INTERVAL_MS`) so a busy deployment does not pay a store write on every authenticated
+  request; it runs *after* the middleware chain, because the platform authenticates inside its own
+  dispatch and `ctx.auth` is not yet populated on the way in (reported to the platform team, see
+  `DECISIONS.md` V-27).
+
+See [`../developer/settings.md`](../developer/settings.md) for the settings store this pairs with,
+and [`../developer/quickstart.md`](../developer/quickstart.md) for minting a key from a running
+deployment.
 
 ## `POST /api/v1/voice-answer` itself has no per-agent auth
 
@@ -161,7 +200,10 @@ Secrets never appear in logs at all: the platform logger's redaction (`token|key
 field-name matching, plus header redaction for `authorization`/`cookie`) is unconditional, and
 `describeEnv()`/`describeVoiceConfig()` (used by `GET /api/v1/admin/config`) redact the same way for
 the admin configuration page — a secret shows as `•••(N chars)`, confirming it is set without
-revealing it.
+revealing it. `SettingsService.update()`/`reset()` follow the same rule deliberately: every settings
+change is logged (`settings.changed`, `settings.reset` — who, which fields, when), but the *values*
+are never logged, because some of them are secrets and all of them are already visible in
+`GET /api/v1/admin/settings` to anyone who should be looking at them.
 
 ## `security.groups` is not an authorisation boundary
 
@@ -188,7 +230,11 @@ build, update the notice).
 
 The Content-Security-Policy (`securityHeaders()`, `vendor/arag-platform/src/http/app.ts`, extended
 in `src/server.ts` for this product) allows `connect-src`/`media-src` only to the specific hosts
-this product actually needs — ElevenLabs' API and WebSocket hosts, and `*.livekit.cloud` for the
-avatar pane's WebRTC signalling and its video via `storage.googleapis.com` — rather than a broad
-allowlist. Every other product on the shared platform keeps the narrower default CSP; VoiceBridge's
-extension is additive and scoped to exactly its own third-party integrations.
+this product actually needs — ElevenLabs' API and WebSocket hosts, plus `*.livekit.cloud` and
+`storage.googleapis.com` — rather than a broad allowlist. `*.livekit.cloud` is not a separate
+integration: the vendored `@elevenlabs/client` browser SDK negotiates the voice-agent call's WebRTC
+media over LiveKit Cloud internally as part of ElevenLabs Conversational AI, so those hosts belong
+to the ElevenLabs entry, not to a video-avatar feature (that integration, and the `avatar_id`
+field, were removed from the product — `DECISIONS.md` V-25 — precisely because it had no front end
+to exercise it end to end). Every other product on the shared platform keeps the narrower default
+CSP; VoiceBridge's extension is additive and scoped to exactly its own third-party integrations.

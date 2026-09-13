@@ -6,12 +6,15 @@ take to market across its own customer reach. This page covers the white-label h
 deployment as your own product without forking the repository. See
 [`build-your-own.md`](build-your-own.md) for the extend half.
 
-Rebranding is entirely environment-driven — `BRAND_*` variables read by `readBranding()`
-(`vendor/arag-platform/src/config/branding.ts`) and layered onto the product's own defaults in
-`readVoiceBranding()` (`src/config.ts`). No code changes, no rebuild: set the variables and restart
-(or, on Fly, `fly secrets set` and the machine picks them up on its next deploy). A second
-deployment of the exact same image with different `BRAND_*` values is a real, tested example of
-this — see [Verifying it worked](#verifying-it-worked) below.
+Rebranding needs no code change or rebuild. There are two ways to set it, and they compose: the
+`BRAND_*` variables read by `readBranding()` (`vendor/arag-platform/src/config/branding.ts`) and
+layered onto the product's own defaults in `readVoiceBranding()` (`src/config.ts`) are the
+**deployment default**, picked up at boot (or, on Fly, `fly secrets set` and the next deploy); the
+`branding` group in Settings (`SettingsService`, see [`settings.md`](settings.md#branding)) is the
+**live authority** on top of that default — a change there takes effect on the very next request,
+no restart, and an environment variable stays exactly what a freshly-reset field falls back to. A
+second deployment of the exact same image with different `BRAND_*` values is a real, tested example
+of the environment-only path — see [Verifying it worked](#verifying-it-worked) below.
 
 ## The `BRAND_*` variables
 
@@ -36,7 +39,16 @@ own fallback, used only if a product sets no default, is `productName: "ARAG Pro
 There is no `BRAND_LOGO_PATH` variable — `BRAND_LOGO_URL` is either:
 
 - an absolute URL (any HTTPS logo host you already use), or
-- `/branding/logo.svg` (or any filename), served directly from `DATA_DIR/branding/` — `app.static("/branding", resolve(env.dataDir, "branding"), { cache: "public, max-age=300" })` in `src/server.ts`. Drop a file into that directory on the machine (or into the Fly volume) and point `BRAND_LOGO_URL` at `/branding/<filename>`; no route to upload it exists today, so this is a file-copy operation, not an API call.
+- `/branding/logo.svg` (or any filename), served directly from `DATA_DIR/branding/` — `app.static("/branding", resolve(env.dataDir, "branding"), { cache: "public, max-age=300" })` in `src/server.ts`.
+
+The API-first way to get a file there is `POST /api/v1/admin/settings/logo` (Settings → Branding's
+own upload control): send the image as a multipart field named `file` (SVG, PNG, JPEG, WebP or GIF,
+1 MB max) and it is written to `DATA_DIR/branding/logo.<ext>`, with `branding.logoUrl` pointed at it
+(with a cache-busting `?v=` query string) in the same call — no restart, no file-copy step.
+`DELETE /api/v1/admin/settings/logo` removes it and falls back to the wordmark. Dropping a file into
+`DATA_DIR/branding/` directly (or into the Fly volume) and setting `BRAND_LOGO_URL` by hand still
+works — useful for a build pipeline that already has the file on disk — it is just no longer the
+only way in.
 
 Left unset, the rail shows the official "Progress Agentic RAG" wordmark vendored in the repository:
 `public/brand/arag-logo-alt.svg` on the dark rail and `public/brand/arag-logo.svg` on light

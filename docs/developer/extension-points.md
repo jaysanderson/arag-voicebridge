@@ -120,8 +120,17 @@ own module:
   only; the listen-session API underneath it is not ElevenLabs-specific at all (see
   [`integrations.md`](integrations.md)).
 - `src/services/tts.ts` (`POST /api/v1/speech`) — the opt-in spoken cue in Live.
-- `src/services/voiceAgent.ts` (`GET /api/v1/voice-agent` — the tool definition and router prompt) and `src/services/voices.ts` (voice list) for the voice-agent call drawer.
+- `src/services/voiceAgent.ts` (what the desired agent/tool configuration *is* — the tool schema,
+  the router prompt, `GET /api/v1/voice-agent`) and `src/services/elevenAgent.ts` (reading and
+  writing that configuration against the ElevenLabs Agents REST API — the diff and push behind
+  `GET`/`POST /api/v1/admin/voice-agent[/push]`) together with `src/services/voices.ts` (voice list)
+  for the voice-agent call drawer.
 - `public/vendor/elevenlabs-client.js` (the vendored browser SDK used by the voice-agent call drawer).
+
+A different platform's equivalent of the push/diff half would live in its own module implementing
+the same `getAgent`/`getTool`/`pushAgent` shapes `elevenAgent.ts` exports; nothing in
+`voiceAgent.ts`'s idea of what the agent *should* be is ElevenLabs-specific — it is plain
+`{agentId, tool, greeting, systemPrompt, voiceId}`.
 
 A different platform's realtime STT or browser SDK would live in equivalent new modules; the turn
 pipeline, handoff contract, voice shaping, citations and golden-set gate are all platform-agnostic
@@ -227,8 +236,8 @@ looks like on Knowledge).
 
 Confirm in the workspace: select the prospect, use Knowledge's "ask it something" tester for a
 couple of manual questions (one answerable, one deliberately out of scope to see the handoff fire),
-then **Run golden set** and confirm the gate shows "gate open". If ElevenLabs is configured, set the
-prospect's `agent_id` (see [`integrations.md`](integrations.md)) and smoke-test Live's voice-agent
-call drawer. A second person should be
+then **Run golden set** and confirm the gate shows "gate open". If ElevenLabs is configured, push
+the voice agent from Settings → Integrations (see [`integrations.md`](integrations.md)) and
+smoke-test Live's voice-agent call drawer. A second person should be
 able to repeat steps 1–4 for a new prospect with no code changes — if they can't, the bottleneck is
 the ritual or the abstraction, not the prospect.

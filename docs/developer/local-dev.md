@@ -12,7 +12,8 @@ src/
   routes/          one module per resource (listen, voice, prospects, realtime, quality, jobs, admin)
   services/        domain logic, no HTTP types — pipeline, handoff, voiceShape, safety, citations,
                     brief, listen, registry, clientPool, goldenEval, provision, metrics, seed, models,
-                    voices, scribe, tts, voiceAgent, liveavatar, livekit, ratelimit, voicePrompt
+                    voices, scribe, tts, voiceAgent, elevenAgent, settings, apiKeys, retention,
+                    setup, voicePrompt
 public/            the workspace (static, framework-free) — consumes only /api/v1. One directory per
                     section (conversations/, knowledge/, prospects/, quality/, settings/) each with
                     its own index.html + entry script under app/ (live.js, conversations.js, …);
@@ -21,9 +22,11 @@ admin/             Operator (static) — same shell as public/, hash-routed — 
                    (+ /api/v1/admin)
 vendor/arag-platform/  vendored platform (App, AragClient, Store, JobManager, …) — never edited here
 test/              unit, integration (mock ARAG), contract, e2e (Playwright)
-scripts/           eval.ts, provision.ts, smoke.ts — thin clients over the running server's API
+scripts/           eval.ts, provision.ts, smoke.ts, agent-check.ts — thin clients over the running
+                   server's API (agent-check.ts talks to ElevenLabs directly, opt-in and live)
 config/            prospects.example.json — seeds the registry store on first boot
-data/              DATA_DIR default (gitignored) — prospects.json, turns.json, jobs.json, golden-evals.json
+data/              DATA_DIR default (gitignored) — prospects.json, listen-sessions.json, turns.json,
+                   jobs.json, golden-evals.json, settings.json, api-keys.json
 ```
 
 `src/` has **zero runtime dependencies**. TypeScript is erasable-syntax only (no enums, no
@@ -79,8 +82,9 @@ make e2e        # Playwright, workspace + Operator, PW_DISABLE_TS_ESM=1 so it ru
 
 Test files (`test/*.test.ts`) cover: voice shaping, citation extraction, deterministic handoff,
 safety guards, the full turn pipeline against an injected ARAG stub, the prospect registry
-(validation, CRUD, seeding), the third-party integrations (Scribe/voices/LiveAvatar, `fetch`
-injected so nothing touches the network), LiveKit JWT minting, and two whole-product suites:
+(validation, CRUD, seeding), the settings store and the API key store, the third-party integrations
+(Scribe, voices, the ElevenLabs agent/tool read-write-diff logic, `fetch` injected so nothing
+touches the network), and two whole-product suites:
 `integration.test.ts` (every route, in-process, against the mock ARAG server) and
 `contract.test.ts` (the OpenAPI document lints clean, every registered route appears in the spec,
 and real responses validate against their declared schemas). `test/e2e/*.spec.ts` drives the actual

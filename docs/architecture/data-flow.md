@@ -17,6 +17,8 @@ when this stops being enough.
 | `turns.json` | recent turn log, capped ring (`VOICE_TURN_LOG_LIMIT`, default 500) | `MetricsService.record()` (`src/services/metrics.ts`), called from both the voice-answer route and golden-eval runs | `GET /api/v1/metrics` (aggregated), `GET /api/v1/admin/turns` (raw rows) |
 | `jobs.json` | async job records + their event log | `JobManager` (platform, `vendor/arag-platform/src/store/jobs.ts`) | `GET /api/v1/jobs`, `GET /api/v1/jobs/{id}`, the job-events SSE stream |
 | `golden-evals.json` | golden-eval results, capped at 50 | `GoldenEvalStore.save()` (`src/services/goldenEval.ts`), called when a golden-eval job finishes | `GET /api/v1/golden-evals/{id}`, `GET /api/v1/admin/golden-evals` |
+| `settings.json` | one document (`id: "deployment"`) of stored setting overrides, keyed by group then field | `SettingsService` (`src/services/settings.ts`) on every `PATCH`/`reset` | `GET /api/v1/admin/settings`, and `apply()` on every write into the live `PlatformEnv`/`VoiceConfig` objects (see [`../developer/settings.md`](../developer/settings.md)) |
+| `api-keys.json` | named API keys, with secret, prefix, origin, last-used and revocation | `ApiKeyStore` (`src/services/apiKeys.ts`) — seeded once from `API_KEYS` on first boot, then admin create/rename/revoke | `GET /api/v1/admin/api-keys`; `sync()` rewrites the live `env.apiKeys` array the platform's authenticator reads |
 
 Nothing else is persisted. Beyond the capped ring above, there is no session store for auth
 purposes — the signed, stateless `arag_session`/`arag_admin` cookies (HMAC-signed with
@@ -95,13 +97,20 @@ once exceeded, the **oldest by `createdAt`** are evicted regardless of whether t
 `ended` the next time `ListenService` starts (it cannot be refreshed again honestly once the process
 that was tracking its throttle state is gone).
 
-**Reviewing a session afterwards.** `briefHistory` is not admin-only: `GET /api/v1/listen/sessions`
-and `GET /api/v1/listen/sessions/{id}/export` (which backs the Conversations detail drawer and its
-Markdown export) both include it in the public API, so a workspace user can see how the brief
-evolved version by version without ever touching Operator. `GET /api/v1/admin/listen-sessions`
-returns the equivalent projection for Operator's own Listen sessions view — the same underlying
-record, reached from the operator's own navigation. Neither one replays SSE; both read the stored
-`briefHistory` directly.
+**Reviewing a session afterwards.** `briefHistory` is not admin-only: `GET /api/v1/listen/sessions`,
+`GET /api/v1/listen/sessions/{id}/export` (which backs the Conversations detail drawer and its
+Markdown export) and the dedicated `GET /api/v1/listen/sessions/{id}/brief-history` all include it in
+the public API, so a workspace user can see how the brief evolved version by version without ever
+touching Operator. `GET /api/v1/admin/listen-sessions` returns the equivalent projection for
+Operator's own Listen sessions view — the same underlying record, reached from the operator's own
+navigation. None of these replay SSE; all of them read the stored `briefHistory` directly.
+
+**Deleting a session outright.** `DELETE /api/v1/listen/sessions/{id}` (the public route, used to end
+a call) sets `status: "ended"` and keeps the record — that is the "end and save" path every session
+above takes. `DELETE /api/v1/admin/listen-sessions/{id}` is a different, `auth: "admin"` operation:
+it removes the session's row from `listen-sessions.json` entirely — transcript, brief history and
+citations gone — after telling any open SSE subscriber the session ended. Use it to act on the
+redaction/right-to-delete case a retention window alone does not cover (see below).
 
 ## A voice turn
 
@@ -131,6 +140,11 @@ is not otherwise recorded, replayed or cached. ARAG is stateless per call, so th
 context relevant to this turn was already in the request (`history`, clamped to
 `MAX_HISTORY_TURNS`); VoiceBridge holds no session state across turns beyond what the caller sends
 back each time.
+
+Setting `trace: true` on the request adds one thing to the response — the nine-step `pipeline` array
+`TurnTrace` recorded for this turn (see [`architecture.md`](architecture.md)) — and nothing to what
+is persisted: the trace is built from the same `runTurn()` call and returned inline, never written
+to `turns.json`.
 
 ## A stateless brief call
 
@@ -194,3 +208,37 @@ concept of excluding synthetic traffic).
 disconnects from the SSE stream and reconnects (or polls `GET /api/v1/jobs/{id}` instead) sees the
 same progress; the golden-eval result itself is separately persisted to `golden-evals.json` once
 the job completes, capped at the 50 most recent runs.
+
+## Retention and purge
+
+The ring caps above (`turns.json` at `VOICE_TURN_LOG_LIMIT`, `listen-sessions.json` at 200,
+`golden-evals.json` at 50) bound disk, not *time* — a quiet deployment can hold a call's transcript
+indefinitely. `RetentionService` (`src/services/retention.ts`) puts a clock on the three collections
+that hold conversation content, via three settings in the `retention` group
+(`VOICE_RETENTION_TURN_DAYS`, `VOICE_RETENTION_SESSION_DAYS`, `VOICE_RETENTION_EVAL_DAYS` — see
+[`../developer/settings.md`](../developer/settings.md)): a window of `0` (the default) means "keep
+until the ring evicts it," matching every deployment's behaviour before this existed.
+
+```mermaid
+flowchart LR
+    T["POST /api/v1/admin/purge<br/>{scope}"] --> S{"scope"}
+    S -- "retention" --> W["Apply the three windows:<br/>delete turns/sessions/evals older<br/>than their configured cutoff"]
+    S -- "turns | sessions | evals | all" --> D["Delete that collection<br/>regardless of age — the operator's<br/>danger zone"]
+    AUTO["Hourly timer, only while<br/>VOICE_RETENTION_AUTO_PURGE is on"] --> W
+    W --> LOG["log: retention.purged"]
+    D --> LOG2["log: retention.purge (warn)"]
+```
+
+`applyRetention()` is what a `retention`-scoped purge runs, and is also what the optional hourly
+timer (`RetentionService.start()`, started once at boot, re-reading the `autoPurge` setting on every
+tick so switching it off takes effect with no restart) calls. The other four scopes
+(`turns`/`sessions`/`evals`/`all`) delete an entire collection regardless of age and are always
+logged at `warn`, since that is a destructive, deliberate operator action rather than routine
+housekeeping. Either way the response is a `PurgeResult` — counts removed per collection, the windows
+that were in force, and a timestamp — so an operator can confirm what actually happened rather than
+trusting a 200.
+
+Purging is orthogonal to the hard-delete-one-session route above: `DELETE
+/api/v1/admin/listen-sessions/{id}` removes one specific session regardless of its age or the
+configured windows; `POST /api/v1/admin/purge` acts on a whole collection at once, by age or
+unconditionally.

@@ -41,11 +41,13 @@ of your own, or point your telephony platform at the session API. End the sessio
 and the sources. **Knowledge** says what the prospect is grounded in and runs the golden set.
 
 With real credentials, copy `.env.example` to `.env`, fill in `ARAG_KB_ID`, `ARAG_API_KEY` and
-`ARAG_REGION`, then `make dev` again. Add `ELEVENLABS_API_KEY` to switch on the ElevenLabs stack:
-Scribe v2 Realtime transcribes the Live microphone, Conversational AI becomes the voice channel
-(Settings shows the tool definition and prompt to paste into the dashboard), and the brief can read
-the next suggested line aloud. Without it the sample, typed and webhook paths carry the whole
-product.
+`ARAG_REGION`, then `make dev` again — or set any of this live from Settings instead, since the
+JSON store is the authority and the environment only supplies the defaults (no restart needed). Add
+`ELEVENLABS_API_KEY` to switch on the ElevenLabs stack: Scribe v2 Realtime transcribes the Live
+microphone, Conversational AI becomes the voice channel — Settings diffs this deployment's desired
+agent configuration against ElevenLabs and pushes it with one click, no dashboard visit required —
+and the brief can read the next suggested line aloud. Without it the sample, typed and webhook paths
+carry the whole product.
 
 | Surface | URL | Notes |
 |---|---|---|
@@ -54,7 +56,7 @@ product.
 | Knowledge | `/knowledge/` | The Knowledge Box, the golden set, the text tester |
 | Prospects | `/prospects/` | The registry; editing needs the admin token |
 | Quality | `/quality/` | Latency, handoff rate, citation coverage, the turn log |
-| Settings | `/settings/` | Connection, branding, integrations |
+| Settings | `/settings/` | Connection, branding, limits, retention, API keys, ElevenLabs + agent push |
 | Operator | `/admin/` | The same shell, operator navigation; sign in with `ADMIN_TOKEN` |
 | API reference | `/api/v1/docs` · `/api/v1/swagger` | Generated from `src/openapi.ts` |
 | OpenAPI document | `/api/v1/openapi.json` | Source of truth for validation and contract tests |
@@ -109,9 +111,9 @@ make docker && make fly-validate
 ## Documentation
 
 Start at [`docs/README.md`](docs/README.md): developer (quickstart, API reference, examples,
-extension points, local dev), architecture (diagram, ARAG integration, data flow, deployment,
-security model, scaling, limits), business (overview, when to use, walkthroughs, FAQ) and
-product marketing. Hands-on material is in [`enablement/`](enablement/), and the demo script and
+settings, extension points, local dev), architecture (diagram, ARAG integration, data flow,
+deployment, security model, scaling, limits), business (overview, when to use, walkthroughs, FAQ)
+and product marketing. Hands-on material is in [`enablement/`](enablement/), and the demo script and
 recording live in [`showcase/`](showcase/).
 
 ## Licence

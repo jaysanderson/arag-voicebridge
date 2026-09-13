@@ -6,6 +6,12 @@ VoiceBridge talks to Progress Agentic RAG through the platform's `AragClient`
 the request VoiceBridge sends, the NDJSON stream it reads back, and the two ARAG surfaces
 (`/ask` and stored search configurations) that carry almost the entire product.
 
+A prospect's `kb_id` is optional: `AragClientPool.for()` resolves `p.kb_id || env.arag.kbId`, so a
+prospect with no Knowledge Box of its own answers from the deployment default (Settings →
+Connection, see [`../developer/settings.md`](../developer/settings.md)) rather than failing to
+resolve a client. This is what lets a new prospect answer from the shared default box before anyone
+gives it its own.
+
 ## The `/ask` request for a voice turn
 
 Built by `buildAskRequest()` in `src/services/pipeline.ts`. Two paths, chosen per prospect:

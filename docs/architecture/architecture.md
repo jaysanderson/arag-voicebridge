@@ -28,11 +28,10 @@ flowchart LR
         LISTEN["Listen sessions<br/>services/listen.ts<br/>throttle · transcript · evolving brief"]
         PIPE["Turn pipeline<br/>services/pipeline.ts"]
         REG["Prospect registry<br/>services/registry.ts"]
-        DATA[("DATA_DIR<br/>prospects · listen-sessions · turns · jobs · golden-evals")]
+        DATA[("DATA_DIR<br/>prospects · listen-sessions · turns · jobs · golden-evals ·<br/>settings · api-keys")]
     end
     ARAG[("ARAG Knowledge Box<br/>/ask /find /search_configurations")]
     EL["ElevenLabs<br/>Conversational AI, Scribe, TTS, voices"]
-    LA["LiveAvatar + LiveKit<br/>video avatar — API-only,<br/>no workspace surface calls it"]
 
     TEL -- "POST .../transcript" --> API
     CONSOLE -- "POST .../transcript" --> API
@@ -50,7 +49,6 @@ flowchart LR
     CONSOLE -. "WebRTC (voice agent call)" .-> EL
     CONSOLE -. "WebSocket (Scribe STT)" .-> EL
     API -- "mint token / synthesise speech" --> EL
-    API -. "mint room + start session<br/>(for a custom client)" .-> LA
 ```
 
 Both browser surfaces consume **only** `/api/v1` (Operator additionally uses `/api/v1/admin/*`, and
@@ -120,6 +118,13 @@ handoff decision because citations still get logged even on a handoff. Steps 2 a
 and output safety guards — see [`security-model.md`](security-model.md) for what they do and do not
 catch, and [`../developer/extension-points.md`](../developer/extension-points.md) for where a real
 moderation classifier would replace them.
+
+The nine steps are not just an internal shape — they are observable. `TurnTrace`
+(`src/services/pipeline.ts`) records each step's status (`ok`/`skipped`/`tripped`/`handoff`/`error`)
+and elapsed time as it runs, and a caller that sets `trace: true` on `POST /api/v1/voice-answer` gets
+the recorded steps back on the response's `pipeline` field — an opt-in cost (a live voice agent never
+sets it; the Knowledge "ask it something" tester does) that turns "grounded, cited and governed" from
+a claim into something a stranger can watch happen for a specific question.
 
 `GoldenEval` builds directly on this: `runGoldenEval()` (`src/services/goldenEval.ts`) calls
 `runTurn()` directly with `history: []` for every golden question, so a golden-set pass is a

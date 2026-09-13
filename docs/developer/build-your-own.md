@@ -17,17 +17,21 @@ src/
   server.ts        createProduct(): wires stores, clients, jobs and every route module
   openapi.ts       the OpenAPI 3.1 document — source of truth, written before routes
   types.ts         the public request/response contract + registry shapes (ProspectConfig, ProspectBrand, …)
-  routes/          one module per resource: voice, prospects, listen, realtime, quality, jobs, admin
+  routes/          one module per resource: voice, prospects, listen, realtime, quality, jobs,
+                    settings, admin
   services/        domain logic, no HTTP types — pipeline, handoff, voiceShape, safety, citations,
                     brief, registry, clientPool, goldenEval, provision, metrics, seed, models,
-                    voices, scribe, liveavatar, livekit, voicePrompt
+                    voices, scribe, voiceAgent, elevenAgent, settings, apiKeys, retention, setup,
+                    voicePrompt
 public/            demo console (static, framework-free) — consumes only /api/v1
 admin/             admin panel (static) — consumes only /api/v1 (+ /api/v1/admin)
 vendor/arag-platform/  vendored platform (App, AragClient, Store, JobManager, the UI kit) — never edited here
 test/              unit, integration (mock ARAG), contract, e2e (Playwright)
-scripts/           eval.ts, provision.ts, smoke.ts — thin clients over the running server's API
+scripts/           eval.ts, provision.ts, smoke.ts, agent-check.ts — thin clients over the running
+                    server's API
 config/            prospects.example.json — seeds the registry store on first boot
-data/              DATA_DIR default (gitignored) — prospects.json, turns.json, jobs.json, golden-evals.json
+data/              DATA_DIR default (gitignored) — prospects.json, listen-sessions.json, turns.json,
+                    jobs.json, golden-evals.json, settings.json, api-keys.json
 ```
 
 The full annotated version (with the complete `services/` list and dependency notes) is in
@@ -165,7 +169,8 @@ custom element (see `public/index.html`/`admin/index.html` for a working example
 (`window.aragUI.api()`, `.toast()`, `.sse()`, `.highlightJson()`, `.fmtMs()`, `.fmtBytes()`) instead
 of hand-rolling fetch/formatting logic. The shell fetches and applies branding automatically from
 `GET /api/v1/branding` unless you pass `branding-src="none"` — see
-[`white-label.md#colours-the-ui-kit-sets`](white-label.md#colours-the-ui-kit-sets). If the page
+[`white-label.md#colours-and-identity-two-layers`](white-label.md#colours-and-identity-two-layers).
+If the page
 needs a UI-kit component that doesn't exist yet, build it in the platform repo (it is generic
 infrastructure, per the sync-workflow rule above) and re-sync, rather than inlining one-off markup
 that every product would benefit from.

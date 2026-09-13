@@ -121,20 +121,6 @@ faithful demonstration of the throttle and the evolving-brief mechanics against 
 in mock mode, not evidence that a live Knowledge Box's grounding quality has been checked for a
 given prospect's real content.
 
-## LiveAvatar integration shapes are unverified
-
-`src/services/liveavatar.ts` is complete and unit-tested with an injected `fetch`, but its exact
-request/response field names were written against LiveAvatar's *public documentation*, not
-confirmed against a live, paid LiveAvatar account — the module's own header comment flags this
-explicitly (`⚠️ LIVE-VERIFY`). Endpoint paths are environment-overridable specifically so a
-mismatch can be fixed without touching any other file, but until someone with a LiveAvatar API key
-runs it end to end, treat `POST /api/v1/avatar/sessions` as "built to spec, not yet live-verified"
-rather than "known working" — unlike the ARAG `/ask` integration, whose NDJSON item shapes *were*
-confirmed live during the original build (see [`arag-integration.md`](arag-integration.md)). The
-current workspace has no pane or toggle that calls this route at all — see
-[`../developer/integrations.md`](../developer/integrations.md) — so today it is reachable only by a
-custom client calling the API directly.
-
 ## Single-writer JSON store
 
 Everything in `DATA_DIR` assumes one process writing to it (see
@@ -142,6 +128,15 @@ Everything in `DATA_DIR` assumes one process writing to it (see
 no locking or coordination for multiple machines sharing a volume, and none is needed at the
 shipped scale, but it means the deployment cannot be horizontally scaled without first swapping the
 store (see [`../developer/extension-points.md`](../developer/extension-points.md)).
+
+## Retention windows are checked hourly, not continuously
+
+`RetentionService.start()`'s auto-purge timer (`VOICE_RETENTION_AUTO_PURGE`) fires once an hour, not
+on every write — a session or turn that just crossed its retention window can sit for up to an hour
+past its cutoff before an automatic purge removes it (`POST /api/v1/admin/purge` with `scope:
+"retention"` applies the windows immediately, on demand, if that gap matters for a specific
+request). There is no per-record expiry check on read, so a record past its window is still returned
+normally by any route that would otherwise return it, right up until a purge runs.
 
 ## What is not a limit (things fixed in this rewrite, in case old notes suggest otherwise)
 
@@ -151,4 +146,10 @@ on newer Node versions are both gone — `package.json` requires Node `>=22.18` 
 stripping, no flag) and the codebase is erasable-syntax only throughout (the platform repository's `STANDARDS.md` §10).
 The registry no longer lives in a committed file with real Knowledge Box/agent ids in git,
 `/admin/reload` no longer exists (or needs to), and the API is versioned under `/api/v1` with an
-OpenAPI document, contract tests and RFC 9457 error responses throughout.
+OpenAPI document, contract tests and RFC 9457 error responses throughout. The video-avatar
+integration this page previously flagged as unverified and API-only, with no workspace surface
+calling it, has been removed from the product entirely rather than shipped half-built (`DECISIONS.md`
+V-25) — the route, its two backing services, their environment variables and the prospect field
+naming which face to use are gone, not dormant. See
+[`security-model.md`](security-model.md#vendored-client-and-csp) for the one third-party host that
+integration's departure did *not* remove, and why.

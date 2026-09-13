@@ -18,11 +18,10 @@ corresponding control instead of erroring — `GET /api/v1/integrations` (Settin
 the workspace) reports exactly which capabilities are configured and which are unavailable, for a
 given deployment, without ever exposing a secret.
 
-| Integration | Env vars | Powers | Degrades to when unset |
+| Integration | Env vars (defaults — see [`settings.md`](settings.md) for the live store) | Powers | Degrades to when unset |
 |---|---|---|---|
 | ARAG | `ARAG_KB_ID`, `ARAG_API_KEY`, `ARAG_REGION` (or `ARAG_BASE_URL`), or `ARAG_MOCK=1` | Everything | Boot fails (`assertAragEnv()`) unless `ARAG_MOCK=1` |
-| ElevenLabs | `ELEVENLABS_API_KEY` | Live's microphone (Scribe v2 Realtime STT feeding a session), the voice-agent call drawer (Conversational AI), the optional spoken cue and voice list (text-to-speech) | The listen-session API, the Knowledge "ask it something" tester and the golden-set runner still work fully via the sample/typed conversation; `/api/v1/scribe-token`, `/api/v1/speech`, `/api/v1/voice-agent` and `/api/v1/voices` return 503 |
-| LiveAvatar + LiveKit | `LIVEAVATAR_API_KEY`, `LIVEKIT_URL`, `LIVEKIT_API_KEY`, `LIVEKIT_API_SECRET` (+ ElevenLabs key/secret) | `POST /api/v1/avatar/sessions`, for a custom client | Returns 503; no view in the shipped workspace calls it either way — see the note below |
+| ElevenLabs | `ELEVENLABS_API_KEY` | Live's microphone (Scribe v2 Realtime STT feeding a session), the voice-agent call drawer (Conversational AI, configured from Settings), the optional spoken cue and voice list (text-to-speech) | The listen-session API, the Knowledge "ask it something" tester and the golden-set runner still work fully via the sample/typed conversation; `/api/v1/scribe-token`, `/api/v1/speech`, `/api/v1/voice-agent`, `/api/v1/admin/voice-agent[/push]` and `/api/v1/voices` return 503 |
 
 ## ElevenLabs — the default voice and transcription stack
 
@@ -35,31 +34,62 @@ module and each optional on its own — none of them is required for another:
 - **Text-to-speech** (`src/services/tts.ts`, `POST /api/v1/speech`) — the opt-in toggle in Live that
   reads the brief's next suggested line aloud into the handler's own ear, never into the call.
 
-`GET /api/v1/voice-agent?prospect=<key>` is the single in-product source of truth for wiring the
-agent: it returns the exact custom-server-tool definition and router system prompt to paste into the
-ElevenLabs dashboard, derived from the registry rather than hand-copied from a document — Settings →
-Integrations renders the same response for the selected prospect, and the voice-agent call drawer in
-Live shows a shorter summary of it (agent id, tool method/URL, tool timeout). Both read from the
-prospect's own `agent_id`/`voice_id`, so cloning the setup for another prospect is a registry change,
-not a code change.
+`GET /api/v1/voice-agent?prospect=<key>` is the read-only, non-admin preview of what this prospect's
+agent should look like — the custom-server-tool definition and router system prompt, derived from
+the registry rather than hand-copied from a document. The voice-agent call drawer in Live shows a
+short summary of it (agent id, tool method/URL, tool timeout). But wiring the agent up is no longer
+a copy-paste exercise: `GET /api/v1/admin/voice-agent?prospect=<key>` compares that same desired
+configuration against what ElevenLabs actually has right now (agent found or not, greeting, system
+prompt, tool URL/method/timeout, whether the `X-API-Key` header and the tool link are in place) and
+`POST /api/v1/admin/voice-agent/push` writes it — Settings → Integrations is the UI for this diff-
+and-push flow. Both read from the prospect's own `agent_id`/`tool_id`/`voice_id`, so cloning the
+setup for another prospect is a registry change, not a code change.
 
 ### Conversational AI (the voice-agent call)
 
 This wires an ElevenLabs agent to a deployed VoiceBridge so a caller can **speak** to the knowledge
 base and hear grounded, cited answers. VoiceBridge does the hard part; this is the voice wrapper.
 The agent is a **router + voice persona** — the answer comes from ARAG via VoiceBridge, and the
-agent must speak the tool's `answer` field verbatim (see `GET /api/v1/voice-agent`, or
-[`examples.md`](examples.md#the-elevenlabs-agent-tool-definition), for the exact tool schema and
-system prompt to paste in).
+agent must speak the tool's `answer` field verbatim.
 
 ### Prerequisites
 
-- An ElevenLabs account with Conversational AI / Agents access.
+- An ElevenLabs account with Conversational AI / Agents access, and `ELEVENLABS_API_KEY` set on this
+  deployment (Settings → ElevenLabs, or the environment variable as its default).
 - VoiceBridge deployed somewhere reachable from ElevenLabs' cloud — `localhost` does not work for
-  the voice path, only for Knowledge's "ask it something" tester. The tool's response timeout must exceed
-  `VOICE_TURN_TIMEOUT_MS` (see the table in `.env.example`).
+  the voice path, only for Knowledge's "ask it something" tester. The tool's response timeout
+  (`AGENT_TOOL_TIMEOUT_MS`) must exceed the bridge's own turn budget (`VOICE_TURN_TIMEOUT_MS`) —
+  Settings rejects a change that would break that invariant (see [`settings.md`](settings.md)).
+- At least one active API key (Settings → API keys, or `POST /api/v1/admin/api-keys`) if you want
+  the pushed tool to carry an `X-API-Key` header — recommended once this stops being a controlled
+  demo audience (see [`../architecture/security-model.md`](../architecture/security-model.md)).
 
-### Steps
+### Configure it from Settings (the primary path)
+
+1. Open Settings → Integrations for the prospect and confirm ElevenLabs shows configured (a key is
+   set) and an API key exists to hand to the tool.
+2. The panel calls `GET /api/v1/admin/voice-agent?prospect=<key>` and renders the diff: whether the
+   agent exists yet, and, field by field, what this deployment wants versus what ElevenLabs
+   currently has (`AgentDiffRow[]` — `agent_id`, greeting, system prompt, tool URL/method/timeout,
+   the `X-API-Key` header, and whether the tool is linked to the agent).
+3. Press **Push**. `POST /api/v1/admin/voice-agent/push` writes the tool first (creating one if the
+   prospect has none, otherwise patching it), then the agent (creating one if `agent_id`/
+   `VOICE_DEFAULT_AGENT_ID` is empty, otherwise patching it and linking the tool) — merging into
+   whatever ElevenLabs already has, so turn-taking, ASR and evaluation configuration this product
+   does not own survives the write. The response records the created/updated agent and tool ids
+   back onto the prospect (`agent_id`, `tool_id`, `agent_api_key_id`), so a second push is a patch,
+   not a second create.
+4. Test it: the dashboard's own Test/Talk button, or Live's **voice agent call** drawer, should now
+   get a 2–3 sentence grounded answer to an in-scope question and a handoff to an out-of-scope one.
+
+Cloning for another prospect is the same two steps against a different prospect key — nothing in
+VoiceBridge itself changes (see [`extension-points.md`](extension-points.md) for the full
+per-prospect onboarding ritual).
+
+### If you'd rather configure it by hand
+
+The dashboard remains a valid fallback — useful for a first look at what gets created, or when a
+deployment cannot reach ElevenLabs' API from wherever Settings is being operated:
 
 1. **Create the agent** — Agents (Conversational AI) → Create agent → Blank.
 2. **Agent settings** — a short greeting, the router system prompt from
@@ -68,21 +98,17 @@ system prompt to paste in).
    Flash v2.5** as the TTS model (lowest first-audio latency).
 3. **Add the custom tool** (`voice_answer`) — Tools → Add tool → Webhook/Custom server tool, method
    `POST`, URL `{BRIDGE_URL}/api/v1/voice-answer`, using the request-body schema from
-   [`examples.md`](examples.md).
+   [`examples.md`](examples.md#the-elevenlabs-agent-tool-definition) — every property in that schema
+   needs a `description`, or ElevenLabs rejects the tool (422; see "Notes" below).
 4. **Holding phrase** — if the dashboard exposes a tool-call filler / "message while running"
    field, set a short rotation ("Let me check that.", "One moment — checking the knowledge base.")
    so there is no dead air while VoiceBridge runs the turn; otherwise add a line to the system
    prompt asking the agent to say a brief filler before calling the tool.
-5. **Save, test, copy the agent id** — the dashboard's Test/Talk button should get a 2–3 sentence
-   grounded answer to an in-scope question and a handoff to an out-of-scope one.
-6. **Wire it into the registry** — set the prospect's `agent_id` (and optionally `voice_id`)
-   through `/prospects/` (unlocked with `ADMIN_TOKEN`) or `PUT /api/v1/admin/prospects/{key}` (see
-   [`examples.md`](examples.md#prospect-crud)). Live's **voice agent call** drawer then shows a
-   working "Start call" button for that prospect.
-
-Cloning for another prospect changes exactly the `prospect` constant in the tool body, plus the
-agent's voice/greeting/locale — nothing in VoiceBridge itself changes (see
-[`extension-points.md`](extension-points.md) for the full per-prospect onboarding ritual).
+5. **Save, test, copy the agent id and the tool id.**
+6. **Wire it into the registry** — set the prospect's `agent_id`/`tool_id` (and optionally
+   `voice_id`) through `/prospects/` (unlocked with `ADMIN_TOKEN`) or `PUT /api/v1/admin/prospects/{key}`
+   (see [`examples.md`](examples.md#prospect-crud)). From here, a future push from Settings adopts
+   and patches these ids instead of creating new ones.
 
 ### Notes
 
@@ -95,7 +121,26 @@ agent's voice/greeting/locale — nothing in VoiceBridge itself changes (see
 - The bridge endpoint itself has no agent-specific auth: anyone who can reach it and knows a
   prospect key can call `/api/v1/voice-answer`. See
   [`../architecture/security-model.md`](../architecture/security-model.md) for what that does and
-  does not expose, and set `API_KEYS` if the deployment needs to close that off.
+  does not expose, and mint an API key (Settings → API keys, or `POST /api/v1/admin/api-keys`) if
+  the deployment needs to close that off.
+
+**Three live-API constraints the push (and the manual path) both have to respect** — found by
+`make agent-check`'s throwaway-agent verification against the real ElevenLabs API, not by the unit
+suite, and now each a named regression test as well as a fix:
+
+1. **Every `request_body_schema` property needs a `description`.** ElevenLabs rejects a tool schema
+   with a bare property — including a nested one, like `history[].author` — with a 422. This is why
+   every field in the schema in
+   [`examples.md`](examples.md#the-elevenlabs-agent-tool-definition), nested ones included, carries
+   one.
+2. **A patch must not send both the deprecated inline `tools` array and `tool_ids`.** A `GET` on an
+   existing agent can return both; sending both back on a `PATCH` is refused with a 400 ("Cannot
+   specify both tools and tool IDs"). `pushAgent()` (`src/services/elevenAgent.ts`) speaks `tool_ids`
+   only and drops the inline `tools` copy from what it sends back.
+3. **Deleting a tool a linked agent still references needs `force`.** `DELETE
+   /v1/convai/tools/{id}` 409s ("Tool is still in use") without `?force=true` — the throwaway-agent
+   check deletes the agent first, then the tool, with `force` set, since by then nothing should be
+   referencing it.
 
 ### Scribe v2 Realtime — the default microphone transcription
 
@@ -133,67 +178,3 @@ voice used is `ELEVENLABS_TTS_VOICE_ID` unless the prospect has its own `voice_i
 rate-limited on its own budget (`VOICE_TTS_RATE_RPS`/`VOICE_TTS_RATE_BURST`) because synthesis costs
 per character, and 503s cleanly (toggling the switch back off) when `ELEVENLABS_API_KEY` is unset.
 
-## LiveAvatar (HeyGen) + LiveKit — video avatar, API-only in this build
-
-Adds a live talking video avatar alongside the ElevenLabs voice agent. The integration is fully
-built server-side (`src/services/liveavatar.ts`, `src/services/livekit.ts`,
-`POST /api/v1/avatar/sessions`) and stays dormant until every one of its variables is set — but,
-unlike Scribe, Conversational AI and text-to-speech, this workspace has no pane or toggle that calls
-it: the route exists for a custom client (an agent desktop, a case system) to start an avatar
-session and render it itself. `GET /api/v1/integrations` still reports whether it's configured, for
-that client to check.
-
-```
-Browser ──POST /api/v1/avatar/sessions──▶ VoiceBridge
-                                             │ mints a LiveKit room + two JWTs (node:crypto, HS256 —
-                                             │ no LiveKit server SDK needed)
-                                             │ starts a LiveAvatar LITE session pointed at that room
-                                             ▼
-                                        LiveAvatar worker joins the room, bridges the ElevenLabs
-                                        agent's audio, and publishes the avatar's video
-                                             │
-Browser ◀── joins the LiveKit room, renders the avatar's video, publishes its own mic ──┘
-```
-
-### Prerequisites (all paid, except LiveKit's free tier)
-
-1. A **paid** ElevenLabs plan (the free tier blocks third-party use) with an API key scoped
-   `convai_read`, `user_read`, `voices_read`.
-2. A **HeyGen/LiveAvatar** account, API key, and an `avatar_id` (which face).
-3. A **LiveKit Cloud** project (free tier is fine): its `wss://…livekit.cloud` URL, API key and API
-   secret.
-4. The ElevenLabs agent's audio format set to **PCM 24000 Hz** on both TTS output and user input —
-   LiveAvatar requires it.
-
-### Configure
-
-```bash
-LIVEAVATAR_API_KEY=…
-LIVEAVATAR_API_BASE=https://api.liveavatar.com/v1   # default
-LIVEAVATAR_SECRETS_PATH=/secrets                    # default
-LIVEAVATAR_SESSION_PATH=/sessions                   # default
-LIVEAVATAR_ELEVENLABS_SECRET_ID=…                   # pre-registered, or leave empty to register on first use
-LIVEKIT_URL=wss://your-project.livekit.cloud
-LIVEKIT_API_KEY=…
-LIVEKIT_API_SECRET=…
-ELEVENLABS_API_KEY=…                                # needed if LIVEAVATAR_ELEVENLABS_SECRET_ID is unset
-```
-
-Give the prospect an `avatar_id` (`PUT /api/v1/admin/prospects/{key}` or `/prospects/`'s JSON
-editor). `POST /api/v1/avatar/sessions` then 400s until the prospect also has an `agent_id` — both
-are required. On Fly, set these with `fly secrets set …`, never in `fly.toml`.
-
-### Live-verify note
-
-LiveAvatar's exact request/response field names are behind a paid, gated API. They are correct in
-*structure* per the public docs but isolated entirely inside `src/services/liveavatar.ts` — the
-secrets endpoint is expected to return a `secret_id` (read tolerantly as
-`secret_id`/`id`/`data.secret_id`), and the session endpoint is called with
-`{ mode: "LITE", avatar_id, elevenlabs_agent_config: {secret_id, agent_id},
-custom_livekit_config: {livekit_url, livekit_room, livekit_client_token} }`. Endpoint paths are
-env-overridable (`LIVEAVATAR_SECRETS_PATH`, `LIVEAVATAR_SESSION_PATH`) specifically so that if the
-live API drifts from this structure, only `liveavatar.ts` needs to change. This mirrors how the
-ARAG `/ask` NDJSON item shapes were pinned down against a live Knowledge Box during the original
-build — see [`../architecture/limits.md`](../architecture/limits.md) for the current confidence
-level on this integration (it has not been exercised against a real LiveAvatar account since the
-platform rewrite).

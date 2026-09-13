@@ -103,6 +103,13 @@ are not capped and would need attention (an archival policy, or the database ext
 [`../developer/extension-points.md`](../developer/extension-points.md)) well before prospect count
 or job history became large enough to matter in practice.
 
+`RetentionService` (`src/services/retention.ts`, [`data-flow.md`](data-flow.md)) is a second lever
+on top of the caps above, orthogonal to them: the caps bound a collection by *count*, retention
+bounds it by *age*. A deployment holding onto every turn/session/eval up to its ring's cap, on a
+long enough timeline, still benefits from setting a retention window shorter than "until the ring
+happens to evict it" — the two mechanisms are not a substitute for the database extension point
+below, but they are the cheapest available lever before that swap is needed.
+
 ## What to swap first
 
 In rough order of when each one starts to bite as usage grows past a demo:

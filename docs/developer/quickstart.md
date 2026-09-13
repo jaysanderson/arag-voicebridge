@@ -71,10 +71,13 @@ and the **voice agent call** drawer (ElevenLabs Conversational AI), add:
 ELEVENLABS_API_KEY=<server-side only — never sent to the browser>
 ```
 
-and give the prospect a real `agent_id` in the registry for the voice-agent call specifically. See
-[`integrations.md`](integrations.md) for the full ElevenLabs setup and what each optional
-integration needs — none of it is required for the listen-session API itself, which accepts
-conversation text from any source.
+(or set it live from Settings → ElevenLabs — every setting takes effect on the next request, no
+restart, see [`settings.md`](settings.md)), then wire the voice agent from Settings → Integrations:
+it diffs this prospect's desired configuration against ElevenLabs and a **Push** button creates or
+patches the agent and its custom tool for you — no dashboard visit required. See
+[`integrations.md`](integrations.md) for the full ElevenLabs setup, the manual-dashboard fallback,
+and what each optional integration needs — none of it is required for the listen-session API itself,
+which accepts conversation text from any source.
 
 ## 3. Your first API call: real-time listening
 
@@ -177,13 +180,18 @@ That is the stateless half of the product contract in one call. From here:
 
 - [`examples.md`](examples.md) — real-time listening in full, plus every other public route, with
   copy-pasteable curl/JS.
+- [`settings.md`](settings.md) — the full settings inventory: every configurable value, its
+  environment default, and what it affects.
 - [`../architecture/architecture.md`](../architecture/architecture.md) — the nine-step pipeline
-  and the ADRs behind it.
+  (observable via `trace: true`) and the ADRs behind it.
 - [`../business/walkthrough-demo.md`](../business/walkthrough-demo.md) — a click-by-click tour of
   the workspace, including the golden-set runner.
 - [`extension-points.md`](extension-points.md) — the onboarding ritual for a new prospect, and
   where to slot in a real moderation classifier or another voice platform.
 
-Public routes are open by default; if you set `API_KEYS`, see
-[`../architecture/security-model.md`](../architecture/security-model.md) for the auth modes and
-what the demo UI does automatically (`POST /api/v1/session`).
+Public routes are open by default. Lock them down by minting a key — Settings → API keys, or
+`POST /api/v1/admin/api-keys` (the `API_KEYS` environment variable now only *seeds* this store on
+first boot; create, rename and revoke happen through the API from then on, and take effect on the
+very next request). See [`../architecture/security-model.md`](../architecture/security-model.md)
+for the auth modes, the API key store, and what the demo UI does automatically
+(`POST /api/v1/session`).

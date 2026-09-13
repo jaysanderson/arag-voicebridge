@@ -226,6 +226,28 @@ instead of ARAG ever being called).
 
 `generative_model` is an optional per-request override (what Live's brief-model picker sends).
 
+Set `trace: true` to get the nine-step pipeline back alongside the answer — what the Knowledge "ask
+it something" tester does, and a live voice agent never should (it adds bytes to a call it can't
+use):
+
+```bash
+curl -s $BASE/api/v1/voice-answer \
+  -H 'Content-Type: application/json' \
+  -d '{"prospect": "progress", "question": "What is binder jetting?", "trace": true}' \
+  | jq '.pipeline[] | {step, id, status, ms}'
+```
+
+```json
+{ "step": 1, "id": "resolve", "status": "ok", "ms": 0 }
+{ "step": 2, "id": "guard-input", "status": "ok", "ms": 0 }
+{ "step": 3, "id": "build-request", "status": "ok", "ms": 1 }
+{ "step": 4, "id": "ask", "status": "ok", "ms": 640 }
+{ "step": 5, "id": "citations", "status": "ok", "ms": 640 }
+{ "step": 6, "id": "handoff", "status": "ok", "ms": 641 }
+{ "step": 7, "id": "shape", "status": "ok", "ms": 642 }
+{ "step": 8, "id": "guard-output", "status": "ok", "ms": 642 }
+```
+
 ### `POST /api/v1/brief` — the stateless brief primitive
 
 This is the primitive a listen session calls internally on every refresh (`ListenService.refresh()`
@@ -282,11 +304,23 @@ curl -s $BASE/api/v1/voices   # 503 if ELEVENLABS_API_KEY is not configured
 The prospect projection here is non-secret — no `kb_id`, `region` or `ask_config`. The full record
 (admin only) is at `GET /api/v1/admin/prospects/{key}`.
 
+## First-run setup checklist
+
+```bash
+curl -s $BASE/api/v1/setup | jq '{complete, required_done, required_total}'
+```
+
+What the onboarding wizard renders — each step (Knowledge Box, first prospect, ask it something, API
+key, ElevenLabs, the voice agent, branding) with whether *this* deployment has done it, computed
+fresh from the live configuration on every call rather than a stored "dismissed" flag (see
+`src/services/setup.ts`). Only the first three are required; the rest are optional and the product
+works without them.
+
 ## Realtime bootstrap (credential minting)
 
-Both routes below mint third-party credentials, so both **always** require a session, API key or
-admin token — even when `API_KEYS` is unset (`DECISIONS.md` V-06). The demo console gets a session
-automatically at boot:
+`POST /api/v1/scribe-token` and `POST /api/v1/speech` both spend ElevenLabs quota, so both
+**always** require a session, API key or admin token — even when `API_KEYS` is unset (`DECISIONS.md`
+V-06). The demo console gets a session automatically at boot:
 
 ```bash
 curl -s -c cookies.txt -X POST $BASE/api/v1/session
@@ -302,13 +336,14 @@ v2 realtime WebSocket directly — the server-side ElevenLabs key is never sent 
 [`integrations.md`](integrations.md) for the full Listen-mode wiring.
 
 ```bash
-curl -s -b cookies.txt -X POST $BASE/api/v1/avatar/sessions \
+curl -s -b cookies.txt -X POST $BASE/api/v1/speech \
   -H 'Content-Type: application/json' \
-  -d '{"prospect": "progress"}'
+  -d '{"text": "The Shop System pairs with the PureSinter furnace for sintering."}' \
+  -o brief-line.mp3
 ```
 
-503s until `LIVEAVATAR_API_KEY`, `LIVEKIT_URL`, `LIVEKIT_API_KEY` and `LIVEKIT_API_SECRET` are all
-set, and 400s if the prospect lacks both `agent_id` and `avatar_id`.
+Synthesises server-side (the ElevenLabs key never reaches the browser) and streams audio back for
+the caller's handler to play into their own ear — nothing is ever injected into the call itself.
 
 ## Metrics and golden evaluations
 
@@ -400,6 +435,13 @@ curl -s -b admin.txt -X PUT $BASE/api/v1/admin/prospects/acme -H 'Content-Type: 
 curl -s -b admin.txt -X DELETE $BASE/api/v1/admin/prospects/acme
 ```
 
+`kb_id` is optional — omit it and the prospect answers from the deployment's default Knowledge Box
+(Settings → Connection) instead of its own (`AragClientPool.for()` falls back to
+`env.arag.kbId`; see [`../architecture/arag-integration.md`](../architecture/arag-integration.md)).
+A prospect also carries `tool_id`, `system_prompt` and `agent_api_key_id` once its voice agent has
+been pushed at least once — see [the ElevenLabs agent tool definition](#the-elevenlabs-agent-tool-definition)
+above.
+
 ### Provisioning the stored ARAG search configuration
 
 ```bash
@@ -422,7 +464,109 @@ curl -s -b admin.txt "$BASE/api/v1/admin/golden-evals?prospect=progress&limit=10
 ```
 
 The turn log never carries question text for a turn that tripped a safety guard — it stores the
-guard reason and nothing else (`DECISIONS.md` V-08).
+guard reason and nothing else (`DECISIONS.md` V-08). `GET /api/v1/admin/logs` is paged the same way
+(`level`, `contains`, `limit`, `offset`) and returns a `total` alongside `items`, so a client can
+build a real pager rather than guessing when it has seen everything:
+
+```bash
+curl -s -b admin.txt "$BASE/api/v1/admin/logs?level=warn&limit=50&offset=50" | jq '{total, offset, limit}'
+```
+
+### Settings — the store behind every configurable value
+
+`GET /api/v1/admin/settings` returns every setting in all five groups (branding, connection,
+limits, elevenlabs, retention) with its effective value, where it came from, and — for a secret —
+whether one is set plus a four-character hint instead of the value. See
+[`settings.md`](settings.md) for the full inventory, generated from the same source
+(`SETTINGS_FIELDS` in `src/services/settings.ts`) as this response.
+
+```bash
+curl -s -b admin.txt $BASE/api/v1/admin/settings | jq '.groups[] | {id, title}'
+```
+
+A change takes effect on the very next request — there is no restart, because `apply()` writes the
+effective value into the same `PlatformEnv`/`VoiceConfig` objects every route already holds:
+
+```bash
+curl -s -b admin.txt -X PATCH $BASE/api/v1/admin/settings \
+  -H 'Content-Type: application/json' \
+  -d '{"limits": {"turnTimeoutMs": 5000}, "branding": {"productName": "Acme Assist"}}'
+```
+
+`null` resets one field to its environment default; a patch that would put the turn-budget invariant
+out of order (`turnTimeoutMs` at or above `agentToolTimeoutMs`) is rejected and rolled back rather
+than applied and then broken:
+
+```bash
+curl -s -b admin.txt -X PATCH $BASE/api/v1/admin/settings \
+  -H 'Content-Type: application/json' \
+  -d '{"limits": {"turnTimeoutMs": 9000}}'   # agentToolTimeoutMs defaults to 8000
+```
+
+```json
+{ "type": "https://.../problems/validation-failed", "errors": [{ "path": "/limits", "message": "VOICE_TURN_TIMEOUT_MS (9000) must be < AGENT_TOOL_TIMEOUT_MS (8000) ..." }] }
+```
+
+```bash
+curl -s -b admin.txt -X POST $BASE/api/v1/admin/settings/reset \
+  -H 'Content-Type: application/json' -d '{"group": "branding"}'   # omit "group" to reset everything
+
+curl -s -b admin.txt -X POST $BASE/api/v1/admin/settings/logo -F 'file=@logo.svg'
+curl -s -b admin.txt -X DELETE $BASE/api/v1/admin/settings/logo
+```
+
+### API keys — replacing `API_KEYS`
+
+`API_KEYS` seeds this store on first boot; after that, keys are named, created and revoked here, and
+a change bites on the very next request (`ApiKeyStore.sync()` rewrites the live `env.apiKeys` array
+the platform authenticates against):
+
+```bash
+curl -s -b admin.txt $BASE/api/v1/admin/api-keys | jq '{active, open, items: [.items[] | {id, name, prefix, revoked}]}'
+
+# The secret is in this response and nowhere else, ever again.
+curl -s -b admin.txt -X POST $BASE/api/v1/admin/api-keys \
+  -H 'Content-Type: application/json' -d '{"name": "ElevenLabs agent tool"}'
+```
+
+```json
+{ "key": { "id": "key_a1b2c3d4e5f6a7b8", "name": "ElevenLabs agent tool", "prefix": "vbk_9f2a1c8b", "revoked": false }, "secret": "vbk_9f2a1c8b…" }
+```
+
+```bash
+curl -s -b admin.txt -X PATCH $BASE/api/v1/admin/api-keys/key_a1b2c3d4e5f6a7b8 \
+  -H 'Content-Type: application/json' -d '{"name": "Prospect: acme"}'
+curl -s -b admin.txt -X DELETE $BASE/api/v1/admin/api-keys/key_a1b2c3d4e5f6a7b8   # revoke
+```
+
+Revoking the record keeps it (marked `revoked`, for the audit trail) but removes it from the active
+set immediately. Revoking the **last** active key reopens `auth: "api"` routes — the documented "no
+keys = open" behaviour, not a bug — and `open: true` above is exactly how an operator notices.
+
+### Retention and purge
+
+```bash
+curl -s -b admin.txt $BASE/api/v1/admin/purge -X POST \
+  -H 'Content-Type: application/json' -d '{}'              # apply the configured windows now
+curl -s -b admin.txt $BASE/api/v1/admin/purge -X POST \
+  -H 'Content-Type: application/json' -d '{"scope": "sessions"}'   # delete every session, any age
+```
+
+```json
+{ "turns": 0, "sessions": 3, "evals": 0, "at": "2026-09-13T10:15:00.000Z", "windows": { "turnDays": 0, "sessionDays": 30, "evalDays": 0 } }
+```
+
+`scope: "retention"` (the default) applies the three windows configured in Settings → Retention;
+`turns`/`sessions`/`evals`/`all` delete that whole collection regardless of age — the operator's
+danger zone, always logged at `warn`. To remove one specific conversation rather than a whole class
+of them:
+
+```bash
+curl -s -b admin.txt -X DELETE $BASE/api/v1/admin/listen-sessions/$SESSION
+```
+
+Unlike `DELETE /api/v1/listen/sessions/$SESSION` (which ends the call and keeps the record), this
+removes the session's transcript, brief history and citations from the store entirely.
 
 ## The canonical voice-answer prompt
 
@@ -463,24 +607,35 @@ that omits this prompt (or a model that ignores it) still degrades safely rather
 
 ## The ElevenLabs agent tool definition
 
-To wire a voice agent to VoiceBridge, add one custom server tool. This is the shape the shipped
-demo's agent uses (see [`integrations.md`](integrations.md) for the full dashboard walkthrough):
+**The primary way to wire this up is Settings, not this section.** `GET
+/api/v1/admin/voice-agent?prospect=<key>` diffs this deployment's desired configuration against
+what ElevenLabs actually has, and `POST /api/v1/admin/voice-agent/push` writes it — creating the
+tool and the agent if neither exists yet, patching them if they do (see
+[`integrations.md`](integrations.md#configure-it-from-settings-the-primary-path)). What follows is
+the exact shape that push computes (`src/services/voiceAgent.ts`), useful for understanding what
+gets sent, debugging a diff, or wiring a custom tool by hand if you'd rather not give this
+deployment write access to your ElevenLabs account.
 
 | Field | Value |
 |---|---|
 | Name | `voice_answer` |
+| Description | "Answer the caller's question from the customer's Knowledge Box. Always call this for factual or support questions and speak the `answer` field verbatim." |
 | Method | `POST` |
-| URL | `{BRIDGE_URL}/api/v1/voice-answer` |
-| Response timeout | `AGENT_TOOL_TIMEOUT_MS` (default 8000 ms) — must exceed the bridge's own `VOICE_TURN_TIMEOUT_MS` (default 6000 ms); boot fails otherwise (`assertVoiceConfig()`, `DECISIONS.md` V-11) |
+| URL | `{PUBLIC_URL}/api/v1/voice-answer` |
+| Header | `X-API-Key: <a stored API key's secret>` — omitted only if this deployment has none |
+| Response timeout | `AGENT_TOOL_TIMEOUT_MS` (default 8000 ms) — must exceed the bridge's own `VOICE_TURN_TIMEOUT_MS` (default 6000 ms); Settings rejects a change that would break this, and boot fails the same way otherwise (`assertVoiceConfig()`, `DECISIONS.md` V-11) |
 
-Request body schema (the agent fills these from the live conversation):
+Request body schema (`toolBodySchema()`) — **every property, including the nested ones inside
+`history`, carries a `description`; ElevenLabs rejects a schema with a bare property (422)**, so
+this is not documentation polish:
 
 ```json
 {
   "type": "object",
+  "description": "One caller turn to answer from the Knowledge Box.",
   "required": ["prospect", "question"],
   "properties": {
-    "prospect": { "type": "string", "description": "Always this agent's registry key, e.g. 'progress'." },
+    "prospect": { "type": "string", "description": "Always \"progress\" for this agent." },
     "question": { "type": "string", "description": "The caller's most recent question, transcribed." },
     "conversation_id": { "type": "string", "description": "The conversation id, for correlating logs." },
     "history": {
@@ -488,9 +643,14 @@ Request body schema (the agent fills these from the live conversation):
       "description": "Recent prior turns; the bridge caps it to MAX_HISTORY_TURNS.",
       "items": {
         "type": "object",
+        "description": "One prior turn of the conversation.",
         "properties": {
-          "author": { "type": "string", "enum": ["USER", "NUCLIA"] },
-          "text": { "type": "string" }
+          "author": {
+            "type": "string",
+            "description": "Who spoke: \"USER\" for the caller, \"NUCLIA\" for the assistant.",
+            "enum": ["USER", "NUCLIA"]
+          },
+          "text": { "type": "string", "description": "What was said, as transcribed." }
         }
       }
     }
@@ -498,24 +658,65 @@ Request body schema (the agent fills these from the live conversation):
 }
 ```
 
-Agent-level system prompt (keep it minimal — the agent is a router, not the answer source; the
-*answer* is `voice-answer`'s response):
+Agent-level system prompt (`systemPrompt()` — keep it minimal, the agent is a router, not the answer
+source; the *answer* is `voice_answer`'s response):
 
 ```
 You are the voice for {DISPLAY_NAME} support. You are a router, not the answer source.
 
-For ANY factual or support question, you MUST call the `voice-answer` tool. Do not answer factual
+For ANY factual or support question, you MUST call the `voice_answer` tool. Do not answer factual
 questions from your own knowledge — you don't have the knowledge base, the tool does.
 
 When the tool returns, speak its `answer` field VERBATIM. Do not rephrase, summarise, expand, add
 to it, or read out any URLs. If the tool returns handoff = true, speak the answer (it is the
-handoff line) warmly and, in self-serve mode, hand the caller to a human.
+handoff line) warmly and hand the caller to a human.
 
 Open the conversation with the configured greeting. Keep your own speech minimal — the tool's
 answer is the product.
 ```
 
+A prospect may override this with its own `system_prompt` (`effectiveSystemPrompt()` falls back to
+the generated text above when the prospect has none of its own — `GET /api/v1/admin/voice-agent`'s
+response reports `system_prompt_custom: true` when it is).
+
 Re-summarising the tool's answer defeats the point twice over: it re-introduces a hallucination
 surface the grounded pipeline just closed, and it doubles perceived latency for no benefit. Cloning
 this agent for a second prospect changes exactly one thing in the tool body: the `prospect`
-constant.
+constant — which a push does automatically from the registry key.
+
+This module and this section are meant to stay identical (`src/services/voiceAgent.ts`'s own header
+comment calls this out): if you change the tool schema, the system prompt, or what fields the push
+computes, update both together.
+
+### Comparing and pushing the agent from the API directly
+
+```bash
+curl -s -b admin.txt "$BASE/api/v1/admin/voice-agent?prospect=progress" | jq '{in_sync, reachable, diff}'
+```
+
+```json
+{
+  "in_sync": false,
+  "reachable": false,
+  "diff": [
+    { "field": "agent_id", "label": "Agent id", "local": "", "remote": "not found", "matches": false },
+    { "field": "tool_url", "label": "Tool URL", "local": "https://your-deployment.example.com/api/v1/voice-answer", "remote": "no tool", "matches": false }
+  ]
+}
+```
+
+```bash
+curl -s -b admin.txt -X POST $BASE/api/v1/admin/voice-agent/push \
+  -H 'Content-Type: application/json' \
+  -d '{"prospect": "progress"}' | jq '{created_agent, created_tool, applied, tool_id}'
+```
+
+```json
+{ "created_agent": true, "created_tool": true, "applied": ["tool.created", "agent.created"], "tool_id": "…" }
+```
+
+The push writes the created/updated `agent_id`/`tool_id` back onto the prospect record, so running
+it again is a patch against the same objects, not a second create — see
+[`extension-points.md`](extension-points.md#onboarding-a-new-prospect-end-to-end) for where this
+fits in the onboarding ritual, and `make agent-check` (`scripts/agent-check.ts`) for the opt-in live
+check that exercises exactly this create-then-patch path against a throwaway agent.

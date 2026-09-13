@@ -5,8 +5,9 @@
 `fly.toml` deploys one `shared-cpu-1x` / 512 MB machine in `iad`, with `min_machines_running = 1`
 (a warm machine so the first demo turn of the day is not a cold start) and
 `auto_stop_machines = "suspend"` / `auto_start_machines = true` otherwise. `DATA_DIR=/data` is a
-mounted 1 GB volume (`[[mounts]]`) — this is where `prospects.json`, `turns.json`, `jobs.json` and
-`golden-evals.json` live (see [`data-flow.md`](data-flow.md)). Because the JSON store is a
+mounted 1 GB volume (`[[mounts]]`) — this is where `prospects.json`, `turns.json`, `jobs.json`,
+`golden-evals.json`, `listen-sessions.json`, `settings.json` and `api-keys.json` live (see
+[`data-flow.md`](data-flow.md)). Because the JSON store is a
 single-writer, in-memory-plus-flush design (`vendor/arag-platform/src/store/jsonstore.ts`), this
 topology has a hard limit baked in: **the volume ties the deployment to exactly one machine.**
 Scaling to `min_machines_running > 1` or adding a second region would give each machine its own,
