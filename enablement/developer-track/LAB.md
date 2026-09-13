@@ -1,17 +1,36 @@
 # VoiceBridge developer lab
 
-**Time:** 60–90 minutes, in seven timed sections. **Credentials:** none — every step runs against
-the in-process mock ARAG (`ARAG_MOCK=1`). Every command below was run for real while writing this
-lab; where a response is quoted, it is what the server actually returned.
+**Time:** 85–100 minutes, in eight timed sections — the guided part of a **half-day developer
+track**. **Credentials:** none — every step runs against the in-process mock ARAG (`ARAG_MOCK=1`).
+Every command below was run for real while writing this lab; where a response is quoted, it is what
+the server actually returned.
+
+## The half day at a glance
+
+| | | Time |
+|---|---|---|
+| 1 | This lab, §§0–8 | 85–100 min |
+| | Break | 10 min |
+| 2 | `exercises/` — pick five or six, with `solutions/` alongside | 70 min |
+| 3 | `knowledge-check.md` — 28 questions, answered before the answers are read | 25 min |
+| 4 | Wrap-up: what you'd change first in your own deployment | 10 min |
+| | **Total** | **≈ 3 h 30 m** |
+
+Running every one of the eleven exercises takes about two hours on its own, so a half day means
+choosing: 01–05 are the turn pipeline, 06 is listening, 07–09 are the operator surfaces (API keys
+and the ElevenLabs agent), 10–11 are the review surfaces (brief versions and the API explorer).
+If you only have time for three, take 06, 09 and 10 — they cover the parts of the product that
+exist nowhere else.
 
 The product's hero capability is real-time listening (agent-assist): a session ingests a live
 conversation and streams back an evolving, grounded brief. Section 1 gets the server running;
 section 2 puts you straight into that hero path before anything else, because it's what a customer
 sees first. The turn-pipeline material that used to open this lab still matters — it's now
-sections 3–7.
+sections 3–7. Section 8 walks the workspace you have been driving from the command line all along.
 
 **You need:** Node 22.18+, `bun` (dev tooling only — never `npm`), a checkout of this repo on the
-`mvp` branch, and two terminal panes (three for section 2, briefly, to watch an event stream).
+`mvp` branch, two terminal panes (three for section 2, briefly, to watch an event stream), and a
+browser for section 8.
 
 Work from the repo root (`arag-voice/`) throughout, except where a step says otherwise.
 
@@ -58,7 +77,7 @@ You should see four log lines, in this shape (timestamps and the internal mock p
 {"ts":"...","level":"info","msg":"http.listening","port":<internal>,"host":"127.0.0.1","env":"test"}
 {"ts":"...","level":"warn","msg":"arag.mock","url":"http://127.0.0.1:<internal>/api/v1","documents":8}
 {"ts":"...","level":"info","msg":"registry.seeded","file":".../config/prospects.example.json","prospects":3}
-{"ts":"...","level":"info","msg":"product.started","name":"voicebridge","version":"0.1.0","mock":true,"port":8099,"prospects":3}
+{"ts":"...","level":"info","msg":"product.started","name":"voicebridge","version":"0.2.0","mock":true,"port":8099,"prospects":3}
 ```
 
 Read that middle line again: `startMockArag` boots a second, private HTTP server (the "internal"
@@ -77,7 +96,7 @@ curl -s http://localhost:8099/readyz
 
 ```json
 {"ok":true}
-{"ok":true,"version":"0.1.0","prospects":3,"arag":{"ok":true,"kbId":"00000000-0000-4000-8000-000000000001","baseUrl":"http://127.0.0.1:<internal>/api/v1","resources":8,"generativeModel":"chatgpt-azure-4o","ms":14,"mock":true}}
+{"ok":true,"version":"0.2.0","prospects":3,"arag":{"ok":true,"kbId":"00000000-0000-4000-8000-000000000001","baseUrl":"http://127.0.0.1:<internal>/api/v1","resources":8,"generativeModel":"chatgpt-azure-4o","ms":14,"mock":true}}
 ```
 
 `/readyz` actually calls the first prospect's ARAG client and reports whether it answered —
@@ -324,7 +343,7 @@ just saw:
 | 7 | Deterministic handoff decision | `decideHandoff(result.answerText, retrievalCount)` | No `HANDOFF:` sentinel, non-empty answer, retrieval count > 0 → **not** a handoff |
 | 5 | Shape the answer for voice | `shapeForVoice` | Strip citation markers/URLs/markdown, clamp to 3 sentences |
 | 8 | Output safety guard | `guardOutput` | Passed: no leaked URL, marker or markdown character |
-| 9 | Return + record metrics | `deps.metrics.record(...)` in `src/routes/voice.ts` | The `turn.ok` line, and a row in the turn log (`GET /api/v1/admin/turns`) |
+| 9 | Return + record metrics | `deps.metrics.record(...)` in `src/routes/voice.ts` | The `turn.ok` line, and a row in the turn log (`GET /api/v1/turns`) |
 
 **Why the code order isn't the header's order.** The file comment lists shaping (5) before
 citations (6) before handoff (7), because that's the conceptual pipeline. The actual code computes
@@ -419,7 +438,7 @@ curl -s -X POST http://localhost:8099/api/v1/voice-answer \
 ```
 
 You'll get `"handoff": true` with `"handoff_reason": "sentinel"` or `"no-retrieval"` — try it
-yourself and check the Quality page's turn log or `/api/v1/admin/turns` to see which.
+yourself and check the Quality page's turn log or `/api/v1/turns` to see which.
 
 **Checkpoint:** `GET /api/v1/prospects` (no auth needed — it's the public, non-secret projection)
 lists `atlas` alongside `progress`, `tangerine` and `northwind`.
@@ -516,7 +535,7 @@ Look at the history on the Knowledge page (`http://localhost:8099/knowledge/`, s
 `lab-token`, **Golden runs**) — or:
 
 ```bash
-curl -s -b /tmp/voicebridge-lab-cookies.txt "http://localhost:8099/api/v1/admin/golden-evals?prospect=atlas"
+curl -s -b /tmp/voicebridge-lab-cookies.txt "http://localhost:8099/api/v1/golden-evals?prospect=atlas"
 ```
 
 Both the failing and passing runs are there — the gate keeps history, it doesn't just report a
@@ -549,14 +568,27 @@ runs first and matches the injection pattern before `buildAskRequest` is even ca
 turn log:
 
 ```bash
-curl -s -b /tmp/voicebridge-lab-cookies.txt "http://localhost:8099/api/v1/admin/turns?limit=1"
+curl -s -b /tmp/voicebridge-lab-cookies.txt "http://localhost:8099/api/v1/turns?limit=1"
 ```
 
 ```json
-{"items":[{"id":"...","prospect":"progress","conversation_id":"break-1","total":0,"first_token":0,"retrieve":0,"citations":0,"handoff":true,"guard_trip":true,"reason":"prompt-injection","source":"voice-answer","createdAt":"...","updatedAt":"..."}]}
+{
+  "items": [{"id":"...","prospect":"progress","conversation_id":"break-1","total":0,"first_token":0,"retrieve":0,"citations":0,"handoff":true,"guard_trip":true,"reason":"prompt-injection","source":"voice-answer","createdAt":"...","updatedAt":"..."}],
+  "total": 1,
+  "reasons": [{"reason":"prompt-injection","count":1,"guard":true}]
+}
 ```
 
-Look closely: there is **no `question` field at all** in that record — not a redacted placeholder,
+Two things about the route itself before the record. It is `/api/v1/turns`, not
+`/api/v1/admin/turns` — the admin copies of the turn log and the golden-eval history were removed
+(`DECISIONS.md` V-30) once it was clear they returned a strictly weaker view of data the public
+routes already served, and that an admin token authenticates against those public routes anyway.
+And "public" here does not mean anonymous: try it without the cookie and you get `401` even though
+this deployment has no API key at all — `/api/v1/turns` is one of the routes that always requires a
+session, a key or the admin token. The `reasons` array beside `items` is the facet the Quality page
+counts its handoff reasons from; you get it for free on the same request.
+
+Now look closely at the record: there is **no `question` field at all** in it — not a redacted placeholder,
 the key is simply absent. That's `DECISIONS.md` V-08: "the turn log stores the question text only
 for turns that passed the input guard" — an unsafe input is exactly the text you don't want to
 retain and re-display in an admin panel later. Compare it to a normal turn's record from §3, which
@@ -693,6 +725,38 @@ change.
 
 ---
 
+## 8. The workspace you have been driving (10 min)
+
+Every request in this lab has been a request the product's own front end makes. It is worth ten
+minutes to see where each one surfaces, because the workspace is not a demo page wrapped around
+the API — it is a multi-page application (`DECISIONS.md` V-20) whose every screen is a directory
+under `public/` calling only `/api/v1`, with no privileged access of its own.
+
+Open `http://localhost:8099/` and walk the rail. Each row below names the screen, the calls you
+already made by hand, and the one thing worth noticing when you get there.
+
+| Page | The calls you already made | Worth noticing |
+|---|---|---|
+| **Live** (`/`) | `POST /listen/sessions`, `…/transcript`, `…/events` (§2) | "Play sample conversation" posts a scripted call through the same `/transcript` endpoint, chunk by chunk. The version number beside the brief is `briefVersion`; when a refresh is declined it says "showing the last good brief" rather than blanking (`DECISIONS.md` V-24) |
+| **Conversations** (`/conversations/`) | `GET /listen/sessions`, `…/brief-history` (§2) | Open the ended session from §2. Below the transcript is **Compare two versions** — the brief-history array, rendered field by field. Exercise 10 is this screen from the command line |
+| **Knowledge** (`/knowledge/`) | `POST /voice-answer`, `POST /golden-evals` (§§1, 5) | Ask a question and expand the **pipeline** panel under the answer: the nine steps of §3, with what each one actually did for that turn — and it stops at the guard when a guard trips |
+| **Prospects** (`/prospects/`) | `POST/PUT /admin/prospects` (§§4, 5) | Read-only until you paste `lab-token` into the banner; then the same record you `PUT` by hand is a form across four tabs (Setup, Voice, Golden set, Branding) plus a JSON tab. Editing is an operator act inside the product, not a separate application (`DECISIONS.md` V-22) |
+| **Quality** (`/quality/`) | `GET /metrics`, `GET /turns` (§§3, 6) | Your guard trip from §6 is in the turn log here, with no question text. The handoff-reason breakdown is the `reasons` facet you saw on the JSON |
+| **Settings** (`/settings/`) | — | 43 editable fields in six groups. Nothing here needs a restart (`DECISIONS.md` V-26) — Exercise 8 proves it, Exercise 7 uses the **API keys** group and Exercise 9 the **ElevenLabs** group |
+| **API** (`/api/`) | all of them | Every one of the 58 operations in `/api/v1/openapi.json`, with a try-it form and a copyable curl, generated from the document rather than hand-listed. Exercise 11 |
+| **Operator** (`/admin/`) | `POST /admin/login`, `GET /admin/listen-sessions` (§2) | The same shell, operator navigation: overview, connection, sessions, turns, evals, jobs, logs, branding, security |
+
+One thing to check for yourself, because it is the claim the whole architecture rests on: open your
+browser's network tab on any of these pages and confirm every request goes to `/api/v1/…`. There is
+no private endpoint the UI uses and you cannot. That is why every curl in this lab is exactly what
+the product does.
+
+**Checkpoint:** you can point at the screen that renders each API call you made by hand, and you
+have seen the pipeline stepper and the brief comparison — the two surfaces that explain the product
+to someone who will never run curl.
+
+---
+
 ## Clean up
 
 ```bash
@@ -703,14 +767,27 @@ rm -rf /tmp/voicebridge-lab
 
 ## What's next
 
-- `exercises/` — eight short, independent exercises with a runnable acceptance check each: adding a
-  prospect through the Prospects form (01), writing a golden question (02), tripping the input guard
-  (03), forcing an upstream failure (04), adding a new guard check (05), driving a listening session
-  from a script (06), locking the API down with a named key (07), and changing a setting through the
-  admin API and proving it took effect with no restart (08) — the last one deliberately revisits 04
-  from the other side: same failure mode, no restart required.
-- `knowledge-check.md` — questions to check what stuck, including the listening throttle, the
-  settings store and the API key store.
+- `exercises/` — eleven short, independent exercises with a runnable acceptance check each:
+
+  | | Exercise | Surface |
+  |---|---|---|
+  | 01 | Add a prospect through the Prospects form | registry |
+  | 02 | Write a golden question that fails, then make it pass | golden gate |
+  | 03 | Trip the input guard and read the turn log | safety |
+  | 04 | Force an upstream failure | degradation |
+  | 05 | Add a new guard check | extending the pipeline |
+  | 06 | Drive a listening session from a script | listening |
+  | 07 | Lock the API down with a named key, rotate it, revoke it | API-key store |
+  | 08 | Change a setting and prove it took effect with no restart | settings store |
+  | 09 | Configure and push the ElevenLabs agent against a mock ElevenLabs | voice agent |
+  | 10 | Compare two versions of a brief and say what changed | conversation review |
+  | 11 | Drive the API explorer | the API surface itself |
+
+  08 deliberately revisits 04 from the other side: same failure mode, no restart required. 09
+  builds on the key you minted in 07 — the agent's tool carries it. 10 is the command-line half of
+  the **Compare two versions** panel you saw in §8.
+- `knowledge-check.md` — 28 questions to check what stuck, including the listening throttle, the
+  settings store, the API key store, the ElevenLabs agent push and retention.
 - `../architect-track/WORKSHOP.md` — the same product from a deployment and reliability angle:
   the turn budget, multi-tenant routing, stored configurations, agent-assist at scale, failure
   modes.

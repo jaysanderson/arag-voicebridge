@@ -118,8 +118,100 @@ Content-Type: application/json
 { "dry_run": true }
 
 ### Recent turns (guard-tripped turns have no "question" field at all — see DECISIONS.md V-08)
-GET {{base}}/api/v1/admin/turns?limit=10
+GET {{base}}/api/v1/turns?limit=10
 Authorization: Bearer {{adminToken}}
+
+### --- Listening: a session, its brief, and every version of it (Exercises 6 and 10) ---
+
+### Open a session (rate-limited: VOICE_BRIEF_RATE_RPS applies to opening, not to appending)
+POST {{base}}/api/v1/listen/sessions
+Content-Type: application/json
+
+{ "prospect": "progress" }
+
+### Append a transcript chunk — replace {id} with the session id from above
+POST {{base}}/api/v1/listen/sessions/{id}/transcript
+Content-Type: application/json
+
+{ "chunks": [ { "speaker": "caller", "text": "We machine stainless steel manifolds and the sintering furnace route looks interesting" } ] }
+
+### Ask for a refresh now, rather than waiting for the throttle's deferred timer
+POST {{base}}/api/v1/listen/sessions/{id}/refresh
+Content-Type: application/json
+
+{}
+
+### Every version of this conversation's brief, with per-version timestamps and latency
+GET {{base}}/api/v1/listen/sessions/{id}/brief-history
+
+### End the session (the brief, citations and stats are kept for review)
+DELETE {{base}}/api/v1/listen/sessions/{id}
+
+### --- Settings: the store is the authority, the environment is only the default (Exercise 8) ---
+
+### Every setting, with its effective value, where it came from, and its range
+GET {{base}}/api/v1/admin/settings
+Authorization: Bearer {{adminToken}}
+
+### Patch two of them. No restart. `null` clears an override back to the environment/default.
+PATCH {{base}}/api/v1/admin/settings
+Authorization: Bearer {{adminToken}}
+Content-Type: application/json
+
+{ "limits": { "rateLimitRps": 0.2, "rateLimitBurst": 1 } }
+
+### The cross-field invariant: legal number, illegal next to agentToolTimeoutMs -> 400 + rollback
+PATCH {{base}}/api/v1/admin/settings
+Authorization: Bearer {{adminToken}}
+Content-Type: application/json
+
+{ "limits": { "turnTimeoutMs": 9000 } }
+
+### --- API keys: the store, not the API_KEYS variable (Exercise 7) ---
+
+### Mint one. `secret` is returned exactly once, in this response.
+POST {{base}}/api/v1/admin/api-keys
+Authorization: Bearer {{adminToken}}
+Content-Type: application/json
+
+{ "name": "Telephony bridge" }
+
+### List them. `open` says plainly whether any key is active; revoked keys stay listed.
+GET {{base}}/api/v1/admin/api-keys
+Authorization: Bearer {{adminToken}}
+
+### Revoke one — live on the very next request. Replace {id} with the key's id, not its secret.
+DELETE {{base}}/api/v1/admin/api-keys/{id}
+Authorization: Bearer {{adminToken}}
+
+### --- The ElevenLabs agent (Exercise 9; point ELEVENLABS_API_BASE at starter/mock-elevenlabs.ts) ---
+
+### What this deployment wants, what ElevenLabs has, and the difference
+GET {{base}}/api/v1/admin/voice-agent?prospect=progress
+Authorization: Bearer {{adminToken}}
+
+### Write the difference: the custom server tool first, then the agent. Merges, never replaces.
+POST {{base}}/api/v1/admin/voice-agent/push
+Authorization: Bearer {{adminToken}}
+Content-Type: application/json
+
+{ "prospect": "progress" }
+
+### --- Retention and purge ---
+
+### Apply the configured windows (deletes nothing for a window left at 0)
+POST {{base}}/api/v1/admin/purge
+Authorization: Bearer {{adminToken}}
+Content-Type: application/json
+
+{ "scope": "retention" }
+
+### Danger zone: delete every turn regardless of age, immediately, with no undo
+POST {{base}}/api/v1/admin/purge
+Authorization: Bearer {{adminToken}}
+Content-Type: application/json
+
+{ "scope": "turns" }
 
 ### Clean up — delete the practice prospect
 DELETE {{base}}/api/v1/admin/prospects/atlas

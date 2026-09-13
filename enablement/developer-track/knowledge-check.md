@@ -1,7 +1,7 @@
 # Developer track — knowledge check
 
-23 questions. Try answering before you look — several are judgement calls, not recall, and the
-"why" matters more than the label.
+29 questions, about 25 minutes. Try answering before you look — several are judgement calls, not
+recall, and the "why" matters more than the label.
 
 ---
 
@@ -193,7 +193,7 @@ sense?
 
 **16. Judgement.** `ListenService`'s refresh throttle (a rolling word window, a 1.5 s minimum gap,
 a Jaccard similarity skip, a 4-word minimum) lives entirely inside `src/services/listen.ts`, on the
-server. Why not let each client — the web console, a softphone plugin, a telephony bridge —
+server. Why not let each client — the Live page, a softphone plugin, a telephony bridge —
 implement its own pacing before it posts to `/transcript`?
 
 > A client-side throttle has to be reimplemented, correctly, by every integration, and a naive or
@@ -306,3 +306,107 @@ those, and why?
 > suite, which only exercises an in-process fake with no opinion on what the real API accepts. The
 > tool is created or patched first specifically so its id exists before the agent write that links
 > to it needs one.
+
+---
+
+**24. Judgement.** `DECISIONS.md` V-23 says ElevenLabs is the **default implementation of every
+voice surface**, while the API contract stays vendor-neutral. Point at exactly where the vendor
+appears and where it does not. What would a customer running Deepgram for transcription and Twilio
+for telephony have to replace, and what would they keep unchanged?
+
+> Vendor-neutral: the listen session API. `POST /api/v1/listen/sessions`, `…/transcript`,
+> `…/events`, `…/refresh` describe transcript chunks and an evolving brief and have no idea what
+> produced the words — a realtime STT stream, a telephony webhook, a meeting bot or someone typing
+> are the same thing to it. So is `POST /api/v1/voice-answer`: one question in, one speakable
+> answer out, callable by any platform that can make an HTTP tool call. Vendor-specific: three
+> *implementations* that sit beside that contract — `POST /api/v1/scribe-token`
+> (`src/services/scribe.ts`) mints an ElevenLabs Scribe credential for the Live microphone,
+> `POST /api/v1/speech` (`src/services/tts.ts`) reads a suggested line aloud, and
+> `GET/POST /api/v1/admin/voice-agent[/push]` (`elevenAgent.ts` + `voiceAgent.ts`) configures an
+> ElevenLabs Conversational AI agent. The Deepgram/Twilio customer replaces all three — they post
+> Deepgram's transcript into the same `/transcript` endpoint and point a Twilio function at
+> `/voice-answer` — and keeps the sessions, the throttle, the brief, the pipeline, the guards, the
+> golden set and every screen in the workspace. Nothing in `src/services/listen.ts`,
+> `pipeline.ts`, `brief.ts` or `safety.ts` mentions a vendor. What they lose is the *default*: with
+> no `ELEVENLABS_API_KEY`, the microphone, the agent push and the spoken cue report themselves
+> unavailable rather than pretending, and the sample/typed/webhook paths carry the product.
+
+---
+
+**25. Recall.** What does `GET /api/v1/listen/sessions/{id}/brief-history` return, and why does the
+Conversations screen's comparison panel not default to comparing the last two versions?
+
+> Every version of the brief this session produced, up to `MAX_BRIEF_HISTORY` (20), each snapshot
+> carrying its `version`, the `at` instant and the `latencyMs` of that specific refresh — appended
+> only when a refresh produced a *usable* brief, so a failed or empty refresh leaves no entry
+> (`isUsableBrief` in `src/services/listen.ts`). The panel walks backwards from the latest version
+> until it finds one that actually differs and opens on that pair, because a deferred refresh very
+> often fires on a window nothing new has entered, which makes the last two versions identical
+> surprisingly often. A comparison screen whose default answer is "0 fields moved" is a form, not
+> an answer.
+
+---
+
+**26. Judgement.** A partner's integration polls `GET /api/v1/admin/turns` and
+`GET /api/v1/admin/golden-evals`. Both were deleted (`DECISIONS.md` V-30). What is the migration,
+and what does the integration gain rather than lose?
+
+> Move to the public `GET /api/v1/turns` and `GET /api/v1/golden-evals` — the same records, and the
+> admin token the integration already sends authenticates against them, because `enforceAuth` lets
+> any admin-authenticated caller through an `auth: "api"` route. The distinction the admin copies
+> appeared to draw ("an operator can read this without an API key") never actually existed. The
+> gain is real: the public routes carry the filtering, paging and `reasons`/`total` facets the
+> admin copies never had. "Public" still is not "anonymous" here — these routes require a
+> same-origin session, an API key or the admin token even on a deployment with no key active.
+
+---
+
+**27. Judgement.** A customer states a 30-day retention policy and points at Settings → Retention as
+evidence it is met. The fields exist and read `0`. What is actually true, and what are the **two
+separate** things they have to change?
+
+> Nothing is being deleted on a clock. A window of `0` means "keep until the underlying ring or
+> store evicts it" — the historical behaviour, and the shipped default precisely so an upgrade does
+> not silently start deleting a customer's demo data (`src/services/retention.ts`). So: (1) set
+> `turnDays`, `sessionDays` and `evalDays` to 30 — three fields, not one, because a turn record, a
+> listen session's full transcript and a golden-run result are three different retention footprints;
+> and (2) switch `autoPurge` on, because with it off the configured windows are only applied when
+> an operator presses **Purge now** or calls `POST /api/v1/admin/purge`. A contractual retention
+> limit that depends on someone remembering to click a button is not enforced. Setting the windows
+> without the timer is the failure mode that looks most like compliance and is not.
+
+---
+
+**28. Recall.** `POST /api/v1/admin/purge` takes a `scope`. What is the difference between
+`"retention"` and `"turns"`, and how would you tell from the response which one you just ran?
+
+> `"retention"` (the default) applies the configured windows: it deletes only records older than
+> `turnDays`/`sessionDays`/`evalDays`, and deletes nothing at all for any window left at `0`.
+> `"turns"` — like `"sessions"`, `"evals"` and `"all"` — deletes **everything in that store
+> regardless of age**, immediately, with no undo. The response is the same shape either way
+> (`{turns, sessions, evals, at, windows}`), so the first tell is the arithmetic: a `retention` run
+> on a deployment whose turns are all minutes old returns `turns: 0` while reporting
+> `windows.turnDays: 30`; a `turns` run on the same deployment returns `turns: 31` with the same
+> `windows`. The second tell is the log: a scoped purge always writes `retention.purge` at `warn`
+> with the `actor` and the `scope`, while applying the windows writes `retention.purged` at `info`
+> and only when something was actually deleted. Only one of the two is recoverable by waiting.
+
+---
+
+**29. Judgement.** An operator raises the global rate limit in Settings, the screen confirms the
+new value, and the limiter keeps rejecting at the old one. `SettingsService.apply()` definitely
+wrote into the live config. Where was the bug, and what does the fix say about adding a setting of
+your own?
+
+> The platform reads `route.opts.rateLimit` on **every** request, but the product handed it a
+> plain `{ rps, burst }` object captured once at boot — so the store, the screen and the API all
+> agreed on a number the limiter was never going to read again. `DECISIONS.md` V-31's fix is
+> `liveBudget()` in `src/services/budget.ts`, which returns an object of **getters**; the
+> platform's spread evaluates them per request, so the limiter reads the current value. Two others
+> were wrong the same way in the same pass — the turn-log ring cap (fixed by creating the
+> collection uncapped and enforcing the current size in `record()`, since leaving the collection's
+> own cap at the boot value would have made raising the setting work downwards only) and the
+> deployment's `ARAG_GENERATIVE_MODEL`/`ARAG_RERANKER` defaults. The lesson for a new setting:
+> adding a row to the table makes it *editable*, not *effective*. The test is whether the code that
+> consumes the value re-reads it, and V-31 states the standard plainly — a setting that cannot take
+> effect without a restart is a bug, not a caveat.

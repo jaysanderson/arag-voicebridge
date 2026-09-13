@@ -27,6 +27,7 @@
     "test/**/*.ts",
     "showcase/**/*.ts",
     "scripts/**/*.ts",
+    "enablement/**/*.ts",
     "playwright.config.ts",
     "vendor/arag-platform/src/**/*.ts"
   ],

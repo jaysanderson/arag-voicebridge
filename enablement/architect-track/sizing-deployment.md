@@ -143,19 +143,31 @@ API.
 
 ## Volume sizing for `DATA_DIR`
 
-`DATA_DIR` holds five JSON files, each a full in-memory `Collection` flushed as one file
+`DATA_DIR` holds seven JSON files, each a full in-memory `Collection` flushed as one file
 (`vendor/arag-platform/src/store/jsonstore.ts` — see `WORKSHOP.md` §4 for the single-writer
-implication):
+implication), plus a `branding/` directory holding at most one uploaded logo:
 
 | Collection | Cap | Practical size |
 |---|---|---|
 | `prospects.json` | Unbounded (grows with number of prospects) | Trivially small — tens of prospects is still kilobytes |
-| `turns.json` | `VOICE_TURN_LOG_LIMIT`, default 500 | Small, bounded — oldest evicted on overflow |
+| `settings.json` | Unbounded, but at most one row per settings field (43 today) | Trivially small — only *overridden* fields are stored; a field left at its environment or shipped default is absent |
+| `api-keys.json` | Unbounded (revoked keys are kept, never deleted — that is the audit trail) | Trivially small, but monotonically growing: one record per key ever minted |
+| `turns.json` | `VOICE_TURN_LOG_LIMIT` / Settings → Limits → `turnLogLimit`, default 500 | Small, bounded — oldest evicted on overflow, at the **current** setting rather than the boot value (`DECISIONS.md` V-31) |
 | `golden-evals.json` | 50 (hardcoded in `GoldenEvalStore`, not env-configurable) | Small, bounded |
 | `jobs.json` | 500 (platform default) | Small, bounded |
-| `listen-sessions.json` | 200 (`ListenService`'s `cap`, hardcoded — not wired to an env var) | The largest of the five by far — see below |
+| `listen-sessions.json` | 200 (`ListenService`'s `cap`, hardcoded — not wired to an env var) | The largest of the seven by far — see below |
 
-`listen-sessions.json` is a different order of magnitude from the other four, because a listen
+`DATA_DIR/branding/logo.<ext>` is at most 1 MB and at most one file (an upload of a different type
+deletes the previous one). It is served under its own `default-src 'none'; sandbox` policy rather
+than the product's ordinary CSP — see `DECISIONS.md` V-29/V-32/V-33 for why a file a partner
+uploads is not allowed to inherit this origin's permissions.
+
+Two of these are **time-bounded as well as ring-bounded** once retention is configured
+(`turns.json`, `listen-sessions.json`, `golden-evals.json` — `WORKSHOP.md` §9), and none of them
+are by default: a window of `0` means "keep until the ring evicts it". A sizing estimate that
+assumes records age out is assuming something the shipped configuration does not do.
+
+`listen-sessions.json` is a different order of magnitude from the other six, because a listen
 session carries far more state than a turn record: up to 400 transcript entries
 (`MAX_TRANSCRIPT_ENTRIES`), up to 20 full brief snapshots (`MAX_BRIEF_HISTORY`, each a complete
 structured object — `topic`, `summary`, `key_points`, `suggested_answers` and the rest), and up to
@@ -163,7 +175,7 @@ structured object — `topic`, `summary`, `key_points`, `suggested_answers` and 
 transcript entries) lands somewhere in the 10–40 KB range; a long call pushed toward the caps
 (400 entries, 20 brief versions) can reach several hundred KB. At the 200-session cap, that puts
 `listen-sessions.json` anywhere from a couple of MB to tens of MB in the worst case — still well
-inside the shipped 1 GB volume, but no longer "trivially small" the way the other four collections
+inside the shipped 1 GB volume, but no longer "trivially small" the way the other six collections
 are, and **the write-amplification cost matters more here than the storage cost**: every single
 append and every single refresh completion triggers a debounced rewrite of the *entire file*
 (§ "Per listen-session refresh" above put a live session's steady-state refresh rate at roughly
@@ -173,7 +185,7 @@ oldest record regardless of live/ended status); this section is only about the s
 write-frequency consequence of that same cap.
 
 The shipped `fly.toml` provisions a 1 GB volume for all of this, which is orders of magnitude more
-than the four small collections will ever use, and still generous headroom for
+than the six small collections will ever use, and still generous headroom for
 `listen-sessions.json` at its worst case — the volume size is not the constraint a customer running
 agent-assist at real volume needs to worry about; the write-amplification above, and the
 200-session cap's eviction behaviour (`WORKSHOP.md` §7), are. **The one dial that matters for the
@@ -186,6 +198,14 @@ customer asks for 50,000, revisit whether the JSON-file store is still the right
 collection before just raising the number (see `WORKSHOP.md` §4's note that this store is
 explicitly meant to be swappable at GA) — the same caution applies even more strongly to raising
 the listen-sessions cap, given its already-larger per-record size.
+
+**Retention is the other dial, and it is not a sizing dial.** Setting `sessionDays` bounds how long
+a transcript is kept, which bounds the file in *time* rather than in *records* — useful for a
+privacy commitment, and close to useless for capacity planning, because the binding constraint at
+volume is the 200-record cap, which will evict long before a 30-day window does. Size against the
+cap; set the windows for the policy (`WORKSHOP.md` §9). And note the one place they interact badly:
+with `autoPurge` on, the purge timer rewrites every affected collection in full, so a deployment
+with a large `listen-sessions.json` pays that as one bursty flush rather than an incremental one.
 
 ---
 

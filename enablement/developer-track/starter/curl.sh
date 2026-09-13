@@ -85,7 +85,7 @@ case "$step" in
 
   turns)
     # See what actually landed in the turn log — guard-tripped turns have no "question" field.
-    curl -s -b "$COOKIES" "$BASE/api/v1/admin/turns?limit=5"
+    curl -s -b "$COOKIES" "$BASE/api/v1/turns?limit=5"
     echo
     ;;
 

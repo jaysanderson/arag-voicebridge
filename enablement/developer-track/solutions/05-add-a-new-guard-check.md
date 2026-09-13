@@ -31,12 +31,13 @@ make test
 ```
 
 ```
-ℹ tests 162
-ℹ pass 162
+ℹ tests 339
+ℹ suites 75
+ℹ pass 339
 ℹ fail 0
 ```
 
-(162, two more than whatever `make test` reports on a clean checkout before this change — the
+(339, two more than the 337 `make test` reports on a clean checkout at the time of writing — the
 absolute number will differ depending on what else has landed since; what matters is `fail 0` and
 exactly two more passing tests.)
 
@@ -48,7 +49,7 @@ curl -s -X POST http://localhost:8099/api/v1/voice-answer -H 'content-type: appl
 ```
 
 ```json
-{"answer":"I can only help with support questions about this service. Let me get a team member for anything else.","citations":[],"handoff":true,"latency_ms":{"retrieve":0,"first_token":0,"total":1},"handoff_reason":"unsafe-request"}
+{"answer":"I can only help with support questions about this service. Let me get a team member for anything else.","citations":[],"handoff":true,"latency_ms":{"retrieve":0,"first_token":0,"total":0},"handoff_reason":"unsafe-request"}
 ```
 
 ```bash
@@ -57,7 +58,7 @@ curl -s -X POST http://localhost:8099/api/v1/voice-answer -H 'content-type: appl
 ```
 
 ```json
-{"answer":"Let me hand you over to a specialist who can help with that.","citations":[],"handoff":true,"latency_ms":{"retrieve":14,"first_token":14,"total":17},"handoff_reason":"sentinel"}
+{"answer":"Let me hand you over to a specialist who can help with that.","citations":[],"handoff":true,"latency_ms":{"retrieve":11,"first_token":11,"total":13},"handoff_reason":"sentinel"}
 ```
 
 Both hand off — but for entirely different reasons. The first never reached ARAG (`reason:

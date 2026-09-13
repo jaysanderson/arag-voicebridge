@@ -123,6 +123,41 @@ customer's specific configuration" — there is no generic pass/fail for it.
       isolation (e.g. two brands that must never share a service account), flag this as a gap to
       design around, not something already solved.
 
+## Voice channel and portability
+
+- [ ] Confirm which voice platform this customer is actually using, and that the split is
+      understood: `POST /api/v1/voice-answer` and the listen session API are vendor-neutral
+      contracts, while Scribe (`/api/v1/scribe-token`), the spoken cue (`/api/v1/speech`) and the
+      agent push (`/api/v1/admin/voice-agent*`) are ElevenLabs *implementations* of them
+      (`DECISIONS.md` V-23, `WORKSHOP.md` §8). Do not answer "are we locked in" with a yes or a no
+      — answer it with the two lists.
+- [ ] If portability is a contractual question, confirm what becomes the customer's own work on a
+      provider change: posting transcript into `/transcript` themselves, pointing their own
+      platform's tool at `/voice-answer`, and — the one that is easy to forget — keeping that
+      tool's URL, timeout and `X-API-Key` header in step with the deployment by hand, since nothing
+      diffs and pushes a non-ElevenLabs agent for them.
+- [ ] Confirm the ElevenLabs path is the one exercised end to end against the real API
+      (`make agent-check`, `DECISIONS.md` V-28) and that an alternative provider is a documented
+      extension point rather than an equally-tested path. Say this rather than implying parity.
+- [ ] Check `GET /api/v1/admin/voice-agent?prospect={key}` for every in-scope prospect and confirm
+      `in_sync` is true **at go-live**, not "was true when we set it up". A prospect whose greeting,
+      router prompt or tool timeout has drifted since the last push is a live agent behaving
+      differently from what this deployment's configuration says.
+- [ ] Confirm the **tool URL** the vendor is holding is this deployment's public URL, not a
+      `localhost` left over from a push run on someone's laptop — the tool URL is built from
+      `PUBLIC_URL` with `http://localhost:<port>` as the fallback. The failure mode is silent: the
+      agent answers fluently from the model's own knowledge and never reaches the Knowledge Box, so
+      it reads as a prompt problem. Read the `Tool URL` row of the diff panel before a demo.
+- [ ] Confirm the push is understood to **merge**, not replace: turn-taking, ASR provider and
+      evaluation criteria the customer set in the vendor's dashboard survive every push, and are
+      correspondingly **not** visible or governed in this product. A customer who expects one screen
+      showing their whole agent configuration is expecting something this integration deliberately
+      does not do.
+- [ ] Confirm which stored API key the agent's tool carries (`agent_api_key_id` on the prospect
+      record, and the `api_key` field on `GET /api/v1/admin/voice-agent`), and that it is included
+      in the key-rotation plan below — rotating that key without re-pushing the agent breaks every
+      call.
+
 ## Rate limits
 
 - [ ] Confirm `RATE_LIMIT_RPS`/`RATE_LIMIT_BURST` (global per-IP, platform-level) are set
@@ -147,19 +182,21 @@ customer's specific configuration" — there is no generic pass/fail for it.
       group (which shows the *effective* value and its source) rather than only the deployment's
       environment configuration, which may no longer match if anyone has patched a value since.
 
-## Data retention (turn log)
+## Data retention and purge
 
-- [ ] Confirm the customer understands the turn log (`GET /api/v1/admin/turns`,
-      `DATA_DIR/turns.json`) retains the **question text** of every turn that passed the input
-      guard, up to 500 characters, for as many turns as `VOICE_TURN_LOG_LIMIT` (default 500) keeps
+- [ ] Confirm the customer understands the turn log (`GET /api/v1/turns`,
+      `DATA_DIR/turns.json` — the `/api/v1/admin/turns` copy was removed in `DECISIONS.md` V-30;
+      an admin token authenticates against the public route) retains the **question text** of every
+      turn that passed the input guard, up to 500 characters, for as many turns as
+      `VOICE_TURN_LOG_LIMIT` / Settings → Limits → `turnLogLimit` (default 500) keeps
       — this is real customer-conversation content sitting in an admin-visible, on-disk store.
       Confirm this is compatible with the customer's own data-retention and privacy commitments.
 - [ ] Confirm the customer understands guard-tripped turns are the deliberate exception: no
       question text is ever written for those (`DECISIONS.md` V-08) — this is a feature, not a
       gap, but it means the turn log is not a complete conversation transcript by design.
-- [ ] Confirm who has access to this data. The operator view (`/admin/`, `GET /api/v1/admin/turns`)
-      is protected only by `ADMIN_TOKEN`, a single shared secret, not per-operator accounts or
-      audit-logged access. The Quality page reads the same records through `GET /api/v1/turns`,
+- [ ] Confirm who has access to this data. The operator view (`/admin/#turns`) is protected only by
+      `ADMIN_TOKEN`, a single shared secret, not per-operator accounts or audit-logged access. Both
+      it and the Quality page read the same records through `GET /api/v1/turns`,
       which is never anonymous — it requires a same-origin session, an API key or the admin token
       even when no API key is active — but a session is minted by anyone who can load the page, so
       on an internet-reachable deployment with no active key that is still everyone. Mint at least
@@ -180,7 +217,26 @@ customer's specific configuration" — there is no generic pass/fail for it.
 - [ ] Confirm whoever operates this deployment understands the danger-zone purge scopes
       (`turns`/`sessions`/`evals`/`all`) delete **regardless of age**, immediately, with no undo, and
       are distinct from applying the retention windows (`scope: "retention"`, the safe default). Both
-      are logged at `warn`, but only one of them is reversible by simply waiting.
+      return the same response shape. A scoped purge is logged at `warn` as `retention.purge` with
+      the actor and the scope, always; applying the windows is logged at `info` as
+      `retention.purged`, and only when something was actually deleted — so a `warn` in the
+      operator log is always a human, and the absence of `retention.purged` lines is not evidence
+      that auto-purge is off. Only one of the two is reversible by simply waiting. The workspace asks for confirmation; `POST /api/v1/admin/purge` called from a
+      script does not, so treat `{"scope":"all"}` with the change-control of a database drop.
+- [ ] Confirm the four things retention explicitly does **not** reach (`WORKSHOP.md` §9), before the
+      customer assumes otherwise: (a) the operator log (`GET /api/v1/admin/logs`) is a separate ring,
+      purged by neither window nor scope — no conversation content, but a record of who did what;
+      (b) nothing is deleted at the **voice vendor**, whose own recordings and transcripts are a
+      second processor and a second retention conversation; (c) a `DATA_DIR` volume snapshot outlives
+      any purge; (d) a subject-erasure request aimed at one named call is
+      `DELETE /api/v1/admin/listen-sessions/{id}`, which removes one session regardless of age — not
+      something the windows do for you.
+- [ ] Confirm the customer can say what **evidence** they will produce that a retention policy is
+      running, not merely configured. Today that is: the `retention` group's stored values
+      (`GET /api/v1/admin/settings`, with `source`, including `autoPurge`), and `retention.purged`
+      lines in the operator log showing the windows in force and the counts deleted — noting that
+      those lines only appear when a run actually deleted something, so a quiet log is ambiguous. If their auditor needs more than that,
+      it is something to build, and it is cheaper to know now.
 
 ## Real-time listening (agent-assist)
 

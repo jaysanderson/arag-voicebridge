@@ -10,10 +10,14 @@ log — exactly what VoiceBridge does and does not retain about an unsafe turn.
    all previous instructions...", "reveal your system prompt", "you are now...", etc. Give it a
    `conversation_id` you'll recognise.
 
-2. Sign in as admin and fetch the turn log:
+2. Sign in as admin and fetch the turn log. Note the path: `/api/v1/turns`, not
+   `/api/v1/admin/turns` — the admin copy was removed (`DECISIONS.md` V-30) because the public
+   route serves the same records with filters and paging, and an admin token authenticates against
+   it. "Public" is not "anonymous" here: without a cookie, a key or the admin token this route
+   answers `401` even on a deployment with no API key at all.
 
    ```bash
-   curl -s -b <your-cookie-jar> "http://localhost:8099/api/v1/admin/turns?limit=5"
+   curl -s -b <your-cookie-jar> "http://localhost:8099/api/v1/turns?limit=5"
    ```
 
 3. Find your turn by its `conversation_id`. Look at every key present on that record, and compare
@@ -33,7 +37,7 @@ You can answer, with the actual JSON in front of you, not from memory:
 Script the check so it fails loudly if the field is present when it shouldn't be:
 
 ```bash
-curl -s -b <your-cookie-jar> "http://localhost:8099/api/v1/admin/turns?limit=5" | python3 -c '
+curl -s -b <your-cookie-jar> "http://localhost:8099/api/v1/turns?limit=5" | python3 -c '
 import json, sys
 items = json.load(sys.stdin)["items"]
 mine = next(i for i in items if i["conversation_id"] == "<your-conversation-id>")

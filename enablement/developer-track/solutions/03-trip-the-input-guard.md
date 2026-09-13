@@ -10,7 +10,7 @@ curl -s -X POST http://localhost:8099/api/v1/voice-answer -H 'content-type: appl
 ```
 
 ```bash
-curl -s -b cookies.txt "http://localhost:8099/api/v1/admin/turns?limit=5" | python3 -c '
+curl -s -b cookies.txt "http://localhost:8099/api/v1/turns?limit=5" | python3 -c '
 import json, sys
 items = json.load(sys.stdin)["items"]
 mine = next(i for i in items if i["conversation_id"] == "ex3-check")
@@ -23,6 +23,11 @@ print("PASS:", mine["reason"], "no question text retained")
 ```
 PASS: prompt-injection no question text retained
 ```
+
+Alongside `items`, the response carries `total` and a `reasons` facet — `[{"reason":
+"prompt-injection","count":1,"guard":true}]` after the call above — which is what the Quality
+page's handoff-reason breakdown is counted from. It comes on the same request; there is no second
+endpoint for it.
 
 The full record for a guard-tripped turn looks like this — note there is no `question` key at
 all, not an empty string, not a `"[redacted]"` placeholder:

@@ -1,10 +1,31 @@
 # VoiceBridge architecture workshop
 
-**Time:** 105 minutes. **Audience:** architects and technical leads evaluating or deploying
-VoiceBridge for a customer. The product's hero capability is real-time listening (agent-assist,
-§7) — sections 1–6 cover the turn-based foundation it's built on, so read them in order even if
-agent-assist is what the customer actually asked about. Bring a running mock instance if you want
-to check any claim below — every command is copy-pasteable and needs no credentials:
+**Time:** 155 minutes, in ten sections — the guided part of a **half-day architect track**.
+**Audience:** architects and technical leads evaluating or deploying VoiceBridge for a customer.
+
+## The half day at a glance
+
+| | | Time |
+|---|---|---|
+| 1 | This workshop, §§1–6 — the turn-based foundation | 80 min |
+| | Break | 10 min |
+| 2 | This workshop, §§7–9 — agent-assist, vendor neutrality, retention | 50 min |
+| 3 | This workshop, §10 — the deployment design exercise, in groups | 25 min |
+| 4 | `sizing-deployment.md` — read alongside §10, referenced throughout | (within §10) |
+| 5 | `design-review-checklist.md` — walk it against a real customer | 30 min |
+| 6 | `knowledge-check.md` — 20 questions | 25 min |
+| | **Total** | **≈ 3 h 40 m** |
+
+If you have to cut, cut §5 (stored search configurations) for a customer with no retrieval
+governance requirement, and run §§8 and 9 in full — those are the two the customer's own
+procurement and security people will ask about whether or not the architect has read them.
+
+The product's hero capability is real-time listening (agent-assist, §7) — sections 1–6 cover the
+turn-based foundation it's built on, so read them in order even if agent-assist is what the
+customer actually asked about. §8 answers the question every partner asks second ("are we locked
+into ElevenLabs?") and §9 the one every procurement team asks first ("what do you keep, and for how
+long?"). Bring a running mock instance if you want to check any claim below — every command is
+copy-pasteable and needs no credentials:
 
 ```bash
 mkdir -p /tmp/voicebridge-workshop
@@ -17,10 +38,11 @@ ARAG_MOCK=1 ADMIN_TOKEN=workshop-token DATA_DIR=/tmp/voicebridge-workshop PORT=8
 
 VoiceBridge is one endpoint: `POST /api/v1/voice-answer`. Any voice platform whose agent can call
 an HTTP tool can use it — the shipped product defaults to ElevenLabs Conversational AI as its voice
-channel (`GET /api/v1/voice-agent` returns the exact custom-server-tool definition and router prompt
-to paste into the dashboard), but the underlying contract is vendor-neutral. A voice agent calls the
-bridge as a **custom tool**, mid-conversation, and
-the platform enforces its own timeout on that tool call. That single fact — a hard, externally
+channel, configured and pushed from the product's own Settings screen rather than pasted into a
+vendor dashboard (`GET /api/v1/admin/voice-agent` diffs what this deployment wants against what
+ElevenLabs has; `POST …/push` writes the difference — §8 is about what that means for portability).
+The underlying contract stays vendor-neutral. A voice agent calls the bridge as a **custom tool**,
+mid-conversation, and the platform enforces its own timeout on that tool call. That single fact — a hard, externally
 enforced deadline, on every single turn, with a human waiting on the other end of a phone call —
 is what makes voice a fundamentally different integration problem from a chat UI, where a slow
 response is merely a delayed answer instead of a broken conversation. Everything in this workshop
@@ -308,11 +330,15 @@ discussion above, which keeps only up to 500 characters of one question per turn
 injection/out-of-scope patterns as any other input, but it does not redact anything — a real
 customer's full conversation, verbatim, is what gets stored. And unlike the admin-only turn log,
 `GET /api/v1/listen/sessions/{id}` and `GET /api/v1/listen/sessions` are both `auth: "api"`
-(public) routes: if `API_KEYS` is unset, **anyone who can reach the host can read any session's
-full transcript and brief by id, and list recent sessions across every prospect on the
-deployment**, with no notion of "which agent owns this call." Treat "who may read a session" as
-its own line item in a go-live review, separate from the turn-log question it superficially
-resembles.
+(public) routes: with **no active API key in the store**, anyone who can reach the host can read
+any session's full transcript and brief by id, and list recent sessions across every prospect on
+the deployment, with no notion of "which agent owns this call." Note where that state now lives:
+`API_KEYS` is only a first-boot seed, and the authority is `ApiKeyStore`
+(`DATA_DIR/api-keys.json`, `DECISIONS.md` V-27), so the question to ask in a review is not "is the
+variable set" but `GET /api/v1/admin/api-keys` → `open`. Revoking the last key reopens the API
+rather than locking anyone out — deliberate, so a deployment cannot lock out its own owner, and
+`open: true` is how an operator is meant to notice. Treat "who may read a session" as its own line
+item in a go-live review, separate from the turn-log question it superficially resembles.
 
 **Discussion prompt:** a customer wants a supervisor view that shows all agents' live briefs on
 one screen, refreshed continuously. Using the two limits above, what is the actual ceiling on how
@@ -321,7 +347,172 @@ limit do you expect to bite first — request concurrency, or the 200-session ca
 
 ---
 
-## 8. Exercise — design the deployment (10 min)
+## 8. The vendor-neutral contract and its ElevenLabs default (20 min)
+
+This is the second question every partner asks, usually in the form "so we're locked into
+ElevenLabs?" The honest answer has two halves, and an architect has to be able to draw the line
+between them on a whiteboard.
+
+`DECISIONS.md` V-23 states the position: **ElevenLabs is the default implementation of every voice
+surface, and the API contract stays vendor-neutral.** That was a deliberate reversal of an earlier
+posture ("bring your own transcription") which was true of the API and invisible in the product —
+with a key present, the shipped experience still looked unfinished. Naming a default is what a
+partner evaluates; keeping the transport-agnostic session API is what they build on.
+
+**Where the vendor is not.** Two contracts, both of which describe *conversation*, not *telephony*:
+
+| | Shape | Knows about the vendor |
+|---|---|---|
+| `POST /api/v1/voice-answer` | one question in, one speakable answer + citations + `handoff_reason` out, inside a hard deadline | No. Any platform that can make an HTTP tool call can use it |
+| `POST /api/v1/listen/sessions` + `…/transcript` + `…/events` + `…/refresh` | a long-lived session that ingests transcript chunks from anywhere and streams an evolving brief | No. A chunk is `{speaker, text, final}` — it does not care whether a human typed it, an STT stream produced it, or a telephony webhook posted it |
+
+Everything that makes this product what it is sits behind those two contracts and mentions no
+vendor at all: `pipeline.ts` (the nine-step turn), `handoff.ts` (the sentinel and the
+retrieval-count backstop), `safety.ts` (the guards), `listen.ts` (the throttle, the session,
+the brief history), `brief.ts`, `goldenEval.ts`, and every screen in the workspace.
+
+**Where the vendor is.** Three *implementations* that sit beside the contract, each one optional
+and each one reporting itself unavailable rather than pretending when `ELEVENLABS_API_KEY` is
+absent:
+
+| Surface | Route | Service | What a replacement has to do |
+|---|---|---|---|
+| Live's microphone | `POST /api/v1/scribe-token` | `scribe.ts` | Mint a short-lived credential for *your* realtime STT in the browser, or push transcript server-side and skip the microphone path entirely |
+| The spoken cue | `POST /api/v1/speech` | `tts.ts` | Any TTS. Opt-in, never in the call path |
+| The voice channel | `GET/POST /api/v1/admin/voice-agent[/push]` | `voiceAgent.ts` (pure) + `elevenAgent.ts` (network) | Configure your own platform's agent to call `/api/v1/voice-answer` as a tool, with the same timeout and an `X-API-Key` header |
+
+Read that third row carefully, because it is where the design decision worth teaching is. The
+product deliberately splits *deciding what the agent should be* (`voiceAgent.ts` — pure, testable,
+renderable in the UI with no network) from *reading and writing it at the vendor*
+(`elevenAgent.ts`). A second provider is a second `elevenAgent.ts`, not a rewrite: the desired
+configuration — router prompt, greeting, tool URL, tool timeout, the header carrying this
+deployment's API key, the request body schema — is already vendor-shaped-but-not-vendor-specific.
+
+**The concrete migration, for a customer running Deepgram and Twilio.** They post Deepgram's
+transcript into `/transcript` themselves and never call `/scribe-token`; they point a Twilio
+function at `/voice-answer` and never call the agent push. They keep the sessions, the throttle,
+the evolving brief and its history, the pipeline, both guards, the citations, the golden set, the
+turn log, Quality, Conversations and every other screen. What they lose is the part Settings
+automates: nobody diffs and pushes their Twilio function for them, so keeping the tool URL, the
+timeout and the key in step with the deployment becomes their runbook rather than a button.
+
+**What the default actually buys, and what it costs.** It buys a partner a working voice call from
+Settings without opening a vendor dashboard — the diff panel and one **Push** (developer track,
+Exercise 9). It costs the usual price of any default: it is the path that is tested end to end
+(`make agent-check` runs the real API against a throwaway agent — V-28), so an alternative provider
+is a supported extension point rather than an equally-exercised path. Say that plainly in a design
+review rather than claiming provider parity.
+
+**Two things to check before promising portability:**
+
+- **The tool URL comes from `PUBLIC_URL`**, falling back to `http://localhost:<port>`. A deployment
+  whose agent was pushed from a laptop stores a `localhost` URL at the vendor; the agent then looks
+  perfectly healthy and never reaches the Knowledge Box. The symptom reads like a prompt problem
+  and is not.
+- **The push merges, it does not replace.** Turn-taking, ASR choice and evaluation criteria a
+  customer set by hand survive every push (`agentPatchBody` sends only the fields this product
+  owns). That is what makes "push again after editing the prompt" safe to do mid-engagement — and
+  it is also the reason the product cannot *report* on settings it does not own. A customer who
+  wants one screen showing their whole agent configuration is asking for something this integration
+  deliberately does not do.
+
+**Discussion prompt:** a customer's procurement team wants a written statement that they can leave
+ElevenLabs within a quarter. Using the two tables above, what exactly would you commit to in
+writing, what would you scope as their work rather than the product's, and which single sentence
+about `make agent-check` keeps that commitment honest?
+
+---
+
+## 9. Retention and purge (15 min)
+
+Everything this product records is conversation data about real people, and the stores are
+**ring-capped, not time-bounded** — which bounds disk and says nothing whatever about how long a
+transcript sits there. A quiet deployment can hold a real customer's verbatim call for a year
+inside the shipped defaults. Retention puts a clock on it, purge lets an operator act now, and both
+are settings rather than code (`src/services/retention.ts`).
+
+**What is retained, and how much of it:**
+
+| Store | What it holds | Bound today |
+|---|---|---|
+| `turns.json` | up to 500 characters of the question text per turn, and never for a guard-tripped turn (V-08) | `turnLogLimit`, default 500 records |
+| `listen-sessions.json` | the **entire transcript verbatim** (up to 400 entries), up to 20 full brief snapshots, accumulated citations | 200 sessions, oldest-by-`createdAt` evicted regardless of live/ended (§7) |
+| `golden-evals.json` | golden-run results, no conversation content | 50 records |
+
+The middle row is the one that belongs in a privacy sign-off on its own line. `screenTranscript`
+(`safety.ts`) screens chunks for the same injection and out-of-scope patterns as any other input,
+but it does **not** redact or truncate anything — it is a safety guard, not a DLP pass. A listen
+session is a materially larger footprint of real conversation content than the turn log, and a
+customer who has signed off the turn-log answer has not thereby signed off this one.
+
+**Three settings and a switch.** `Settings → Retention` carries `turnDays`, `sessionDays`,
+`evalDays` and `autoPurge`. Every window defaults to `0`, which means *keep until the ring evicts
+it* — the historical behaviour, defaulted that way deliberately so upgrading a deployment does not
+silently begin deleting its demo data. Two consequences to state explicitly in a review:
+
+- **Three windows, not one.** A turn record, a full call transcript and a golden-run result are
+  three different footprints with three different justifications. A customer who sets only
+  `turnDays` has bounded the least sensitive of the three.
+- **`autoPurge` is the difference between a policy and a button.** Off (the default), the windows
+  are applied only when an operator presses **Purge now** or something calls
+  `POST /api/v1/admin/purge`. A contractual retention limit that depends on someone remembering is
+  not enforced. This is the single most common way this screen is misread: the fields exist, they
+  are filled in, and nothing is happening.
+
+**Purge has two quite different modes behind one endpoint.**
+
+```bash
+POST /api/v1/admin/purge  {"scope": "retention"}   # the safe default: apply the windows
+POST /api/v1/admin/purge  {"scope": "turns"|"sessions"|"evals"|"all"}   # delete everything, any age
+```
+
+`"retention"` deletes only what is older than the configured window, and nothing at all for a
+window left at `0`. The other four delete the whole store **regardless of age**, immediately, with
+no undo. The responses are the same shape, so the first tell is the arithmetic — on a deployment
+whose turns are all minutes old, `{"scope":"retention"}` returns `turns: 0` while reporting
+`windows.turnDays: 30`, and `{"scope":"turns"}` returns `turns: 31` with the identical `windows`
+block.
+
+The second tell is the log, and the asymmetry there is deliberate. A scoped purge always writes
+`retention.purge` at **`warn`**, with the actor and the scope, whether or not it deleted anything —
+an operator reaching for the danger zone is an event. Applying the windows writes
+`retention.purged` at **`info`**, and *only when something was actually deleted* — a policy running
+quietly on a timer should not fill the log with "deleted nothing again". Two consequences for a
+review: a `warn` in the operator log is always a human, and the **absence** of `retention.purged`
+lines is not evidence that auto-purge is off.
+
+When `autoPurge` is on, `RetentionService.start()` runs the windows hourly, re-reading the setting
+on every tick — so switching it off takes effect without a restart, like every other setting. The
+timer is `unref`'d, so it never keeps a container or a test process alive.
+
+**What retention does *not* cover.** Four things worth naming before a customer assumes otherwise:
+
+1. **The operator log** (`GET /api/v1/admin/logs`) is a separate ring and is not purged by scope or
+   by window. It holds no conversation content, but it does hold who did what and when.
+2. **Deleting a session removes the record, not the fact.** `DELETE /api/v1/listen/sessions/{id}`
+   ends a session; `DELETE /api/v1/admin/listen-sessions/{id}` removes one specific session
+   regardless of age — the surgical tool for a subject-access or erasure request aimed at one call.
+3. **Nothing is deleted at the vendor.** If ElevenLabs (or any other platform) is transcribing and
+   holding its own recordings, that is a second retention conversation with a second data
+   processor, and VoiceBridge's windows have no reach into it.
+4. **A `DATA_DIR` backup outlives a purge.** The Fly volume is the store; whatever snapshots it is
+   where the purged transcripts still are.
+
+**Where this bites in an incident.** `rewiresClients`, rollback and retention interact in a way
+worth rehearsing: rolling back the *container* does not roll back `DATA_DIR`, so a bad retention
+setting is corrected with a `PATCH`, and a purge that ran is not corrected at all. Treat
+`{"scope":"all"}` as a destructive operation with the same change-control as a database drop,
+because that is what it is — the workspace asks for confirmation, and `POST /api/v1/admin/purge`
+called from a script does not.
+
+**Discussion prompt:** a customer in a regulated industry wants 30-day retention on conversation
+data, proof it is enforced, and the ability to erase one named caller's session on request. Which
+settings do you set, what evidence can this product actually produce that the policy is running,
+what would you have to build, and which of the four gaps above do you raise before they ask?
+
+---
+
+## 10. Exercise — design the deployment (25 min)
 
 A customer wants VoiceBridge for two brands: `northwind` (health insurance member support, must
 answer from a Knowledge Box governed by a language filter and a `members` security group) and
@@ -348,5 +539,18 @@ answer:
    `40`/`60` request-concurrency budget `voice-answer` turns need? Which limit would you expect a
    real customer to hit first, and what would you tell them to change?
 
+6. `northwind`'s legal team will not sign until they have a written answer on exit: what happens
+   to this deployment if they drop ElevenLabs in eighteen months. Using §8, write the two-column
+   version — what they keep, and what becomes their own work — and name the one thing the product
+   automates today that they would have to turn into a runbook.
+7. `northwind` is health insurance member support, so every live call's transcript is retained
+   verbatim in `listen-sessions.json`. Using §9, set the three retention windows and the switch you
+   would actually recommend, say what evidence the deployment can produce that the policy is
+   running, and identify which of §9's four gaps you would raise with their DPO **before** they
+   ask.
+
 There is no single correct answer to (2) — the point of the exercise is to notice the constraint
-exists at all before a customer's growth surfaces it as an incident.
+exists at all before a customer's growth surfaces it as an incident. (6) and (7) do have wrong
+answers: "we are not locked in" without naming what becomes their work, and "retention is
+configurable" without `autoPurge`, are both the kind of thing that gets repeated back to you in a
+meeting six months later.

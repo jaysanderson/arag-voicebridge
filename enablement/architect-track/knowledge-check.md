@@ -1,6 +1,6 @@
 # Architect track — knowledge check
 
-16 questions with answers.
+20 questions with answers, about 25 minutes.
 
 ---
 
@@ -208,6 +208,72 @@ key becomes active?
 > authenticator reads with no restart in between. The workspace UI itself keeps working: it
 > authenticates with a same-origin `arag_session` cookie minted at boot, which is accepted
 > independently of the `X-API-Key` check (see the auth-modes table in `security-model.md`) — so an
-> operator watching the console sees nothing change, while any *external* caller lacking the key
+> operator watching the workspace sees nothing change, while any *external* caller lacking the key
 > starts getting locked out that instant. Warn whoever owns those external integrations before doing
 > this on a live deployment, not after.
+
+---
+
+**17. Judgement.** A partner asks: "is this locked into ElevenLabs?" Give the answer you would put
+in writing, in two lists, and name the one sentence that keeps it honest.
+
+> **Vendor-neutral:** `POST /api/v1/voice-answer` (one question, one speakable grounded answer,
+> callable by any platform that can make an HTTP tool call) and the whole listen session API
+> (`/listen/sessions`, `…/transcript`, `…/events`, `…/refresh` — a chunk is `{speaker, text,
+> final}` and the server neither knows nor cares what produced it). Behind those contracts, nothing
+> mentions a vendor: the nine-step pipeline, the handoff sentinel and retrieval backstop, both
+> safety guards, the throttle, the brief and its history, the golden set, and every workspace
+> screen. **ElevenLabs-specific:** three implementations beside the contract — `/scribe-token` for
+> Live's microphone, `/speech` for the spoken cue, and `/admin/voice-agent[/push]` for configuring
+> the Conversational AI agent. A customer moving to another stack posts their own transcript into
+> `/transcript`, points their own platform's tool at `/voice-answer`, and keeps everything else —
+> what they lose is the automation, not the capability: nobody diffs and pushes a non-ElevenLabs
+> agent for them, so keeping the tool's URL, timeout and API-key header in step becomes their
+> runbook. The honest sentence: **the ElevenLabs path is the one verified end to end against the
+> real API (`make agent-check`, `DECISIONS.md` V-28); another provider is a supported extension
+> point, not an equally-exercised path.** Say that instead of implying parity.
+
+---
+
+**18. Judgement.** A customer's agent answers callers fluently and confidently, cites nothing, and
+the turn log on the deployment shows **no turns at all**. `/readyz` is green and the golden set
+passes. What would you check first, and why is this failure mode specific to the agent-push design?
+
+> The `Tool URL` row of `GET /api/v1/admin/voice-agent?prospect={key}`. The tool URL is built from
+> `PUBLIC_URL`, falling back to `http://localhost:<port>` — so an agent pushed from someone's laptop
+> has a `localhost` URL stored at the vendor, which resolves on *their* servers to their own
+> machine. The tool call fails, the agent falls back to the model's own knowledge, and every
+> symptom points at the prompt: the bridge is healthy, the Knowledge Box is healthy, the golden set
+> passes (it calls the pipeline directly, never through the vendor), and the turn log is empty
+> because no turn ever arrived. It is specific to this design because the product writes a URL into
+> a third party's configuration and cannot observe whether the third party ever calls it — the diff
+> panel showing the full URL is the mitigation, and reading it before a demo is the discipline.
+
+---
+
+**19. Judgement.** Settings → Retention shows `turnDays`, `sessionDays` and `evalDays` all set to
+30, and the customer presents this as a 30-day retention policy. Is it? What are they missing, and
+which store would you be most concerned about?
+
+> Not yet. `autoPurge` is off by default, and with it off the windows are applied only when an
+> operator presses **Purge now** or something calls `POST /api/v1/admin/purge` — a policy that
+> depends on someone remembering is not enforced. This is the most common way the screen is
+> misread: the fields are filled in and nothing is happening. The store to be most concerned about
+> is `listen-sessions.json`: a turn record keeps at most 500 characters of one question (and none
+> at all for a guard-tripped turn), whereas a listen session keeps the **entire transcript
+> verbatim** — up to 400 entries — plus up to 20 full brief snapshots. `screenTranscript` screens
+> chunks for injection patterns but redacts nothing; it is a safety guard, not a DLP pass. A
+> customer who signed off the turn-log answer has not thereby signed off this one.
+
+---
+
+**20. Recall.** Name four things a configured retention window does **not** delete.
+
+> (1) The operator log (`GET /api/v1/admin/logs`) — a separate ring, purged by neither window nor
+> scope; it holds no conversation content but does hold who did what and when. (2) Anything at the
+> voice vendor: ElevenLabs' (or any platform's) own recordings and transcripts are a second data
+> processor with a second retention conversation, and VoiceBridge's windows have no reach into it.
+> (3) Whatever a `DATA_DIR` volume snapshot or backup holds — the Fly volume is the store, and a
+> backup of it outlives any purge. (4) One specific call on request: an erasure request aimed at a
+> named session is `DELETE /api/v1/admin/listen-sessions/{id}`, which removes that session
+> regardless of its age; the windows are a clock, not a search.
