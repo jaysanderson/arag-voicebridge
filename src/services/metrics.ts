@@ -47,14 +47,31 @@ function round2(x: number): number {
 
 export class MetricsService {
   private readonly col: Collection<TurnRecord>;
+  /** Reads the ring size each time, so the setting is not frozen at boot. */
+  private readonly cap: () => number;
 
-  constructor(deps: { store: Store; cap?: number }) {
-    this.col = deps.store.collection<TurnRecord>("turns", { cap: deps.cap ?? 500 });
+  constructor(deps: { store: Store; cap?: number | (() => number) }) {
+    const read = typeof deps.cap === "function" ? deps.cap : () => (deps.cap as number) ?? 500;
+    this.cap = read;
+    // The store's own cap is set once at construction and cannot be changed afterwards, so it is
+    // given the boot-time value as a floor and `record()` enforces the current one. Without this
+    // the "turn log size" setting would be editable and inert.
+    this.col = deps.store.collection<TurnRecord>("turns", { cap: Math.max(read(), 1) });
   }
 
   /** Record one turn. The caller must already have redacted unsafe question text. */
   record(turn: TurnInput): TurnRecord {
-    return this.col.put({ id: randomUUID(), ...turn });
+    const record = this.col.put({ id: randomUUID(), ...turn });
+    this.trim();
+    return record;
+  }
+
+  /** Drop the oldest turns until the ring is no longer over the *current* limit. */
+  private trim(): void {
+    const cap = Math.max(1, Math.round(this.cap()));
+    if (this.col.size <= cap) return;
+    const oldestFirst = this.col.list({ sort: (a, b) => a.createdAt.localeCompare(b.createdAt) });
+    for (const t of oldestFirst.slice(0, this.col.size - cap)) this.col.delete(t.id);
   }
 
   /** Recent turns, newest first. */

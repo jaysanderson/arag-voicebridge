@@ -703,14 +703,25 @@ export class SettingsService {
     return this.doc().values ?? {};
   }
 
-  /** Assign the effective value of every field into the live config objects. */
-  apply(): void {
+  /**
+   * Assign the effective value of every field into the live config objects.
+   *
+   * Returns the fields whose value actually moved, so a caller can drop the cached ARAG clients
+   * only when something that changes how a Knowledge Box is reached has changed — `rewiresClients`
+   * is behaviour, not documentation.
+   */
+  apply(): string[] {
     const values = this.overrides();
+    const moved: string[] = [];
     for (const f of SETTINGS_FIELDS) {
+      const id = `${f.group}.${f.key}`;
       const stored = values[f.group]?.[f.key];
-      f.write(this.live, stored === undefined ? this.defaults.get(`${f.group}.${f.key}`) : stored);
+      const before = f.read(this.live);
+      f.write(this.live, stored === undefined ? this.defaults.get(id) : stored);
+      if (f.read(this.live) !== before) moved.push(id);
     }
-    this.onRewire?.();
+    if (moved.some((id) => FIELD_INDEX.get(id)?.rewiresClients)) this.onRewire?.();
+    return moved;
   }
 
   /** The effective value of one field. */

@@ -10,6 +10,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { readVoiceEnv, type VoiceConfig } from "../src/config.ts";
 import { ApiKeyStore, generateKey, keyPrefix } from "../src/services/apiKeys.ts";
+import { liveBudget } from "../src/services/budget.ts";
 import { GoldenEvalStore } from "../src/services/goldenEval.ts";
 import { ListenService } from "../src/services/listen.ts";
 import { MetricsService } from "../src/services/metrics.ts";
@@ -147,6 +148,19 @@ describe("SettingsService", () => {
     expect(env.arag.region).toBe("europe-1");
     expect(env.arag.timeoutMs).toBe(9000);
     expect(rewires()).toBeGreaterThan(before);
+  });
+
+  /** `rewiresClients` is behaviour, not decoration: only a change that moves a Knowledge Box does it. */
+  it("does not drop the client pool for a change that cannot affect it", () => {
+    const { settings, rewires } = harness();
+    const before = rewires();
+    settings.update({ branding: { productName: "Acme" }, limits: { maxHistoryTurns: 3 } });
+    expect(rewires()).toBe(before);
+    settings.update({ connection: { kbId: "another-knowledge-box" } });
+    expect(rewires()).toBe(before + 1);
+    // Writing the same value again is not a change.
+    settings.update({ connection: { kbId: "another-knowledge-box" } });
+    expect(rewires()).toBe(before + 1);
   });
 
   it("rejects an unknown group or field instead of silently dropping it", () => {
@@ -398,5 +412,52 @@ describe("RetentionService", () => {
     expect(metrics.size).toBe(1);
     retention.stop();
     expect(retention.preview().autoPurge).toBe(false);
+  });
+});
+
+/**
+ * A setting that is editable but inert is worse than one that is read-only: the screen says it
+ * changed something and nothing changed. These pin the two values that were frozen at boot.
+ */
+describe("settings that are read after boot, not at boot", () => {
+  it("the turn-log ring follows the setting rather than its boot-time value", () => {
+    const env = readEnv({ ARAG_MOCK: "1", DATA_DIR: mkdtempSync(join(tmpdir(), "vb-ring-")) });
+    const voice = readVoiceEnv({ VOICE_TURN_LOG_LIMIT: "10" });
+    const store = new Store(env.dataDir, { persist: false });
+    const metrics = new MetricsService({ store, cap: () => voice.turnLogLimit });
+    const turn = {
+      prospect: "p",
+      total: 1,
+      first_token: 1,
+      retrieve: 1,
+      citations: 0,
+      handoff: false,
+      guard_trip: false,
+      source: "voice-answer" as const,
+    };
+    for (let i = 0; i < 12; i++) metrics.record(turn);
+    expect(metrics.size).toBe(10);
+
+    // Shrink the setting the way a settings PATCH does, and the very next turn enforces it.
+    voice.turnLogLimit = 3;
+    metrics.record(turn);
+    expect(metrics.size).toBe(3);
+
+    // And growing it takes effect too.
+    voice.turnLogLimit = 8;
+    for (let i = 0; i < 10; i++) metrics.record(turn);
+    expect(metrics.size).toBe(8);
+  });
+
+  it("a per-route budget reads the current value on every request", () => {
+    const voice = readVoiceEnv({ VOICE_BRIEF_RATE_RPS: "1", VOICE_BRIEF_RATE_BURST: "5" });
+    const budget = liveBudget(() => ({ rps: voice.briefRps, burst: voice.briefBurst }));
+    expect(budget.rps).toBe(1);
+    // The platform spreads `route.opts.rateLimit` per request, so a getter stays live where a
+    // plain number would have been frozen at route registration.
+    expect({ ...budget }).toEqual({ rps: 1, burst: 5 });
+    voice.briefRps = 20;
+    voice.briefBurst = 40;
+    expect({ ...budget }).toEqual({ rps: 20, burst: 40 });
   });
 });

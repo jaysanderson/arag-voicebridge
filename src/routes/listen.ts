@@ -9,6 +9,7 @@
 import { type App, conflict, operationSchemas } from "../../vendor/arag-platform/src/index.ts";
 import { openapi } from "../openapi.ts";
 import type { ProductDeps } from "../server.ts";
+import { liveBudget } from "../services/budget.ts";
 import {
   ListenSessionEnded,
   type ListenSessionExport,
@@ -91,7 +92,7 @@ export function exportMarkdown(s: ListenSessionExport, displayName: string): str
 export function registerListenRoutes(app: App, deps: ProductDeps): void {
   // The brief behind a session costs an LLM call per refresh, so sessions carry the same
   // stricter budget as the stateless /api/v1/brief primitive.
-  const briefBudget = { rps: deps.voice.briefRps, burst: deps.voice.briefBurst };
+  const briefBudget = liveBudget(() => ({ rps: deps.voice.briefRps, burst: deps.voice.briefBurst }));
 
   app.post(
     "/api/v1/listen/sessions",

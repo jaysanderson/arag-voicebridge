@@ -6,6 +6,7 @@ import { type App, type Ctx, operationSchemas } from "../../vendor/arag-platform
 import { openapi } from "../openapi.ts";
 import type { ProductDeps } from "../server.ts";
 import { runBrief } from "../services/brief.ts";
+import { liveBudget } from "../services/budget.ts";
 import { runTurn, TurnTrace } from "../services/pipeline.ts";
 import type { VoiceAnswerRequest } from "../types.ts";
 
@@ -109,7 +110,7 @@ export function registerVoiceRoutes(app: App, deps: ProductDeps): void {
       operationId: "brief",
       bodyLimit: 128 * 1024,
       // The brief costs an LLM call and a listening client fires it continuously: its own budget.
-      rateLimit: { rps: deps.voice.briefRps, burst: deps.voice.briefBurst },
+      rateLimit: liveBudget(() => ({ rps: deps.voice.briefRps, burst: deps.voice.briefBurst })),
     },
   );
 }

@@ -6,6 +6,7 @@
 import { type App, type Ctx, operationSchemas, unauthorized } from "../../vendor/arag-platform/src/index.ts";
 import { openapi } from "../openapi.ts";
 import type { ProductDeps } from "../server.ts";
+import { liveBudget } from "../services/budget.ts";
 import { mintScribeToken } from "../services/scribe.ts";
 import { synthesizeSpeech } from "../services/tts.ts";
 import { voiceAgentConfig } from "../services/voiceAgent.ts";
@@ -33,7 +34,7 @@ export function registerRealtimeRoutes(app: App, deps: ProductDeps): void {
       operationId: "createScribeToken",
       body: "none",
       // Minting third-party credentials gets its own, much tighter budget.
-      rateLimit: { rps: deps.voice.scribeRps, burst: deps.voice.scribeBurst },
+      rateLimit: liveBudget(() => ({ rps: deps.voice.scribeRps, burst: deps.voice.scribeBurst })),
     },
   );
 
@@ -62,7 +63,7 @@ export function registerRealtimeRoutes(app: App, deps: ProductDeps): void {
       auth: "api",
       validate: operationSchemas(openapi, "/api/v1/speech", "post"),
       operationId: "createSpeech",
-      rateLimit: { rps: deps.voice.ttsRps, burst: deps.voice.ttsBurst },
+      rateLimit: liveBudget(() => ({ rps: deps.voice.ttsRps, burst: deps.voice.ttsBurst })),
     },
   );
 

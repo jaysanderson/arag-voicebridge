@@ -155,7 +155,7 @@ export async function createProduct(
   registry.seedFromFile(opts.registrySeedFile ?? resolve(HERE, "config", "prospects.example.json"), {
     kbId: env.arag.kbId,
   });
-  const metrics = new MetricsService({ store, cap: voice.turnLogLimit });
+  const metrics = new MetricsService({ store, cap: () => voice.turnLogLimit });
   const evals = new GoldenEvalStore(store);
   // Real-time listening: sessions own the throttling, the evolving brief and the citations seen
   // across a call. The brief itself is the same primitive POST /api/v1/brief exposes.
