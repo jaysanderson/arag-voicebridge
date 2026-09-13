@@ -126,3 +126,75 @@ test("after: the operator views", async ({ page, request }) => {
   await page.waitForTimeout(400);
   await page.screenshot({ path: `${OUT}/after-14-operator-security.png`, fullPage: true });
 });
+
+/**
+ * The surfaces the full-implementation pass added. Numbered from 15 so the earlier set keeps its
+ * filenames and the before/after pairs in `docs/screenshots/README.md` stay valid.
+ */
+test("after: the full-implementation pass", async ({ page, request }) => {
+  // ── Set up: the first-run checklist ────────────────────────────────────────
+  await page.goto("/setup/");
+  await expect(page.locator(".vb-step").first()).toBeVisible({ timeout: 20_000 });
+  await page.waitForTimeout(400);
+  await page.screenshot({ path: `${OUT}/after-15-setup.png`, fullPage: true });
+
+  // ── The Ask tester with the pipeline stepper open ──────────────────────────
+  await page.goto("/knowledge/");
+  await page.waitForSelector("#kbAsk");
+  await page.fill("#kbQuestion", "What is binder jetting?");
+  await page.click("#kbAsk");
+  await expect(page.locator(".vb-pipeline .arag-timeline li")).toHaveCount(9, { timeout: 30_000 });
+  await page.locator(".vb-pipeline").scrollIntoViewIfNeeded();
+  await page.waitForTimeout(400);
+  await page.screenshot({ path: `${OUT}/after-16-pipeline-stepper.png`, fullPage: true });
+
+  // ── A conversation record, comparing two versions of the brief ─────────────
+  const created = await request.post("/api/v1/listen/sessions", { data: { prospect: "progress" } });
+  const { id } = (await created.json()) as { id: string };
+  for (const text of [
+    "Hi, we run a metal parts shop and we are looking at binder jetting for production volumes.",
+    "Our main worry is sintering shrinkage and how repeatable it is across a build.",
+    "Actually the bigger question is cost per part against laser powder bed fusion.",
+  ]) {
+    await request.post(`/api/v1/listen/sessions/${id}/transcript`, {
+      data: { chunks: [{ speaker: "caller", text }] },
+    });
+    await new Promise((r) => setTimeout(r, 1700));
+    await request.post(`/api/v1/listen/sessions/${id}/refresh`, { data: {} });
+  }
+  await page.goto(`/conversations/?id=${id}`);
+  await expect(page.locator("#cvCompare")).toBeVisible({ timeout: 30_000 });
+  await page.locator("#cvCompare").scrollIntoViewIfNeeded();
+  await page.waitForTimeout(400);
+  await page.screenshot({ path: `${OUT}/after-17-brief-comparison.png`, fullPage: true });
+
+  // ── The API explorer, mid try-it ───────────────────────────────────────────
+  await page.goto("/api/");
+  await expect(page.locator(".vb-op").first()).toBeVisible({ timeout: 20_000 });
+  await page.click('[data-op="voiceAnswer"]');
+  await page.click("#apiSend");
+  await expect(page.locator(".vb-result-head .arag-chip")).toHaveText("200 OK", { timeout: 30_000 });
+  await page.waitForTimeout(300);
+  await page.screenshot({ path: `${OUT}/after-18-api-explorer.png`, fullPage: true });
+});
+
+test("after: the operator's paged log", async ({ page, request }) => {
+  for (let i = 0; i < 60; i++) {
+    await request.patch("/api/v1/admin/settings", {
+      headers: { Authorization: `Bearer ${TOKEN}` },
+      data: { branding: { tagline: `screenshot noise ${i}` } },
+    });
+  }
+  await request.post("/api/v1/admin/settings/reset", {
+    headers: { Authorization: `Bearer ${TOKEN}` },
+    data: { group: "branding" },
+  });
+  await page.goto("/admin/");
+  await page.fill("#token", TOKEN);
+  await page.click("#signin");
+  await expect(page.locator("#ovStats")).toBeVisible({ timeout: 20_000 });
+  await page.goto("/admin/#logs");
+  await expect(page.locator("#lgRange")).toContainText("of", { timeout: 20_000 });
+  await page.waitForTimeout(500);
+  await page.screenshot({ path: `${OUT}/after-19-operator-logs.png`, fullPage: true });
+});

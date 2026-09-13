@@ -239,9 +239,11 @@ async function ask() {
       // steps are bytes a spoken turn should not pay for.
       json: { prospect: state.current.key, question: q, history: [], trace: true },
     });
+    // `data-outcome` is the stable hook: the stepper below carries chips of its own, so
+    // "a warn chip inside the bubble" is no longer a unique way to name this one.
     const badge = r.handoff
-      ? `<span class="arag-chip warn">handoff · ${esc(r.handoff_reason ?? "")}</span>`
-      : '<span class="arag-chip ok">answered</span>';
+      ? `<span class="arag-chip warn" data-outcome="handoff">handoff · ${esc(r.handoff_reason ?? "")}</span>`
+      : '<span class="arag-chip ok" data-outcome="answered">answered</span>';
     // Only the newest turn keeps its stepper open; the ones above it collapse to a summary line.
     for (const d of box.querySelectorAll("details.vb-pipeline[open]")) d.removeAttribute("open");
     $("#kbPending").outerHTML = `<div class="arag-bubble assistant">${esc(r.answer)}

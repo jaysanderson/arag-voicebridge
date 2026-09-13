@@ -123,11 +123,16 @@ test.describe("operator views", () => {
     await expect(page.locator("#vbView")).toContainText("Per-prospect overlays");
   });
 
-  test("security states who can reach what and what is kept", async ({ page }) => {
+  test("security states who can reach what, what is kept, and where secrets live", async ({ page }) => {
     await signIn(page, "#security");
     await expect(page.locator("#vbView")).toContainText("Admin token", { timeout: 20_000 });
     await expect(page.locator("#vbView")).toContainText("same-origin");
-    await expect(page.locator("#vbView")).toContainText("never written to the stores");
+    // Secrets now live in the stores as well as the environment, and the page has to say so
+    // rather than repeat a claim that stopped being true when settings became editable.
+    await expect(page.locator("#vbView")).toContainText("api-keys.json");
+    await expect(page.locator("#vbView")).toContainText("ever sent to a browser");
+    // Retention is part of "what is kept".
+    await expect(page.locator("#vbView")).toContainText("Automatic purge");
   });
 
   test("a running job can be cancelled, with confirmation", async ({ page, request }) => {

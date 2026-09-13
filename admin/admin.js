@@ -652,6 +652,8 @@ async function renderSecurity(el) {
     const yes = (v) =>
       set(v) ? '<span class="arag-chip ok">on</span>' : '<span class="arag-chip warn">off</span>';
     const list = (v) => (Array.isArray(v) && v.length ? v.join(", ") : "");
+    // A window of 0 means "kept until the ring evicts it", which is the default.
+    const retention = (days) => (days > 0 ? `, kept ${days} day${days === 1 ? "" : "s"}` : "");
     el.innerHTML = `
       <div class="arag-split">
         <section class="arag-card">
@@ -661,9 +663,9 @@ async function renderSecurity(el) {
               <dt>Admin token</dt><dd>${yes(env.adminToken)} required for every operator route</dd>
               <dt>API keys</dt><dd>${yes(env.apiKeys)} ${
                 set(env.apiKeys)
-                  ? "<code>X-API-Key</code> required on /api/v1"
-                  : "/api/v1 open to same-origin sessions"
-              }</dd>
+                  ? `${env.apiKeys.length} active · <code>X-API-Key</code> required on /api/v1`
+                  : "none active · /api/v1 is open to anyone who can reach it"
+              } · <a href="/settings/#api-keys">manage</a></dd>
               <dt>CORS origins</dt><dd class="mono">${esc(list(env.allowedOrigins) || "same-origin only")}</dd>
               <dt>Proxy trust</dt><dd class="mono">${esc(String(env.trustProxy || "none"))}</dd>
             </dl>
@@ -686,9 +688,19 @@ async function renderSecurity(el) {
         <div class="head"><h2>Data kept</h2></div>
         <div class="body">
           <dl class="arag-kv">
-            <dt>Turn log</dt><dd>Last ${esc(String(voice.turnLogLimit ?? "—"))} turns. A turn whose input tripped a safety guard keeps the reason and never the text.</dd>
-            <dt>Listen sessions</dt><dd>Transcript, brief history (last 20 versions), citations and stats, until the session store rolls over.</dd>
-            <dt>Secrets</dt><dd>Only in the environment. Never sent to a browser, never written to the stores, never logged.</dd>
+            <dt>Turn log</dt><dd>Last ${esc(String(voice.turnLogLimit ?? "—"))} turns${retention(voice.retention?.turnDays)}. A turn whose input tripped a safety guard keeps the reason and never the text.</dd>
+            <dt>Conversations</dt><dd>Transcript, brief history (last 20 versions), citations and stats${retention(voice.retention?.sessionDays)}, or until the session store rolls over.</dd>
+            <dt>Golden runs</dt><dd>The last 50 runs with their per-question detail${retention(voice.retention?.evalDays)}.</dd>
+            <dt>Automatic purge</dt><dd>${
+              voice.retention?.autoPurge
+                ? '<span class="arag-chip ok">on</span> the windows above are applied hourly'
+                : '<span class="arag-chip neutral">off</span> retention is applied only when an operator purges'
+            } · <a href="/settings/#retention">change</a></dd>
+            <dt>Secrets</dt><dd>The ARAG service-account token and the ElevenLabs key live in the
+              environment or, once rotated in the product, in <code>DATA_DIR/settings.json</code>;
+              API keys live in <code>DATA_DIR/api-keys.json</code> because authenticating one needs
+              the plaintext. None of them is ever sent to a browser, returned by the
+              settings API after it is set, or written to a log.</dd>
           </dl>
         </div>
       </section>`;
