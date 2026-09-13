@@ -1632,6 +1632,7 @@ A stored API key. The secret is returned exactly once, when the key is created.
 | `uses` | integer | yes | Recorded uses (sampled at most every 30 s per key) |
 | `revoked` | boolean | yes |  |
 | `revokedAt` | string,null |  |  |
+| `strandedFromEnv` | boolean |  | Seeded from API_KEYS, still active, and no longer named by the variable. Removing a key from the environment does not revoke it — the store is the authority — so this marks the keys an operator may have believed were gone. |
 
 ### AgentDiffRow
 

@@ -1,5 +1,9 @@
 # Fly.io deployment for VoiceBridge. Set secrets out of band, never in this file:
 #   fly secrets set ARAG_KB_ID=… ARAG_API_KEY=… ADMIN_TOKEN=… ELEVENLABS_API_KEY=… VOICE_DEFAULT_AGENT_ID=…
+#
+# Everything below is a DEFAULT. From first boot the settings store on the volume is the authority,
+# so a credential rotated in the product is written to /data and `fly secrets` no longer holds the
+# current value. See the [[mounts]] note and SECURITY.md § "Where secrets live".
 app = "arag-voice-bridge"
 primary_region = "iad"   # co-locate with the ARAG zone (aws-us-east-2-1 ⇒ iad) to cut the extra hop
 
@@ -27,6 +31,11 @@ primary_region = "iad"   # co-locate with the ARAG zone (aws-us-east-2-1 ⇒ iad
 # overrides the [env] defaults above), the API key store, the uploaded branding assets served at
 # /branding, the turn log, jobs and golden-eval history. Lose the volume and the deployment falls
 # back to these variables — which is the point of them being defaults rather than the authority.
+#
+# TREAT THIS VOLUME AS SECRET MATERIAL. API keys are stored in full (authenticating one needs the
+# plaintext), and any credential an operator rotates in the product — the ARAG service-account
+# token, the ElevenLabs key — is written here rather than to `fly secrets`. A volume snapshot, a
+# backup or `fly ssh` reads live credentials. SECURITY.md § "Where secrets live" says why.
 [[mounts]]
   source = "data"
   destination = "/data"

@@ -131,21 +131,26 @@ test.describe("the settings screen", () => {
     await expect(page.locator("#stSignIn")).toHaveCount(0);
   });
 
-  test("renders all 41 settings from the API, in five groups, with no hand-written fields", async ({
-    page,
-    request,
-  }) => {
+  test("renders every setting the API describes, in every group it describes", async ({ page, request }) => {
     const described = (await (
       await request.get(`${BASE}/api/v1/admin/settings`, { headers: ADMIN })
     ).json()) as { groups: Array<{ id: string; fields: Array<{ key: string }> }> };
     const total = described.groups.reduce((n, g) => n + g.fields.length, 0);
 
     await unlock(page);
-    expect(described.groups).toHaveLength(5);
+    // Counts come from the API, never from this file: a group or a field added to SETTINGS_FIELDS
+    // server-side has to appear here with no front-end change, and this is what proves it.
     await expect(page.locator(".vb-set-field")).toHaveCount(total);
+    for (const g of described.groups) {
+      await expect(page.locator(`#${g.id}`), `group ${g.id} has no section`).toHaveCount(1);
+      await expect(page.locator(`[data-jump="${g.id}"]`), `group ${g.id} is not in the index`).toHaveCount(1);
+    }
     // Spot-check that a field the server describes is really on screen, by its own key.
     await expect(page.locator(field("connection", "kbId"))).toBeVisible();
     await expect(page.locator(field("retention", "autoPurge"))).toBeVisible();
+    // The generically-rendered group — no bespoke layout in settings.js — is editable like the rest.
+    await expect(page.locator(field("operations", "logLevel"))).toBeVisible();
+    await expect(page.locator(field("operations", "allowedOrigins"))).toBeVisible();
   });
 });
 

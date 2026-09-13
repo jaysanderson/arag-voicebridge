@@ -248,13 +248,35 @@ describe("the deployment's ARAG defaults", () => {
   };
   const voice = readVoiceEnv({});
 
-  it("fills in the model and reranker a prospect does not set", () => {
+  it("fills in the model a prospect does not set", () => {
     const body = buildAskRequest({ prospect: "acme", question: "q" }, base, voice, {
       generativeModel: "chatgpt-azure-4o",
       reranker: "predict",
     });
     expect(body.generative_model).toBe("chatgpt-azure-4o");
-    expect(body.reranker).toBe("predict");
+  });
+
+  /**
+   * The deployment's reranker is deliberately not honoured on a spoken turn: `ARAG_RERANKER`
+   * defaults to "predict" on the platform, and a rerank pass does not fit the turn budget.
+   */
+  it("keeps the turn on the low-latency reranker even when the deployment prefers predict", () => {
+    const body = buildAskRequest({ prospect: "acme", question: "q" }, base, voice, {
+      generativeModel: "",
+      reranker: "predict",
+    });
+    expect(body.reranker).toBe("noop");
+    // A prospect that asks for it still gets it.
+    const asked = buildAskRequest(
+      { prospect: "acme", question: "q" },
+      { ...base, reranker: "predict" },
+      voice,
+      {
+        generativeModel: "",
+        reranker: "noop",
+      },
+    );
+    expect(asked.reranker).toBe("predict");
   });
 
   it("still lets the prospect and the request win, in that order", () => {
@@ -272,9 +294,13 @@ describe("the deployment's ARAG defaults", () => {
     expect(overridden.generative_model).toBe("request-model");
   });
 
-  it("falls back to the lowest-latency reranker when nobody has an opinion", () => {
-    const body = buildAskRequest({ prospect: "acme", question: "q" }, base, voice);
-    expect(body.reranker).toBe("noop");
+  /** The shape the product actually calls: defaults present but empty. */
+  it("asks the Knowledge Box for its own model when nobody has an opinion", () => {
+    const body = buildAskRequest({ prospect: "acme", question: "q" }, base, voice, {
+      generativeModel: "",
+      reranker: "",
+    });
     expect(body.generative_model).toBe(undefined);
+    expect(body.reranker).toBe("noop");
   });
 });

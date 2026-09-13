@@ -1349,7 +1349,7 @@ Additional to the above:
 | `h.retrieval` | Retrieval and model |
 | `h.conversation` | Conversation |
 | `h.brandingOverlay` | Branding overlay |
-| `h.voiceAvatar` | Voice and avatar |
+| `h.voiceAvatar` | Voice *(the "and avatar" half is withdrawn — V-25)* |
 | `h.dangerZone` | Danger zone |
 | `h.connection` | Connection |
 | `h.branding` | Branding |
@@ -1456,7 +1456,7 @@ is rendered in `mono small` beneath when present.
 | `err.scribeMissing` | Microphone transcription is not configured on this deployment. The sample conversation and pasted text work without it. |
 | `err.micDenied` | Microphone access was refused by the browser. Allow it in the address bar, or paste a transcript instead. |
 | `err.voicesMissing` | Voices need an ElevenLabs key on the server. The agent default is used. |
-| `err.avatarMissing` | The avatar needs LiveKit and LiveAvatar credentials on the server. |
+| ~~`err.avatarMissing`~~ | *Withdrawn (V-25) — the avatar pane is not part of the product.* |
 | `err.saveProspect` | Could not save. {detail} |
 | `err.keyTaken` | That key is already in use. |
 | `err.fieldRequired` | Required. |
@@ -2765,8 +2765,10 @@ control every time it is shown.
 | PRIMARY chip | A neutral chip, `--arag-brand-50` fill, not green — "primary" is a role, not a status. Only ElevenLabs carries it. |
 | Unconfigured | The card still renders, with every capability `○ not set`, the environment variable names, and a link to the integrations guide. The Agent wiring block still renders — it is useful *before* you have a key, because it tells you what to set up. |
 
-LiveKit and LiveAvatar render below as ordinary secondary integrations, single-row, with their
-environment variable names and a docs link.
+> **Withdrawn (V-25, 13 September 2026).** LiveKit and LiveAvatar are no longer part of the
+> product: the endpoint, both services, their environment variables and these two rows are
+> deleted. The wireframes above still draw them; read the amendment at the top of this document.
+> `*.livekit.cloud` remains in the Content-Security-Policy as part of the ElevenLabs integration.
 
 ### 11.6 Quality: what our gate covers, and what ElevenLabs testing covers
 

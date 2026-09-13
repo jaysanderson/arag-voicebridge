@@ -19,13 +19,18 @@ test.describe("operator: the log", () => {
   test("pages the ring rather than showing the last N", async ({ page, request }) => {
     // Make enough noise to need a second page. Every settings change is audited, so this is also
     // the audit trail the brief asks for.
+    //
+    // The field churned here is deliberately one no other spec asserts: this runs against the
+    // shared deployment, and `workspace.spec.ts` checks the branding tagline in another worker.
+    // Settings are deployment-wide, so a spec that changes one has to pick its target with that
+    // in mind (or run its own instance, as `settings.spec.ts` does).
     for (let i = 0; i < 60; i++) {
       await request.patch("/api/v1/admin/settings", {
         headers: ADMIN,
-        data: { branding: { tagline: `log paging ${i}` } },
+        data: { limits: { maxHistoryTurns: (i % 20) + 1 } },
       });
     }
-    await request.post("/api/v1/admin/settings/reset", { headers: ADMIN, data: { group: "branding" } });
+    await request.post("/api/v1/admin/settings/reset", { headers: ADMIN, data: { group: "limits" } });
 
     await signIn(page, "#logs");
     await expect(page.locator("#lgRange")).toBeVisible({ timeout: 20_000 });

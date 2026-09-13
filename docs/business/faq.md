@@ -77,7 +77,7 @@ preview), for one deployment serving several differently-branded customers. Attr
 [`../developer/white-label.md`](../developer/white-label.md).
 
 **Do I need to redeploy to change a setting?**
-No. Every one of the 41 settings behind Settings — connection, branding, limits, the ElevenLabs
+No. Every one of the 43 settings behind Settings — connection, branding, limits, the ElevenLabs
 stack, retention — is stored in a JSON file the product reads on every request; an environment
 variable only supplies the starting value. `PATCH /api/v1/admin/settings` (or the Settings form)
 takes effect on the very next request. The one exception that isn't a restart either: a patch that

@@ -50,6 +50,12 @@ export interface ApiKeyView {
   uses: number;
   revoked: boolean;
   revokedAt: string | null;
+  /**
+   * A key seeded from `API_KEYS` that the variable no longer lists. It still authenticates — the
+   * store is the authority — and an operator who pulled it from the environment expecting that to
+   * revoke it needs to be told otherwise.
+   */
+  strandedFromEnv?: boolean;
 }
 
 /** How often a key's "last used" is written back. A turn should not cost a store flush. */
@@ -81,6 +87,8 @@ export class ApiKeyStore {
   private readonly env: PlatformEnv;
   private readonly log: Logger;
   private readonly lastTouch = new Map<string, number>();
+  /** The `API_KEYS` list as it was at the last boot, so a key it no longer names can be flagged. */
+  private seeded: readonly string[] = [];
 
   constructor(deps: { store: Store; env: PlatformEnv; log: Logger }) {
     this.col = deps.store.collection<ApiKeyRecord>("api-keys");
@@ -93,6 +101,7 @@ export class ApiKeyStore {
    * store the authority for authentication.
    */
   seedFromEnv(keys: string[]): number {
+    this.seeded = keys.filter(Boolean);
     const known = new Set(this.col.list().map((k) => k.secret));
     let seeded = 0;
     let position = 0;
@@ -101,6 +110,8 @@ export class ApiKeyStore {
       if (!secret || known.has(secret)) continue;
       this.col.put({
         id: envKeyId(secret),
+        // Numbered by position in the variable, not by how many this boot happened to add: a
+        // second boot that adds one more key must not label it "#1".
         name: keys.length > 1 ? `API_KEYS #${position}` : "API_KEYS",
         secret,
         prefix: keyPrefix(secret),
@@ -153,6 +164,9 @@ export class ApiKeyStore {
       uses: k.uses,
       revoked: Boolean(k.revokedAt),
       revokedAt: k.revokedAt ?? null,
+      ...(k.origin === "env" && !k.revokedAt && !this.seeded.includes(k.secret)
+        ? { strandedFromEnv: true }
+        : {}),
     };
   }
 

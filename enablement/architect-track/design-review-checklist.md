@@ -59,8 +59,8 @@ customer's specific configuration" — there is no generic pass/fail for it.
 
 - [ ] Confirm whoever operates this deployment understands that an environment variable is only a
       **default**: `SettingsService` (`src/services/settings.ts`, `DECISIONS.md` V-26) reads it once
-      at boot, and from then on `DATA_DIR/settings.json` is the authority for all 41 fields across
-      the five groups (branding, connection, limits, elevenlabs, retention). A value read from
+      at boot, and from then on `DATA_DIR/settings.json` is the authority for all 43 fields across
+      the six groups (branding, connection, limits, elevenlabs, retention, operations). A value read from
       `.env` or a platform secret after go-live may not be the value actually in force if anyone has
       since patched it through `PATCH /api/v1/admin/settings` or the Settings screen — check
       `GET /api/v1/admin/settings` (each field's `source`: `stored`/`env`/`default`), not the

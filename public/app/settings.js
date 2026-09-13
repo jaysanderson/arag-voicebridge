@@ -42,15 +42,38 @@ const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => [...r.querySelectorAll(s)];
 
 /** The page's sections, in reading order. The ids are the deep links the wizard uses. */
-const SECTIONS = [
+/**
+ * The sections with a bespoke layout — a live preview, a capability table, a purge control — plus
+ * the two that are not a settings group at all.
+ *
+ * Any *other* group the API describes is rendered generically after these, so a group added to
+ * `SETTINGS_FIELDS` server-side appears here with no front-end change, exactly as a new field
+ * does. Without that, a new group would be editable over the API and invisible in the product,
+ * which is the failure this whole screen exists to prevent.
+ */
+const LAID_OUT = [
   { id: "connection", label: "Connection", group: "connection" },
   { id: "branding", label: "Branding", group: "branding" },
   { id: "limits", label: "Limits", group: "limits" },
   { id: "elevenlabs", label: "ElevenLabs", group: "elevenlabs" },
   { id: "api-keys", label: "API keys", group: null },
   { id: "retention", label: "Retention", group: "retention" },
-  { id: "api", label: "API", group: null },
 ];
+
+/** Groups the API describes that this file has no bespoke layout for. */
+function extraGroups() {
+  const laidOut = new Set(LAID_OUT.map((s) => s.group).filter(Boolean));
+  return [...groups.values()].filter((g) => !laidOut.has(g.id));
+}
+
+/** The section index, in render order. */
+function sections() {
+  return [
+    ...LAID_OUT,
+    ...extraGroups().map((g) => ({ id: g.id, label: g.title, group: g.id })),
+    { id: "api", label: "API", group: null },
+  ];
+}
 
 /** Scopes of the purge control. Everything but `retention` ignores the age windows. */
 const PURGE_SCOPES = [
@@ -510,7 +533,9 @@ function signInBanner() {
 
 function sectionNav() {
   return `<nav class="arag-tabs vb-set-nav" aria-label="Settings sections">
-    ${SECTIONS.map((s) => `<a href="#${s.id}" data-jump="${s.id}">${esc(s.label)}</a>`).join("")}
+    ${sections()
+      .map((s) => `<a href="#${s.id}" data-jump="${s.id}">${esc(s.label)}</a>`)
+      .join("")}
   </nav>`;
 }
 
@@ -587,6 +612,10 @@ function chrome() {
       `${groupHost("retention")}
        <div id="stPurge" style="margin-top:26px"></div>`,
     )}
+
+    ${extraGroups()
+      .map((g) => card(g.id, g.title, g.description, groupHost(g.id)))
+      .join("")}
 
     ${card(
       "api",
@@ -1026,10 +1055,14 @@ function keyRow(k) {
   return `<tr data-key="${esc(k.id)}"${k.revoked ? ' class="muted"' : ""}>
     <td><span class="cell-title">${esc(k.name)}</span></td>
     <td class="mono">${esc(k.prefix)}…</td>
-    <td>${k.origin === "env" ? chip("environment", "neutral") : chip("minted here", "info")}</td>
+    <td>${k.origin === "env" ? chip("environment", "neutral") : chip("minted here", "info")}${
+      k.strandedFromEnv
+        ? ` <span class="arag-chip warn" title="API_KEYS no longer names this key, but the store is the authority — it still works. Revoke it here.">not in API_KEYS</span>`
+        : ""
+    }</td>
     <td>${ago(k.createdAt)}</td>
     <td>${k.lastUsedAt ? ago(k.lastUsedAt) : '<span class="muted small">never</span>'}</td>
-    <td class="num">${k.uses}</td>
+    <td class="num" title="Sampled at most once every 30 seconds per key, so a busy key undercounts.">${k.uses}</td>
     <td>${k.revoked ? chip("revoked", "danger") : chip("active", "ok")}</td>
     <td class="num">${
       k.revoked
@@ -1084,7 +1117,7 @@ async function loadKeys() {
         <table id="stKeyTable">
           <thead><tr>
             <th>Name</th><th>Prefix</th><th>Origin</th><th>Created</th><th>Last used</th>
-            <th class="num">Uses</th><th>Status</th><th></th>
+            <th class="num" title="Sampled at most once every 30 seconds per key">Uses <span class="muted">(sampled)</span></th><th>Status</th><th></th>
           </tr></thead>
           <tbody>${
             keys.items.length
@@ -1284,7 +1317,7 @@ function wireIndex() {
    */
   const pick = () => {
     const line = 140; // just below the sticky index
-    let current = SECTIONS[0].id;
+    let current = sections()[0].id;
     for (const el of $$(".vb-set-section")) {
       if (el.getBoundingClientRect().top <= line) current = el.id;
     }
@@ -1301,7 +1334,7 @@ function wireIndex() {
   };
   window.addEventListener("scroll", onScroll, { passive: true });
   window.addEventListener("resize", onScroll, { passive: true });
-  mark(location.hash.slice(1) || SECTIONS[0].id);
+  mark(location.hash.slice(1) || sections()[0].id);
   window.addEventListener("hashchange", () => {
     mark(location.hash.slice(1));
     scrollToHash();
@@ -1322,7 +1355,7 @@ function scrollToHash() {
 
 async function render() {
   host.innerHTML = chrome();
-  for (const s of SECTIONS) {
+  for (const s of sections()) {
     if (s.group) wireGroup($(`[data-group-host="${s.group}"]`));
   }
   paintPreview();

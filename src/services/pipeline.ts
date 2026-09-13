@@ -104,9 +104,12 @@ export function buildAskRequest(
   }
   // Inline path: the grounding voice prompt plus the latency levers.
   body.prompt = buildVoicePrompt(prospect.display_name, prospect.locale);
-  // The prospect wins, then the deployment's own default (Settings → Connection), then "noop" —
-  // the lowest-latency choice, which is what a voice turn wants when nobody has said otherwise.
-  body.reranker = prospect.reranker ?? defaults?.reranker ?? "noop";
+  // The turn's reranker is the prospect's or "noop", and deliberately NOT the deployment default:
+  // `ARAG_RERANKER` defaults to "predict" on the platform, so honouring it here would quietly add
+  // a rerank pass to every spoken turn — on the one budget in the product that cannot absorb it
+  // (V-11: the turn must resolve before the agent's tool call gives up). The brief, which has four
+  // times the budget and already reranked, does honour it.
+  body.reranker = prospect.reranker ?? "noop";
   body.max_tokens = prospect.max_tokens ?? 160;
   // Temperature 0 → deterministic answers/handoffs, so the golden set is repeatable.
   body.temperature = prospect.temperature ?? 0;

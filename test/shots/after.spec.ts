@@ -204,10 +204,10 @@ test("after: the operator's paged log", async ({ page, request }) => {
   for (let i = 0; i < 60; i++) {
     await request.patch("/api/v1/admin/settings", {
       headers: ADMIN,
-      data: { branding: { tagline: `screenshot noise ${i}` } },
+      data: { limits: { maxHistoryTurns: (i % 20) + 1 } },
     });
   }
-  await request.post("/api/v1/admin/settings/reset", { headers: ADMIN, data: { group: "branding" } });
+  await request.post("/api/v1/admin/settings/reset", { headers: ADMIN, data: { group: "limits" } });
   await page.goto("/admin/");
   await page.fill("#token", TOKEN);
   await page.click("#signin");

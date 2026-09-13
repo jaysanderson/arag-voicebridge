@@ -474,7 +474,7 @@ curl -s -b admin.txt "$BASE/api/v1/admin/logs?level=warn&limit=50&offset=50" | j
 
 ### Settings — the store behind every configurable value
 
-`GET /api/v1/admin/settings` returns every setting in all five groups (branding, connection,
+`GET /api/v1/admin/settings` returns every setting in all six groups (branding, connection,
 limits, elevenlabs, retention) with its effective value, where it came from, and — for a secret —
 whether one is set plus a four-character hint instead of the value. See
 [`settings.md`](settings.md) for the full inventory, generated from the same source

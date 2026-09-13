@@ -222,8 +222,8 @@ editor. **Provision search config** and **Delete** sit in the editor's footer al
 `/settings/` is not a read-back of the environment: it's the editor. The rule behind the whole page
 is that an environment variable is a **default**, not the authority — the JSON store is, and a
 change made here takes effect on the very next request, with no restart. Unlocked with the
-deployment's admin token (the same gate as Prospects and Operator), every one of the 41 settings
-across five groups gets a real control; signed out, the page still shows what's configured, just not
+deployment's admin token (the same gate as Prospects and Operator), every one of the 43 settings
+across six groups gets a real control; signed out, the page still shows what's configured, just not
 editable. A sticky index down the left jumps between sections as you scroll:
 
 - **Connection** — how the bridge reaches Progress Agentic RAG: Knowledge Box id, the service-account

@@ -27,14 +27,22 @@ import { assertVoiceConfig, type VoiceConfig } from "../config.ts";
 import type { FieldError } from "./registry.ts";
 import { ValidationFailed } from "./registry.ts";
 
-export type SettingsGroupId = "branding" | "connection" | "limits" | "elevenlabs" | "retention";
+export type SettingsGroupId =
+  | "branding"
+  | "connection"
+  | "limits"
+  | "elevenlabs"
+  | "retention"
+  | "operations";
 
 export type FieldType = "string" | "text" | "number" | "boolean" | "color" | "secret" | "enum";
 
-/** The two live objects every field reads from and writes into. */
+/** The live objects every field reads from and writes into. */
 export interface LiveConfig {
   env: PlatformEnv;
   voice: VoiceConfig;
+  /** The product's own logger — `level` is a plain field it reads on every call. */
+  log: Logger;
 }
 
 export interface FieldSpec {
@@ -95,6 +103,13 @@ export const SETTINGS_GROUPS: SettingsGroup[] = [
     title: "Retention",
     description: "How long recorded turns, conversations and golden runs are kept before purging.",
   },
+  {
+    id: "operations",
+    title: "Operations",
+    description:
+      "How the deployment logs and who may call it from another origin. Both take effect on the " +
+      "next log line and the next request; neither needs a restart.",
+  },
 ];
 
 const str = (v: unknown) => String(v ?? "").trim();
@@ -110,14 +125,26 @@ const str = (v: unknown) => String(v ?? "").trim();
  */
 export function isSafeUrl(value: string): boolean {
   if (value === "") return true;
-  // A site-relative path, but not a protocol-relative one (`//evil.example` is off-site).
-  if (value.startsWith("/") && !value.startsWith("//")) return true;
+  if (value.startsWith("/")) {
+    // A site-relative path — but decided by resolving it, not by looking at it. `//evil.example`
+    // is protocol-relative and `/\evil.example` is the same thing to a browser, which normalises
+    // a backslash to a slash in a special scheme. Anything that lands on another origin is not a
+    // site-relative path, whatever it looks like.
+    try {
+      return new URL(value, SAME_ORIGIN).origin === SAME_ORIGIN;
+    } catch {
+      return false;
+    }
+  }
   try {
     return ["http:", "https:"].includes(new URL(value).protocol);
   } catch {
     return false;
   }
 }
+
+/** An origin that exists only to resolve a relative path against. */
+const SAME_ORIGIN = "https://this-deployment.invalid";
 
 /** The branding fields that become a URL in the page. */
 const URL_FIELDS = new Set(["branding.logoUrl", "branding.docsUrl", "branding.supportUrl"]);
@@ -288,7 +315,10 @@ export const SETTINGS_FIELDS: FieldSpec[] = [
     type: "enum",
     env: "ARAG_RERANKER",
     options: ["predict", "noop"],
-    help: "predict reranks retrieval with the platform model; noop keeps the retrieval order.",
+    help:
+      "predict reranks retrieval with the platform model; noop keeps the retrieval order. This is " +
+      "the brief's default. A spoken turn stays on noop unless its prospect chooses otherwise — a " +
+      "rerank pass does not fit inside the turn budget.",
     read: (c) => c.env.arag.reranker,
     write: (c, v) => {
       c.env.arag.reranker = str(v) || "predict";
@@ -621,6 +651,45 @@ export const SETTINGS_FIELDS: FieldSpec[] = [
     0,
     3650,
   ),
+  // ── operations ─────────────────────────────────────────────────────────────
+  field({
+    key: "logLevel",
+    group: "operations",
+    label: "Log level",
+    type: "enum",
+    env: "LOG_LEVEL",
+    options: ["debug", "info", "warn", "error"],
+    help: "How much the deployment writes to its log, and how much the operator Logs view can show.",
+    read: (c) => c.env.logLevel,
+    write: (c, v) => {
+      const level = (["debug", "info", "warn", "error"] as const).find((l) => l === str(v)) ?? "info";
+      c.env.logLevel = level;
+      // The logger reads `level` on every call, so assigning it is the whole change — and it is
+      // the product's own logger, not a module singleton, so an injected one follows too.
+      c.log.level = level;
+    },
+  }),
+  field({
+    key: "allowedOrigins",
+    group: "operations",
+    label: "Allowed origins",
+    type: "string",
+    env: "ALLOWED_ORIGINS",
+    placeholder: "https://app.acme.example, https://acme.example",
+    help:
+      "Comma-separated origins that may call this API from a browser. Empty = same-origin only. " +
+      "`*` allows any origin, which is rarely what a deployment with an API key wants.",
+    read: (c) => c.env.allowedOrigins.join(", "),
+    write: (c, v) => {
+      const list = str(v)
+        .split(",")
+        .map((o) => o.trim())
+        .filter(Boolean);
+      // Mutated in place: the CORS middleware reads `ctx.env.allowedOrigins` on every request.
+      c.env.allowedOrigins.splice(0, c.env.allowedOrigins.length, ...list);
+    },
+  }),
+
   field({
     key: "autoPurge",
     group: "retention",
@@ -706,7 +775,7 @@ export class SettingsService {
 
   constructor(deps: SettingsDeps) {
     this.col = deps.store.collection<SettingsDoc>("settings");
-    this.live = { env: deps.env, voice: deps.voice };
+    this.live = { env: deps.env, voice: deps.voice, log: deps.log };
     this.log = deps.log;
     this.onRewire = deps.onRewire;
     const src = deps.envSrc ?? process.env;

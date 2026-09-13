@@ -59,6 +59,32 @@ Admin token comparison uses `constantTimeEqual()` — a timing side-channel on t
 comparison is a real, practical attack against a static bearer secret, so both the login route and
 `App.authenticate()`'s cookie/bearer checks use constant-time comparison rather than `===`.
 
+## The settings store holds credentials too
+
+`DATA_DIR/settings.json` is the other half of the picture. Until an operator rotates something in
+the product it holds no credential at all — the environment's value is what is in force. The
+moment one is rotated through `PATCH /api/v1/admin/settings`, the new value is written there in
+cleartext, and the environment's value stops being what the deployment uses.
+
+Two consequences for the threat model, both real changes from the environment-only design:
+
+- **The volume is secret material.** A snapshot, a backup, or `fly ssh` into a running machine
+  reads the live ARAG service-account token and ElevenLabs key, alongside the API keys below.
+- **`fly secrets` stops being the source of truth** for anything that has been rotated in the
+  product. An operator auditing credentials has to look at the deployment, not at the platform.
+
+What does not change: the settings API never returns a secret after it is set (it reports
+`set: true` and a four-character hint), no secret reaches a browser, and no secret is written to a
+log — including inside an upstream error, which is scrubbed of every secret the request carried
+before it is surfaced.
+
+### Removing a key from `API_KEYS` does not revoke it
+
+The store is the authority, so a key seeded from the variable keeps authenticating after the
+variable stops naming it. That is the design — but it is also exactly what an operator whose key
+has leaked will assume works, so the key list marks such a key (`strandedFromEnv`) and the only
+revocation that bites is the one in Settings → API keys, which takes effect on the next request.
+
 ## The API key store
 
 `API_KEYS` used to be the entire authentication story for `auth: "api"` routes: a comma-separated

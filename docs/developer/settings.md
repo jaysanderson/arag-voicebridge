@@ -1,7 +1,7 @@
 # Settings
 
 Every configurable value in VoiceBridge is one row in a single declarative table,
-`SETTINGS_FIELDS` in `src/services/settings.ts` — 41 fields across five groups. **The tables below
+`SETTINGS_FIELDS` in `src/services/settings.ts` — 43 fields across six groups. **The tables below
 are transcribed from that one source; if this page and `SETTINGS_FIELDS` ever disagree, the code
 wins** (regenerate this page by re-reading it rather than trusting a stale copy).
 
@@ -35,6 +35,11 @@ with no restart, because nothing needs to be rebuilt or re-wired — only re-ass
   `assertVoiceConfig()` boot uses, and **rolled back** if it fails — the store and the live config
   both revert to what they were before the patch, and the request gets a 400 problem document
   naming the invariant.
+- **The environment is a seed, not a lever.** Editing a variable and restarting changes a setting
+  only while the store has no override for it; resetting the field (or the group) in the product is
+  what hands control back. `API_KEYS` is the sharpest case: removing a key from the variable and
+  restarting does **not** revoke it — the store is the authority, the key list marks it
+  `strandedFromEnv`, and Settings → API keys is where a revocation happens.
 - **Every change is audited**, not silently applied: `settings.changed`/`settings.reset` land in
   the operator log with who, which fields, and when — never the values, since some of them are
   secrets and the rest are already visible to whoever can read `GET /api/v1/admin/settings`.
@@ -138,3 +143,13 @@ mechanics and `POST /api/v1/admin/purge`).
 | Keep conversations for | `retention.sessionDays` | number (days) | `VOICE_RETENTION_SESSION_DAYS` | Days an ended listen session (with its transcript) is kept. |
 | Keep golden runs for | `retention.evalDays` | number (days) | `VOICE_RETENTION_EVAL_DAYS` | Days a golden-set evaluation result is kept. |
 | Purge automatically | `retention.autoPurge` | boolean | `VOICE_RETENTION_AUTO_PURGE` | Apply the retention windows on an hourly timer as well as on demand. |
+
+### Operations (`operations`)
+
+Both of these are read by the thing they configure on every use, so a change lands on the next log
+line and the next request.
+
+| Setting | Patch key | Type | Env default | What it affects |
+|---|---|---|---|---|
+| Log level | `operations.logLevel` | enum (`debug`, `info`, `warn`, `error`) | `LOG_LEVEL` | How much the deployment writes, and therefore how much the operator Logs view can show. Assigning it sets `Logger.level`, which is read on every call. |
+| Allowed origins | `operations.allowedOrigins` | string (comma-separated) | `ALLOWED_ORIGINS` | Which origins may call `/api/v1` from a browser. Empty = same-origin only. The CORS middleware reads the same array on every request, so the list is spliced in place rather than replaced. |

@@ -21,7 +21,7 @@ given deployment, without ever exposing a secret.
 | Integration | Env vars (defaults — see [`settings.md`](settings.md) for the live store) | Powers | Degrades to when unset |
 |---|---|---|---|
 | ARAG | `ARAG_KB_ID`, `ARAG_API_KEY`, `ARAG_REGION` (or `ARAG_BASE_URL`), or `ARAG_MOCK=1` | Everything | Boot fails (`assertAragEnv()`) unless `ARAG_MOCK=1` |
-| ElevenLabs | `ELEVENLABS_API_KEY` | Live's microphone (Scribe v2 Realtime STT feeding a session), the voice-agent call drawer (Conversational AI, configured from Settings), the optional spoken cue and voice list (text-to-speech) | The listen-session API, the Knowledge "ask it something" tester and the golden-set runner still work fully via the sample/typed conversation; `/api/v1/scribe-token`, `/api/v1/speech`, `/api/v1/voice-agent`, `/api/v1/admin/voice-agent[/push]` and `/api/v1/voices` return 503 |
+| ElevenLabs | `ELEVENLABS_API_KEY` | Live's microphone (Scribe v2 Realtime STT feeding a session), the voice-agent call drawer (Conversational AI, configured from Settings), the optional spoken cue and voice list (text-to-speech) | The listen-session API, the Knowledge "ask it something" tester and the golden-set runner still work fully via the sample/typed conversation; `/api/v1/scribe-token`, `/api/v1/speech`, `/api/v1/voices` and `POST /api/v1/admin/voice-agent/push` return 503. The two `GET …/voice-agent` reads answer 200 whatever the key situation — the configuration they describe is non-secret, and it is most useful *before* you have a key |
 
 ## ElevenLabs — the default voice and transcription stack
 

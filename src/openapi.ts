@@ -691,6 +691,13 @@ const ApiKey = {
     uses: { type: "integer", description: "Recorded uses (sampled at most every 30 s per key)" },
     revoked: { type: "boolean" },
     revokedAt: { type: ["string", "null"], format: "date-time" },
+    strandedFromEnv: {
+      type: "boolean",
+      description:
+        "Seeded from API_KEYS, still active, and no longer named by the variable. Removing a key " +
+        "from the environment does not revoke it — the store is the authority — so this marks the " +
+        "keys an operator may have believed were gone.",
+    },
   },
 };
 

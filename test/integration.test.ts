@@ -35,7 +35,10 @@ before(async () => {
     ADMIN_TOKEN: ADMIN,
     RATE_LIMIT_RPS: "500",
     RATE_LIMIT_BURST: "500",
-    LOG_LEVEL: "error",
+    // Must agree with the Logger below: `operations.logLevel` is a setting now, so `apply()` puts
+    // the environment's level onto the product's logger at boot. The suite reads the operator log
+    // to assert the audit trail, so it has to be a level that records one.
+    LOG_LEVEL: "info",
   });
   product = await createProduct(
     env,
@@ -726,7 +729,14 @@ describe("settings over HTTP", () => {
     const r = await client.get("/api/v1/admin/settings", admin);
     expect(r.status).toBe(200);
     const groups = (r.json as { groups: Array<{ id: string; fields: Array<{ key: string }> }> }).groups;
-    expect(groups.map((g) => g.id)).toEqual(["branding", "connection", "limits", "elevenlabs", "retention"]);
+    expect(groups.map((g) => g.id)).toEqual([
+      "branding",
+      "connection",
+      "limits",
+      "elevenlabs",
+      "retention",
+      "operations",
+    ]);
     for (const g of groups) expect(g.fields.length).toBeGreaterThan(0);
   });
 

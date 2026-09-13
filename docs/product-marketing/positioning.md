@@ -163,7 +163,7 @@ regardless of this decision.
 Everything a deployment needs to be operated — not merely shown — is now a screen, not a redeploy:
 
 - **Every configurable value is editable in the product.** Branding, the Knowledge Box connection,
-  every rate limit and timeout, the ElevenLabs stack — all 41 settings behind Settings are stored,
+  every rate limit and timeout, the ElevenLabs stack — all 43 settings behind Settings are stored,
   not just read from the environment, and a change takes effect on the next request. An environment
   variable is only the starting value.
 - **A voice agent pushed from the product, not pasted into a dashboard.** Settings reads what a

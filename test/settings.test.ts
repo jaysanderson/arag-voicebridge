@@ -129,6 +129,41 @@ describe("SettingsService", () => {
     expect(settings.isOverridden("branding")).toBe(false);
   });
 
+  /**
+   * Bar §1: nothing the product reads from configuration may be read-only in the UI. These two
+   * are read on every log line and every request respectively, so they take effect immediately.
+   */
+  it("the log level and the CORS allowlist are editable and immediate", () => {
+    const env = readEnv({
+      ARAG_MOCK: "1",
+      DATA_DIR: mkdtempSync(join(tmpdir(), "vb-ops-")),
+      LOG_LEVEL: "warn",
+    });
+    const voice = readVoiceEnv({});
+    const log = new Logger({ level: "warn", ringSize: 10, write: () => {} });
+    const settings = new SettingsService({
+      store: new Store(env.dataDir, { persist: false }),
+      log,
+      env,
+      voice,
+    });
+    settings.apply();
+
+    expect(log.level).toBe("warn");
+    settings.update({ operations: { logLevel: "debug" } });
+    expect(log.level).toBe("debug");
+    expect(env.logLevel).toBe("debug");
+
+    const origins = env.allowedOrigins;
+    settings.update({ operations: { allowedOrigins: "https://app.acme.example, https://acme.example" } });
+    // The same array object the CORS middleware reads on every request.
+    expect(env.allowedOrigins === origins).toBe(true);
+    expect(env.allowedOrigins).toEqual(["https://app.acme.example", "https://acme.example"]);
+    settings.update({ operations: { allowedOrigins: "" } });
+    expect(env.allowedOrigins).toEqual([]);
+    expect(settings.validate({ operations: { logLevel: "chatty" } })[0]!.message).toContain("one of");
+  });
+
   it("reset drops one group or all of them", () => {
     const { settings, voice, env } = harness();
     settings.update({ branding: { productName: "A" }, limits: { maxHistoryTurns: 12 } });
@@ -200,10 +235,15 @@ describe("SettingsService", () => {
       expect(errors[0]!.message).toContain("http(s)");
     }
     expect(settings.validate({ branding: { docsUrl: "//evil.example" } })).toHaveLength(1);
+    // A browser normalises a backslash to a slash in a special scheme, so `/\evil.example` is the
+    // same off-site link as `//evil.example`. The check resolves rather than pattern-matches.
+    expect(settings.validate({ branding: { docsUrl: "/\\evil.example" } })).toHaveLength(1);
+    expect(settings.validate({ branding: { docsUrl: "/\\\\evil.example" } })).toHaveLength(1);
     expect(settings.validate({ branding: { logoUrl: "data:text/html,<script>1</script>" } })).toHaveLength(1);
     // The shapes a partner actually uses are all fine.
     expect(settings.validate({ branding: { logoUrl: "/branding/logo.svg" } })).toEqual([]);
     expect(settings.validate({ branding: { docsUrl: "https://docs.acme.example" } })).toEqual([]);
+    expect(settings.validate({ branding: { logoUrl: "/branding/logo.svg?v=1" } })).toEqual([]);
     expect(settings.validate({ branding: { supportUrl: "" } })).toEqual([]);
     // Nothing unsafe was written on the way past.
     expect(voice.branding.docsUrl).toBe("/api/v1/docs");
@@ -369,6 +409,32 @@ describe("ApiKeyStore", () => {
     // And seeding again changes nothing at all.
     reopened.seedFromEnv(second.apiKeys);
     expect(reopened.list()).toHaveLength(2);
+  });
+
+  /**
+   * Pulling a key out of `API_KEYS` and restarting does *not* revoke it — the store is the
+   * authority. That is the documented design, and it is also exactly what an operator whose key
+   * has leaked will assume works, so the key says so about itself.
+   */
+  it("marks a seeded key the environment no longer names, because it still authenticates", () => {
+    const dir = mkdtempSync(join(tmpdir(), "vb-strand-"));
+    const store = new Store(dir, { persist: false });
+    const both = readEnv({ ARAG_MOCK: "1", DATA_DIR: dir, API_KEYS: "keyAAA,keyBBB" });
+    new ApiKeyStore({ store, env: both, log }).seedFromEnv(both.apiKeys);
+
+    const shorter = readEnv({ ARAG_MOCK: "1", DATA_DIR: dir, API_KEYS: "keyAAA" });
+    const after = new ApiKeyStore({ store, env: shorter, log });
+    after.seedFromEnv(shorter.apiKeys);
+
+    const list = after.list();
+    expect(list).toHaveLength(2);
+    // Both still authenticate — removing it from the variable revoked nothing.
+    expect(shorter.apiKeys.includes("keyBBB")).toBe(true);
+    const stranded = list.filter((k) => k.strandedFromEnv);
+    expect(stranded).toHaveLength(1);
+    expect(stranded[0]!.prefix).toBe(keyPrefix("keyBBB"));
+    // A key the variable still names is not marked.
+    expect(list.find((k) => k.prefix === keyPrefix("keyAAA"))!.strandedFromEnv).toBe(undefined);
   });
 
   it("generates keys that do not collide", () => {

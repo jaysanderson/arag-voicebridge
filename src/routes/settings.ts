@@ -35,23 +35,27 @@ const LOGO_BASENAME = "logo";
 /**
  * Does this SVG carry anything active?
  *
- * The test is run against a *normalised* copy — character references decoded, whitespace, control
- * characters and quotes removed — rather than against the raw text. A regex over raw markup loses
- * to `&#106;avascript:`, to a newline inside an attribute name, and to quoting; decoding first
- * means the check sees what a browser will see.
+ * Two normalised copies, because the two kinds of check want opposite things.
+ *
+ * - Element names, schemes and `attributeName="href"` are tested against a copy with whitespace,
+ *   control characters and quotes *removed*, so `&#106;avascript:` and `< script >` cannot hide.
+ * - An event handler is tested against a copy that **keeps** its whitespace, and only matches at
+ *   an attribute boundary. Testing it on the flattened copy was a false positive on the single
+ *   most common idiom in exported vector art: `fill="none" stroke="currentColor"` flattens to
+ *   `fill=nonestroke=currentcolor`, in which "n·on·e" plus the next attribute looks exactly like
+ *   an `on…=` handler. It refused this product's own wordmark.
+ *
+ * Both copies have character references decoded first, so the check sees what a browser will.
  *
  * `/branding/*` is already served under a `default-src 'none'; sandbox` policy, so this is the
  * second lock rather than the only one — but an operator who uploads a scripted logo should be
- * told, at the moment they do it, that it was refused and why, instead of shipping a file whose
- * payload is inert only because of a header somewhere else.
+ * told, at the moment they do it, that it was refused and why.
  */
-const SVG_ACTIVE_CONTENT = [
+const SVG_ACTIVE_FLAT = [
   /<script/,
   /<foreignobject/,
   /<handler/,
   /<!entity/,
-  // An event handler: `on` plus at least two letters, then `=`.
-  /on[a-z]{2,}=/,
   /javascript:/,
   /vbscript:/,
   /data:text\/html/,
@@ -59,16 +63,19 @@ const SVG_ACTIVE_CONTENT = [
   /attributename=(?:xlink:)?href/,
 ];
 
+/** An `on…=` attribute, at a boundary a parser would also treat as the start of an attribute. */
+const SVG_EVENT_HANDLER = /(?:^|[\s"'/;<])on[a-z]{2,}\s*=/;
+
 export function svgIsActive(svg: string): boolean {
-  const normalised = svg
+  const decoded = svg
     .replace(/&#x([0-9a-f]+);?/gi, (_, hex) => codePoint(Number.parseInt(hex, 16)))
     .replace(/&#(\d+);?/g, (_, dec) => codePoint(Number(dec)))
     .toLowerCase();
   // Whitespace, control characters and quotes are removed with a filter rather than a regex: a
   // character class of control characters is exactly what a linter is right to be suspicious of,
   // and this says what it means.
-  const bare = [...normalised].filter((ch) => ch > " " && ch !== '"' && ch !== "'").join("");
-  return SVG_ACTIVE_CONTENT.some((re) => re.test(bare));
+  const flat = [...decoded].filter((ch) => ch > " " && ch !== '"' && ch !== "'").join("");
+  return SVG_ACTIVE_FLAT.some((re) => re.test(flat)) || SVG_EVENT_HANDLER.test(decoded);
 }
 
 function codePoint(n: number): string {
