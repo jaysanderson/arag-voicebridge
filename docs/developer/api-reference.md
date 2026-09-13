@@ -1550,6 +1550,7 @@ Everything needed to wire an ElevenLabs Conversational AI agent to this deployme
 | `handoff_msg` | string |  |  |
 | `tool` | [VoiceAgentTool](#voiceagenttool) | yes |  |
 | `system_prompt` | string | yes |  |
+| `system_prompt_default` | string |  | What an empty override would give — so the editor can show what clearing it does |
 | `system_prompt_custom` | boolean |  | The prompt is this prospect's own text rather than the generated default |
 | `api_key` | object,null |  | Which stored API key the tool's X-API-Key header carries — never the secret |
 | `docs_url` | string |  |  |

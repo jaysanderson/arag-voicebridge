@@ -268,3 +268,20 @@ async function scrollUnderHead(page: import("@playwright/test").Page, selector: 
   }, selector);
   await page.waitForTimeout(500);
 }
+
+test("after: the prospects form and its branding preview", async ({ page }) => {
+  await page.goto("/prospects/");
+  await page.fill("#prToken", TOKEN);
+  await page.click("#prSignIn");
+  await expect(page.locator("#prNew")).toBeVisible({ timeout: 20_000 });
+  await page.click('#prTable tr[data-key="progress"] [data-edit]');
+  await expect(page.locator("#prTabs")).toBeVisible({ timeout: 20_000 });
+  await page.waitForTimeout(500);
+  await page.screenshot({ path: `${OUT}/after-23-prospect-form.png` });
+
+  // The branding tab is the one worth showing: the overlay and its live preview.
+  await page.click('#prTabs [data-tab="brand"]');
+  await expect(page.locator("#prPreview")).toBeVisible({ timeout: 20_000 });
+  await page.waitForTimeout(500);
+  await page.screenshot({ path: `${OUT}/after-24-prospect-branding-preview.png` });
+});

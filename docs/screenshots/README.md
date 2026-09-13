@@ -30,9 +30,9 @@ The single-page console with mode tabs that the pass replaced.
 | `before-10-admin-turns.png` | Admin turn log |
 | `before-11-admin-config.png` | Admin configuration |
 
-## After
+## After — the product-experience pass (D-28)
 
-The workspace: a Progress-branded rail, six product sections, and the operator views in the same
+The workspace: a Progress-branded rail, the product sections, and the operator views in the same
 shell.
 
 | File | Screen |
@@ -45,9 +45,30 @@ shell.
 | `after-06-knowledge.png` | Knowledge: the Knowledge Box, the Ask tester, the golden gate open |
 | `after-07-quality.png` | Quality: metrics, turn log, handoff and guard reasons |
 | `after-08-prospects.png` | Prospects, read-only until the operator token is entered |
-| `after-09-settings.png` | Settings: connection, branding preview, integrations incl. the ElevenLabs agent wiring |
+| `after-09-settings.png` | Settings, at the connection section |
 | `after-10-operator-signin.png` | Operator sign-in |
 | `after-11-operator-overview.png` | Operator overview |
 | `after-12-operator-sessions.png` | Operator listen sessions |
 | `after-13-operator-turns.png` | Operator turn log, guard trips redacted |
 | `after-14-operator-security.png` | Operator security: access, budgets, what is kept |
+
+## After — the full-implementation pass
+
+What this pass added: every setting editable in the product, the ElevenLabs agent configured from
+inside it, and the surfaces that let a stranger watch the product explain itself.
+
+| File | Screen |
+|---|---|
+| `after-15-setup.png` | Set up: the first-run checklist, read from the live configuration |
+| `after-16-pipeline-stepper.png` | The Ask tester with the nine-step pipeline trace open |
+| `after-17-brief-comparison.png` | A conversation record comparing two versions of the brief |
+| `after-18-api-explorer.png` | The API explorer, mid try-it, with the response and the curl |
+| `after-19-operator-logs.png` | The operator log, paged over the ring |
+| `after-20-settings-branding.png` | Settings → Branding: the editor and its live preview |
+| `after-21-settings-api-keys.png` | Settings → API keys: the real key store |
+| `after-22-settings-voice-agent.png` | Settings → ElevenLabs: the voice agent, ready to push |
+| `after-23-prospect-form.png` | The prospect editor, as a form rather than a JSON textarea |
+| `after-24-prospect-branding-preview.png` | The prospect's brand overlay, layered live on the deployment's |
+
+Every screen is also checked for horizontal overflow at 1440, 1200, 1024, 768 and 390 px by
+`test/shots/responsive.spec.ts`.
