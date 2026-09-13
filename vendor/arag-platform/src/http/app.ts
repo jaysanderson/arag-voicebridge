@@ -364,7 +364,13 @@ export class App {
   readonly log: Logger;
   private readonly middlewares: Middleware[] = [];
   private readonly routes: Route[] = [];
-  private readonly statics: Array<{ prefix: string; dir: string; index: string; cache: string }> = [];
+  private readonly statics: Array<{
+    prefix: string;
+    dir: string;
+    index: string;
+    cache: string;
+    fallback?: string;
+  }> = [];
   private readonly sessionSecret: string;
   private readonly buckets = new Map<string, { tokens: number; ts: number }>();
   server: Server | null = null;
@@ -412,13 +418,27 @@ export class App {
     }));
   }
 
-  /** Serve static files under `prefix` from `dir` (path-traversal safe). */
-  static(prefix: string, dir: string, opts: { index?: string; cache?: string } = {}): this {
+  /**
+   * Serve static files under `prefix` from `dir` (path-traversal safe).
+   *
+   * `fallback` opts into SPA/history-API routing: a GET under `prefix` that matches no file and
+   * looks like a navigation (an `Accept: text/html` request with no file extension) is answered
+   * with that file — `true` means the directory's `index`. It is opt-in because the default
+   * (404) is what an asset-only mount wants: a silently-200'd missing script is worse than a 404.
+   * API routes always win — the fallback is only consulted after routing and static both miss.
+   */
+  static(
+    prefix: string,
+    dir: string,
+    opts: { index?: string; cache?: string; fallback?: string | boolean } = {},
+  ): this {
+    const index = opts.index ?? "index.html";
     this.statics.push({
       prefix: prefix.replace(/\/+$/, ""),
       dir: resolve(dir),
-      index: opts.index ?? "index.html",
+      index,
       cache: opts.cache ?? "no-cache",
+      fallback: opts.fallback === true ? index : opts.fallback === false ? undefined : opts.fallback,
     });
     return this;
   }
@@ -640,44 +660,68 @@ export class App {
     return pathMatched ? "method" : null;
   }
 
+  /** Resolve `rel` inside a static mount, refusing anything that escapes it. */
+  private resolveStatic(s: { dir: string }, rel: string): string | null {
+    const candidate = normalize(resolve(s.dir, `.${rel}`));
+    if (candidate !== s.dir && !candidate.startsWith(s.dir + sep)) throw forbidden("Path traversal");
+    let file: string;
+    try {
+      file = realpathSync(candidate);
+    } catch {
+      return null;
+    }
+    const root = realpathSync(s.dir);
+    if (file !== root && !file.startsWith(root + sep)) throw forbidden("Path traversal");
+    return file;
+  }
+
+  private async sendFile(ctx: Ctx, file: string, cache: string, status = 200): Promise<void> {
+    const st = statSync(file);
+    ctx.res.writeHead(status, {
+      "Content-Type": contentTypeFor(file),
+      "Content-Length": st.size,
+      "Cache-Control": cache,
+    });
+    if (ctx.method === "HEAD") {
+      ctx.res.end();
+      return;
+    }
+    await new Promise<void>((resolveP, reject) => {
+      createReadStream(file)
+        .on("error", reject)
+        .on("end", () => resolveP())
+        .pipe(ctx.res);
+    });
+  }
+
   private async serveStatic(ctx: Ctx): Promise<boolean> {
     if (ctx.method !== "GET" && ctx.method !== "HEAD") return false;
+    // A navigation, not an asset: no file extension and the client asked for HTML. Only these
+    // are eligible for the SPA fallback — a missing .js must stay a 404, never a silent index.html.
+    const isNavigation = extname(ctx.path) === "" && (ctx.header("accept") ?? "").includes("text/html");
+    let owner: (typeof this.statics)[number] | null = null;
     for (const s of this.statics) {
       if (ctx.path !== s.prefix && !ctx.path.startsWith(`${s.prefix}/`)) continue;
+      // The longest matching prefix owns this path, so mounting an asset directory at /ui without
+      // a fallback opts its whole subtree out of the root mount's fallback.
+      if (!owner || s.prefix.length > owner.prefix.length) owner = s;
       let rel = decodeURIComponent(ctx.path.slice(s.prefix.length)) || "/";
       if (rel.endsWith("/")) rel += s.index;
-      const candidate = normalize(resolve(s.dir, `.${rel}`));
-      if (candidate !== s.dir && !candidate.startsWith(s.dir + sep)) throw forbidden("Path traversal");
-      let file: string;
-      let st: ReturnType<typeof statSync>;
-      try {
-        file = realpathSync(candidate);
-        st = statSync(file);
-      } catch {
-        continue;
-      }
-      const root = realpathSync(s.dir);
-      if (file !== root && !file.startsWith(root + sep)) throw forbidden("Path traversal");
-      if (st.isDirectory()) {
+      const file = this.resolveStatic(s, rel);
+      if (file === null) continue;
+      if (statSync(file).isDirectory()) {
         ctx.redirect(`${ctx.path}/`, 301);
         return true;
       }
-      ctx.res.writeHead(200, {
-        "Content-Type": contentTypeFor(file),
-        "Content-Length": st.size,
-        "Cache-Control": s.cache,
-      });
-      if (ctx.method === "HEAD") {
-        ctx.res.end();
+      await this.sendFile(ctx, file, s.cache);
+      return true;
+    }
+    if (isNavigation && owner?.fallback) {
+      const file = this.resolveStatic(owner, `/${owner.fallback}`);
+      if (file !== null) {
+        await this.sendFile(ctx, file, owner.cache);
         return true;
       }
-      await new Promise<void>((resolveP, reject) => {
-        createReadStream(file)
-          .on("error", reject)
-          .on("end", () => resolveP())
-          .pipe(ctx.res);
-      });
-      return true;
     }
     return false;
   }
