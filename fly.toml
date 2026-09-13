@@ -23,7 +23,10 @@ primary_region = "iad"   # co-locate with the ARAG zone (aws-us-east-2-1 ⇒ iad
   VOICE_BRIEF_RATE_BURST = "5"
   TRUST_PROXY = "fly"
 
-# The prospect registry, turn log, jobs and golden-eval history live in DATA_DIR.
+# DATA_DIR holds everything this deployment owns: the prospect registry, the settings store (which
+# overrides the [env] defaults above), the API key store, the uploaded branding assets served at
+# /branding, the turn log, jobs and golden-eval history. Lose the volume and the deployment falls
+# back to these variables — which is the point of them being defaults rather than the authority.
 [[mounts]]
   source = "data"
   destination = "/data"
