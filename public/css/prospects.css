@@ -93,11 +93,24 @@
 }
 
 /* The save bar: full-bleed to the drawer's edges and pinned to its floor. */
+/* The editor's own body is a column, so a short tab (the JSON one) leaves the save bar on the
+   drawer's floor instead of floating it mid-page. Sticky still does the work on the long tabs. */
+.arag-drawer > .body:has(> .vb-pr-tabs) {
+  display: flex;
+  flex-direction: column;
+}
+.arag-drawer > .body:has(> .vb-pr-tabs) > * {
+  flex: 0 0 auto;
+}
+
 .vb-pr-foot {
   position: sticky;
   bottom: calc(-1 * var(--vb-pr-pad));
   z-index: 3;
-  margin: 22px calc(-1 * var(--vb-pr-pad)) calc(-1 * var(--vb-pr-pad));
+  /* `auto` last: in the column above it takes up the slack on a short tab and resolves to zero on
+     a long one, where the last card's own margin already provides the gap. */
+  margin: 18px calc(-1 * var(--vb-pr-pad)) calc(-1 * var(--vb-pr-pad));
+  margin-top: auto;
   padding: 12px var(--vb-pr-pad);
   background: var(--arag-surface-raised);
   border-top: 1px solid var(--arag-border);

@@ -1,0 +1,95 @@
+/*
+ * Conversations — styles used by this page and no other.
+ *
+ * `ui-ext.css` carries what more than one screen shares; anything a single screen owns lives in a
+ * file next to it, so a page loads the rules it actually uses. The chrome around all of it is the
+ * platform kit (`/ui/arag-ui.css`).
+ */
+
+/* ─────────────────────────── product: brief version comparison ─────────────────────────── */
+/* Two versions of a brief, field by field. The colour is a second signal only — every row also
+   carries a word ("changed", "new", "dropped"), because a red/green reading is not something
+   every reviewer has. */
+
+.vb-compare {
+  border: 1px solid var(--arag-border);
+  border-radius: var(--arag-radius-lg, 10px);
+  overflow: hidden;
+}
+
+.vb-compare > .arag-filterbar {
+  padding: 10px 12px;
+  margin: 0;
+  border-bottom: 1px solid var(--arag-border);
+  background: var(--arag-surface);
+}
+
+.vb-diff-row {
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--arag-border);
+}
+
+.vb-diff-row:last-child {
+  border-bottom: none;
+}
+
+.vb-diff-row.same {
+  opacity: 0.62;
+}
+
+.vb-diff-row > .head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 4px;
+  font-size: 0.79rem;
+}
+
+.vb-diff-row p {
+  margin: 2px 0;
+  font-size: 0.84rem;
+}
+
+/* The old value is struck through rather than merely greyed: "this used to say" has to survive
+   being read next to "it now says". */
+.vb-diff-row p.was {
+  color: var(--arag-text-subtle);
+  text-decoration: line-through;
+}
+
+.vb-diff-row p.now {
+  color: var(--arag-text);
+}
+
+.vb-diff-list {
+  margin: 2px 0 0;
+  padding-left: 18px;
+  font-size: 0.84rem;
+}
+
+.vb-diff-list li {
+  margin: 2px 0;
+}
+
+.vb-diff-list li.same {
+  color: var(--arag-text-muted);
+}
+
+.vb-diff-list li.added::marker {
+  content: "+ ";
+  color: var(--arag-accent-fg);
+}
+
+.vb-diff-list li.added {
+  color: var(--arag-text);
+  font-weight: 500;
+}
+
+.vb-diff-list li.removed {
+  color: var(--arag-text-subtle);
+  text-decoration: line-through;
+}
+
+.vb-diff-list li.removed::marker {
+  content: "− ";
+}

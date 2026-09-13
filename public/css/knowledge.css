@@ -1,0 +1,69 @@
+/*
+ * Knowledge — styles used by this page and no other.
+ *
+ * `ui-ext.css` carries what more than one screen shares; anything a single screen owns lives in a
+ * file next to it, so a page loads the rules it actually uses. The chrome around all of it is the
+ * platform kit (`/ui/arag-ui.css`).
+ */
+
+/* ─────────────────────────── product: the pipeline stepper ─────────────────────────── */
+/* The nine steps of a turn, under the answer in the Ask tester. The list itself is the kit's
+   `.arag-timeline`; what is here is the disclosure that wraps it, because a stepper that is
+   always open would bury the answer it explains. */
+
+.vb-pipeline {
+  margin-top: 10px;
+  border-top: 1px solid var(--arag-border);
+  padding-top: 8px;
+}
+
+.vb-pipeline > summary {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  cursor: pointer;
+  list-style: none;
+  font-size: 0.79rem;
+  font-weight: 600;
+  color: var(--arag-text-muted);
+  padding: 2px 0;
+  border-radius: var(--arag-radius);
+}
+
+.vb-pipeline > summary::-webkit-details-marker {
+  display: none;
+}
+
+.vb-pipeline > summary:hover {
+  color: var(--arag-text);
+}
+
+.vb-pipeline > summary:focus-visible {
+  outline: none;
+  box-shadow: var(--arag-focus);
+}
+
+.vb-pipeline > summary > svg {
+  flex: none;
+  transition: transform 0.12s ease;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .vb-pipeline > summary > svg {
+    transition: none;
+  }
+}
+
+.vb-pipeline[open] > summary > svg {
+  transform: rotate(90deg);
+}
+
+.vb-pipeline > .arag-timeline {
+  margin-top: 10px;
+}
+
+/* The kit's timeline head is `display: flex` with no spacer rule of its own; the elapsed time
+   belongs hard right, against the step label on the left. */
+.vb-pipeline .arag-timeline .head > .spacer {
+  flex: 1;
+}
