@@ -32,6 +32,16 @@ const LOGO_TYPES: Record<string, string> = {
 const LOGO_MAX_BYTES = 1024 * 1024;
 const LOGO_BASENAME = "logo";
 
+/**
+ * Active content an SVG must not carry.
+ *
+ * `/branding/*` is already served under a `default-src 'none'; sandbox` policy, so this is the
+ * second lock rather than the only one — but an operator who uploads a scripted logo should be
+ * told, at the moment they do it, that it was refused and why, instead of shipping a file whose
+ * payload is inert only because of a header somewhere else.
+ */
+const SVG_ACTIVE_CONTENT = /<script|<foreignObject|<handler|\son[a-z]+\s*=|javascript:|<!ENTITY/i;
+
 /** Who made this change, for the audit line. Operators are identified by how they authenticated. */
 function actorOf(ctx: Ctx): string {
   return ctx.auth.via === "admin-token" ? "operator" : (ctx.auth.via ?? "unknown");
@@ -80,6 +90,12 @@ export function registerSettingsRoutes(app: App, deps: ProductDeps): void {
       }
       if (file.data.byteLength > LOGO_MAX_BYTES) {
         throw badRequest(`The logo must be at most ${LOGO_MAX_BYTES / 1024} KB.`);
+      }
+      if (ext === "svg" && SVG_ACTIVE_CONTENT.test(file.data.toString("utf8"))) {
+        throw badRequest(
+          "That SVG carries active content (a script, an event handler, a foreignObject or an " +
+            "entity declaration). Export it as a plain vector, or upload a PNG.",
+        );
       }
       const dir = resolve(deps.env.dataDir, "branding");
       mkdirSync(dir, { recursive: true });

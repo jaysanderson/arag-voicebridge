@@ -227,6 +227,23 @@ export async function createProduct(
     }),
     cors(),
   );
+  // Uploaded branding assets are operator-supplied *content*, and one of the formats a partner
+  // needs is SVG — which is a document that can carry script. Under the product's own CSP
+  // (`script-src 'self' 'unsafe-inline'`) an SVG navigated to directly would run that script on
+  // this origin. These responses therefore get their own, far narrower policy: nothing loads,
+  // nothing runs, and `sandbox` puts the document in an opaque origin so it cannot reach the
+  // product even if a browser disagrees with the rest. Set on the way in, because the static
+  // handler writes its own head.
+  app.use(async (ctx, next) => {
+    if (ctx.path.startsWith("/branding/")) {
+      ctx.res.setHeader(
+        "Content-Security-Policy",
+        "default-src 'none'; style-src 'unsafe-inline'; img-src data:; sandbox",
+      );
+    }
+    await next();
+  });
+
   app.use(async (ctx, next) => {
     usage.requests++;
     await next();
@@ -377,7 +394,8 @@ export async function createProduct(
 
   // Static surfaces: UI kit, admin panel, demo console. Both UIs consume only /api/v1.
   app.static("/ui", resolve(HERE, "vendor/arag-platform/ui"), { cache: "public, max-age=300" });
-  // Partner assets (a logo dropped into DATA_DIR/branding/) are served under /branding.
+  // Partner assets (a logo uploaded through Settings, or dropped into DATA_DIR/branding/) are
+  // served under /branding.
   app.static("/branding", resolve(env.dataDir, "branding"), { cache: "public, max-age=300" });
   app.static("/admin", resolve(HERE, "admin"));
   app.static("/", resolve(HERE, "public"));

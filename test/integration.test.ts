@@ -1176,6 +1176,59 @@ describe("the logo upload", () => {
     expect(((await client.get("/api/v1/branding")).json as { logoUrl: string }).logoUrl).toBe("");
   });
 
+  /**
+   * An SVG is a document, not a picture: uploaded unchecked and navigated to, it would run script
+   * on this origin under the product's own CSP. Two locks, and this asserts both.
+   */
+  it("refuses an SVG that carries active content, and sandboxes what it does serve", async () => {
+    const scripted = multipart(
+      "evil.svg",
+      "image/svg+xml",
+      '<svg xmlns="http://www.w3.org/2000/svg"><script>fetch("/api/v1/admin/settings")</script></svg>',
+    );
+    const bad = await client.request("POST", "/api/v1/admin/settings/logo", {
+      body: scripted.body,
+      headers: { ...admin, "content-type": scripted.contentType },
+    });
+    expect(bad.status).toBe(400);
+    expect((bad.json as { detail: string }).detail).toContain("active content");
+
+    const handler = multipart(
+      "evil2.svg",
+      "image/svg+xml",
+      '<svg xmlns="http://www.w3.org/2000/svg"><rect onload="alert(1)" /></svg>',
+    );
+    expect(
+      (
+        await client.request("POST", "/api/v1/admin/settings/logo", {
+          body: handler.body,
+          headers: { ...admin, "content-type": handler.contentType },
+        })
+      ).status,
+    ).toBe(400);
+
+    // And the assets that do get served cannot run anything even if one slipped through.
+    const clean = multipart(
+      "ok.svg",
+      "image/svg+xml",
+      '<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"><rect width="10" height="10"/></svg>',
+    );
+    const good = await client.request("POST", "/api/v1/admin/settings/logo", {
+      body: clean.body,
+      headers: { ...admin, "content-type": clean.contentType },
+    });
+    expect(good.status).toBe(200);
+    const served = await client.get("/branding/logo.svg");
+    expect(served.status).toBe(200);
+    const csp = served.headers.get("content-security-policy") ?? "";
+    expect(csp).toContain("default-src 'none'");
+    expect(csp).toContain("sandbox");
+    // The rest of the product keeps its own, permissive-enough policy.
+    const page = await client.get("/api/v1/branding");
+    expect(page.headers.get("content-security-policy")).toContain("script-src 'self'");
+    await client.request("DELETE", "/api/v1/admin/settings/logo", { headers: admin });
+  });
+
   it("refuses a type that is not an image", async () => {
     const { body, contentType } = multipart("payload.html", "text/html", "<script>alert(1)</script>");
     const r = await client.request("POST", "/api/v1/admin/settings/logo", {
