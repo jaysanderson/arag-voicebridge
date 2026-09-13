@@ -258,10 +258,11 @@ export function skeletonRows(rows = 5, cols = 4) {
   return Array.from({ length: rows }, () => `<tr>${cell.repeat(cols)}</tr>`).join("");
 }
 
-/** One cell of an `.arag-statstrip`. */
+/** One cell of an `.arag-statstrip`. Block children: the kit's `.label`/`.value`/`.sub` set type
+    and spacing, not display, and the strip's cells are plain blocks. */
 export function stat(k, v, s = "") {
-  return `<div><span class="label">${esc(k)}</span><span class="value">${esc(String(v))}</span>${
-    s ? `<span class="sub">${esc(s)}</span>` : ""
+  return `<div><div class="label">${esc(k)}</div><div class="value">${esc(String(v))}</div>${
+    s ? `<div class="sub">${esc(s)}</div>` : ""
   }</div>`;
 }
 

@@ -28,7 +28,7 @@ const $ = (s) => document.querySelector(s);
 function chrome() {
   return `
     <div class="arag-statstrip" id="qMetrics" style="margin-bottom:20px">
-      ${Array.from({ length: 6 }, () => '<div><span class="arag-skeleton" style="width:70%"></span></div>').join("")}
+      ${Array.from({ length: 6 }, () => '<div><div class="arag-skeleton" style="width:70%"></div></div>').join("")}
     </div>
 
     <section class="arag-card">

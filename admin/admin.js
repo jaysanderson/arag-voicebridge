@@ -93,7 +93,7 @@ function signInView() {
 async function renderOverview(el) {
   el.innerHTML = `<div class="arag-statstrip" id="ovStats">${Array.from(
     { length: 6 },
-    () => '<div><span class="arag-skeleton" style="width:70%"></span></div>',
+    () => '<div><div class="arag-skeleton" style="width:70%"></div></div>',
   ).join("")}</div>
     <div class="arag-split" style="margin-top:20px">
       <section class="arag-card"><div class="head"><h2>Jobs</h2></div><div class="body" id="ovJobs"></div></section>
