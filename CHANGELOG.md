@@ -7,9 +7,10 @@ All notable changes to this project are documented here. Format: [Keep a Changel
 The product-experience pass (workspace decision D-28): VoiceBridge stops being a console with mode
 tabs and becomes a workspace.
 
-The configuration-and-governance pass (`DECISIONS.md` V-25…V-28): environment variables become
-defaults rather than the authority, LiveAvatar/LiveKit are removed rather than shipped half-built,
-and the ElevenLabs voice agent is configured from the product instead of a dashboard.
+The full-implementation pass (`DECISIONS.md` V-25…V-32): environment variables become defaults
+rather than the authority, LiveAvatar/LiveKit are removed rather than shipped half-built, the
+ElevenLabs voice agent is configured and pushed from the product instead of a dashboard, and every
+`/api/v1` operation is reachable from a screen or the in-product API explorer.
 
 ### Added
 - **Information architecture**: a Progress-branded left rail with **Live, Conversations,
