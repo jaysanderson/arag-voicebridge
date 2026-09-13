@@ -222,6 +222,29 @@ Responses:
 
 Auth: ApiKey or Bearer
 
+
+### `GET /api/v1/listen/sessions/{id}/brief-history`
+
+**Every version of this conversation's brief** — The brief is rebuilt as the call moves, and the interesting question in review is not what it ended as but when it changed its mind. Each snapshot carries the version, the instant and the whole brief, so two versions can be compared field by field.
+
+Parameters:
+
+| Name | In | Type | Required | Description |
+|---|---|---|---|---|
+| `id` | path | string | yes |  |
+
+Responses:
+
+- `200` OK — `application/json` object
+- `400` Validation failed — `application/problem+json` [Problem](#problem)
+- `401` Authentication required — `application/problem+json` [Problem](#problem)
+- `403` Forbidden — `application/problem+json` [Problem](#problem)
+- `404` Not found — `application/problem+json` [Problem](#problem)
+- `429` Rate limited — `application/problem+json` [Problem](#problem)
+- `502` Upstream (ARAG) error — `application/problem+json` [Problem](#problem)
+
+Auth: ApiKey or Bearer
+
 ## voice
 
 ### `POST /api/v1/voice-answer`
@@ -435,30 +458,6 @@ Responses:
 
 Auth: ApiKey or Bearer
 
-
-### `POST /api/v1/avatar/sessions`
-
-**Start a LiveAvatar session in a bridge-owned LiveKit room**
-
-Request body (`application/json`): object
-
-| Field | Type | Required | Description |
-|---|---|---|---|
-| `prospect` | string | yes |  |
-
-Responses:
-
-- `201` Session started — `application/json` object
-- `400` Validation failed — `application/problem+json` [Problem](#problem)
-- `401` Authentication required — `application/problem+json` [Problem](#problem)
-- `403` Forbidden — `application/problem+json` [Problem](#problem)
-- `404` Not found — `application/problem+json` [Problem](#problem)
-- `429` Rate limited — `application/problem+json` [Problem](#problem)
-- `502` Upstream (ARAG) error — `application/problem+json` [Problem](#problem)
-- `503` LiveAvatar/LiveKit are not configured — `application/problem+json` [Problem](#problem)
-
-Auth: ApiKey or Bearer
-
 ## quality
 
 ### `GET /api/v1/metrics`
@@ -611,7 +610,7 @@ Auth: ApiKey or Bearer
 
 ### `GET /api/v1/integrations`
 
-**Which optional integrations this deployment has configured** — Booleans and non-secret detail only — never a credential. Backs the Settings view so a partner can see at a glance why the microphone or the avatar pane is unavailable.
+**Which optional integrations this deployment has configured** — Booleans and non-secret detail only — never a credential. Backs the Settings view so a partner can see at a glance why the microphone or the spoken brief is unavailable.
 
 Responses:
 
@@ -658,6 +657,23 @@ Responses:
 - `502` Upstream (ARAG) error — `application/problem+json` [Problem](#problem)
 
 Auth: public
+
+
+### `GET /api/v1/setup`
+
+**First-run checklist for this deployment** — What the onboarding wizard renders: each step with whether this deployment has already done it, checked against the live configuration rather than a stored 'dismissed' flag.
+
+Responses:
+
+- `200` OK — `application/json` object
+- `400` Validation failed — `application/problem+json` [Problem](#problem)
+- `401` Authentication required — `application/problem+json` [Problem](#problem)
+- `403` Forbidden — `application/problem+json` [Problem](#problem)
+- `404` Not found — `application/problem+json` [Problem](#problem)
+- `429` Rate limited — `application/problem+json` [Problem](#problem)
+- `502` Upstream (ARAG) error — `application/problem+json` [Problem](#problem)
+
+Auth: ApiKey or Bearer
 
 ## jobs
 
@@ -837,7 +853,7 @@ Auth: AdminToken
 
 ### `GET /api/v1/admin/logs`
 
-**Recent log records**
+**Recent log records, filtered and paged**
 
 Parameters:
 
@@ -846,6 +862,7 @@ Parameters:
 | `level` | query | string |  |  |
 | `contains` | query | string |  |  |
 | `limit` | query | integer |  |  |
+| `offset` | query | integer |  | Records to skip, newest first — the log page's pager |
 
 Responses:
 
@@ -1040,6 +1057,291 @@ Parameters:
 Responses:
 
 - `200` OK — `application/json` object
+- `400` Validation failed — `application/problem+json` [Problem](#problem)
+- `401` Authentication required — `application/problem+json` [Problem](#problem)
+- `403` Forbidden — `application/problem+json` [Problem](#problem)
+- `404` Not found — `application/problem+json` [Problem](#problem)
+- `429` Rate limited — `application/problem+json` [Problem](#problem)
+- `502` Upstream (ARAG) error — `application/problem+json` [Problem](#problem)
+
+Auth: AdminToken
+
+
+### `GET /api/v1/admin/settings`
+
+**Every editable setting, with its effective value and where it came from**
+
+Responses:
+
+- `200` OK — `application/json` [SettingsDocument](#settingsdocument)
+- `400` Validation failed — `application/problem+json` [Problem](#problem)
+- `401` Authentication required — `application/problem+json` [Problem](#problem)
+- `403` Forbidden — `application/problem+json` [Problem](#problem)
+- `404` Not found — `application/problem+json` [Problem](#problem)
+- `429` Rate limited — `application/problem+json` [Problem](#problem)
+- `502` Upstream (ARAG) error — `application/problem+json` [Problem](#problem)
+
+Auth: AdminToken
+
+
+### `PATCH /api/v1/admin/settings`
+
+**Change settings; they take effect immediately** — The store is the authority and the environment is only the default, so a change here survives a restart and needs none. A change that would make every turn dead air (a voice turn budget at or above the agent tool timeout) is rejected and rolled back.
+
+Request body (`application/json`): [SettingsPatch](#settingspatch)
+
+
+Responses:
+
+- `200` OK — `application/json` [SettingsDocument](#settingsdocument)
+- `400` Validation failed — `application/problem+json` [Problem](#problem)
+- `401` Authentication required — `application/problem+json` [Problem](#problem)
+- `403` Forbidden — `application/problem+json` [Problem](#problem)
+- `404` Not found — `application/problem+json` [Problem](#problem)
+- `429` Rate limited — `application/problem+json` [Problem](#problem)
+- `502` Upstream (ARAG) error — `application/problem+json` [Problem](#problem)
+
+Auth: AdminToken
+
+
+### `POST /api/v1/admin/settings/reset`
+
+**Drop stored overrides and fall back to the environment**
+
+Request body (`application/json`): object
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `group` | string (`branding`, `connection`, `limits`, `elevenlabs`, `retention`) |  | Omit to reset every group |
+
+Responses:
+
+- `200` OK — `application/json` [SettingsDocument](#settingsdocument)
+- `400` Validation failed — `application/problem+json` [Problem](#problem)
+- `401` Authentication required — `application/problem+json` [Problem](#problem)
+- `403` Forbidden — `application/problem+json` [Problem](#problem)
+- `404` Not found — `application/problem+json` [Problem](#problem)
+- `429` Rate limited — `application/problem+json` [Problem](#problem)
+- `502` Upstream (ARAG) error — `application/problem+json` [Problem](#problem)
+
+Auth: AdminToken
+
+
+### `POST /api/v1/admin/settings/logo`
+
+**Upload a partner logo and point branding at it** — Stores the file under DATA_DIR/branding/ (served at /branding/) and sets the branding logo URL to it. SVG, PNG, JPEG, WebP and GIF only, 1 MB max.
+
+Request body (`multipart/form-data`): object
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `file` | string | yes |  |
+
+Responses:
+
+- `200` OK — `application/json` object
+- `400` Validation failed — `application/problem+json` [Problem](#problem)
+- `401` Authentication required — `application/problem+json` [Problem](#problem)
+- `403` Forbidden — `application/problem+json` [Problem](#problem)
+- `404` Not found — `application/problem+json` [Problem](#problem)
+- `429` Rate limited — `application/problem+json` [Problem](#problem)
+- `502` Upstream (ARAG) error — `application/problem+json` [Problem](#problem)
+
+Auth: AdminToken
+
+
+### `DELETE /api/v1/admin/settings/logo`
+
+**Remove the uploaded logo and fall back to the wordmark**
+
+Responses:
+
+- `204` Removed
+- `400` Validation failed — `application/problem+json` [Problem](#problem)
+- `401` Authentication required — `application/problem+json` [Problem](#problem)
+- `403` Forbidden — `application/problem+json` [Problem](#problem)
+- `404` Not found — `application/problem+json` [Problem](#problem)
+- `429` Rate limited — `application/problem+json` [Problem](#problem)
+- `502` Upstream (ARAG) error — `application/problem+json` [Problem](#problem)
+
+Auth: AdminToken
+
+
+### `GET /api/v1/admin/api-keys`
+
+**The API key store** — `API_KEYS` seeds this store on first boot and then stops being the authority: keys created or revoked here take effect on the next request.
+
+Responses:
+
+- `200` OK — `application/json` object
+- `400` Validation failed — `application/problem+json` [Problem](#problem)
+- `401` Authentication required — `application/problem+json` [Problem](#problem)
+- `403` Forbidden — `application/problem+json` [Problem](#problem)
+- `404` Not found — `application/problem+json` [Problem](#problem)
+- `429` Rate limited — `application/problem+json` [Problem](#problem)
+- `502` Upstream (ARAG) error — `application/problem+json` [Problem](#problem)
+
+Auth: AdminToken
+
+
+### `POST /api/v1/admin/api-keys`
+
+**Mint an API key** — The secret is in this response and nowhere else, ever again.
+
+Request body (`application/json`): object
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `name` | string | yes |  |
+
+Responses:
+
+- `201` Key created — `application/json` object
+- `400` Validation failed — `application/problem+json` [Problem](#problem)
+- `401` Authentication required — `application/problem+json` [Problem](#problem)
+- `403` Forbidden — `application/problem+json` [Problem](#problem)
+- `404` Not found — `application/problem+json` [Problem](#problem)
+- `429` Rate limited — `application/problem+json` [Problem](#problem)
+- `502` Upstream (ARAG) error — `application/problem+json` [Problem](#problem)
+
+Auth: AdminToken
+
+
+### `PATCH /api/v1/admin/api-keys/{id}`
+
+**Rename a key**
+
+Parameters:
+
+| Name | In | Type | Required | Description |
+|---|---|---|---|---|
+| `id` | path | string | yes |  |
+
+Request body (`application/json`): object
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `name` | string | yes |  |
+
+Responses:
+
+- `200` OK — `application/json` [ApiKey](#apikey)
+- `400` Validation failed — `application/problem+json` [Problem](#problem)
+- `401` Authentication required — `application/problem+json` [Problem](#problem)
+- `403` Forbidden — `application/problem+json` [Problem](#problem)
+- `404` Not found — `application/problem+json` [Problem](#problem)
+- `429` Rate limited — `application/problem+json` [Problem](#problem)
+- `502` Upstream (ARAG) error — `application/problem+json` [Problem](#problem)
+
+Auth: AdminToken
+
+
+### `DELETE /api/v1/admin/api-keys/{id}`
+
+**Revoke a key** — The record stays, marked revoked — a revoked key that vanished would take its own audit trail with it — but it stops authenticating immediately.
+
+Parameters:
+
+| Name | In | Type | Required | Description |
+|---|---|---|---|---|
+| `id` | path | string | yes |  |
+
+Responses:
+
+- `200` OK — `application/json` [ApiKey](#apikey)
+- `400` Validation failed — `application/problem+json` [Problem](#problem)
+- `401` Authentication required — `application/problem+json` [Problem](#problem)
+- `403` Forbidden — `application/problem+json` [Problem](#problem)
+- `404` Not found — `application/problem+json` [Problem](#problem)
+- `429` Rate limited — `application/problem+json` [Problem](#problem)
+- `502` Upstream (ARAG) error — `application/problem+json` [Problem](#problem)
+
+Auth: AdminToken
+
+
+### `GET /api/v1/admin/voice-agent`
+
+**Compare this prospect's desired agent with what ElevenLabs has**
+
+Parameters:
+
+| Name | In | Type | Required | Description |
+|---|---|---|---|---|
+| `prospect` | query | string | yes |  |
+
+Responses:
+
+- `200` OK — `application/json` object
+- `400` Validation failed — `application/problem+json` [Problem](#problem)
+- `401` Authentication required — `application/problem+json` [Problem](#problem)
+- `403` Forbidden — `application/problem+json` [Problem](#problem)
+- `404` Not found — `application/problem+json` [Problem](#problem)
+- `429` Rate limited — `application/problem+json` [Problem](#problem)
+- `502` Upstream (ARAG) error — `application/problem+json` [Problem](#problem)
+
+Auth: AdminToken
+
+
+### `POST /api/v1/admin/voice-agent/push`
+
+**Write this prospect's agent configuration to ElevenLabs** — Creates or patches the custom server tool (URL, X-API-Key header, timeout, body schema), then the agent (router prompt, greeting, voice, tool link). Everything is merged into what the remote already has, so configuration this product does not own is left alone.
+
+Request body (`application/json`): object
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `prospect` | string | yes |  |
+| `api_key_id` | string |  | Which stored key the tool's X-API-Key header carries; omit to reuse or pick one |
+
+Responses:
+
+- `200` OK — `application/json` object
+- `400` Validation failed — `application/problem+json` [Problem](#problem)
+- `401` Authentication required — `application/problem+json` [Problem](#problem)
+- `403` Forbidden — `application/problem+json` [Problem](#problem)
+- `404` Not found — `application/problem+json` [Problem](#problem)
+- `429` Rate limited — `application/problem+json` [Problem](#problem)
+- `502` Upstream (ARAG) error — `application/problem+json` [Problem](#problem)
+
+Auth: AdminToken
+
+
+### `DELETE /api/v1/admin/listen-sessions/{id}`
+
+**Delete a conversation and everything recorded with it** — The transcript, the brief history and the citations go with it. Open subscribers are told the session ended before the record is removed.
+
+Parameters:
+
+| Name | In | Type | Required | Description |
+|---|---|---|---|---|
+| `id` | path | string | yes |  |
+
+Responses:
+
+- `204` Deleted
+- `400` Validation failed — `application/problem+json` [Problem](#problem)
+- `401` Authentication required — `application/problem+json` [Problem](#problem)
+- `403` Forbidden — `application/problem+json` [Problem](#problem)
+- `404` Not found — `application/problem+json` [Problem](#problem)
+- `429` Rate limited — `application/problem+json` [Problem](#problem)
+- `502` Upstream (ARAG) error — `application/problem+json` [Problem](#problem)
+
+Auth: AdminToken
+
+
+### `POST /api/v1/admin/purge`
+
+**Apply the retention windows, or delete a class of records now**
+
+Request body (`application/json`): object
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `scope` | string (`retention`, `turns`, `sessions`, `evals`, `all`) |  | `retention` applies the configured windows; the rest delete regardless of age |
+
+Responses:
+
+- `200` OK — `application/json` [PurgeResult](#purgeresult)
 - `400` Validation failed — `application/problem+json` [Problem](#problem)
 - `401` Authentication required — `application/problem+json` [Problem](#problem)
 - `403` Forbidden — `application/problem+json` [Problem](#problem)
@@ -1257,7 +1559,7 @@ What the selected prospect is grounded in, and whether its golden gate is open
 
 | Field | Type | Required | Description |
 |---|---|---|---|
-| `id` | string (`arag`, `elevenlabs`, `livekit`, `liveavatar`) | yes |  |
+| `id` | string (`arag`, `elevenlabs`) | yes |  |
 | `name` | string | yes |  |
 | `configured` | boolean | yes |  |
 | `primary` | boolean |  | True for the integrations the out-of-the-box experience is built on |
@@ -1275,6 +1577,7 @@ What the selected prospect is grounded in, and whether its golden gate is open
 | `method` | string | yes |  |
 | `url` | string | yes |  |
 | `timeoutMs` | integer | yes | Must exceed VOICE_TURN_TIMEOUT_MS |
+| `headerNames` | array of string |  | Header names the tool sends. Values (the API key) are never returned. |
 | `bodySchema` | object | yes |  |
 
 ### VoiceAgentConfig
@@ -1287,6 +1590,7 @@ Everything needed to wire an ElevenLabs Conversational AI agent to this deployme
 | `display_name` | string | yes |  |
 | `provider` | string (`elevenlabs`) | yes |  |
 | `agent_id` | string,null |  | Non-secret agent id, null when unwired |
+| `tool_id` | string,null |  | The custom server tool's id in ElevenLabs |
 | `ready` | boolean |  | An agent id is set and is not the example placeholder |
 | `configured` | boolean |  | This deployment holds an ElevenLabs key |
 | `voice_id` | string,null |  |  |
@@ -1294,7 +1598,131 @@ Everything needed to wire an ElevenLabs Conversational AI agent to this deployme
 | `handoff_msg` | string |  |  |
 | `tool` | [VoiceAgentTool](#voiceagenttool) | yes |  |
 | `system_prompt` | string | yes |  |
+| `system_prompt_custom` | boolean |  | The prompt is this prospect's own text rather than the generated default |
+| `api_key` | object,null |  | Which stored API key the tool's X-API-Key header carries — never the secret |
 | `docs_url` | string |  |  |
+
+### PipelineStep
+
+One step of the nine-step turn pipeline, as run for this question
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `step` | integer | yes |  |
+| `id` | string | yes | Stable step id (resolve, guard-input, ask, handoff, …) |
+| `label` | string | yes |  |
+| `status` | string (`ok`, `skipped`, `tripped`, `handoff`, `error`) | yes |  |
+| `ms` | integer | yes | ms from the start of the turn to the end of this step |
+| `detail` | string |  | What happened, in one line |
+
+### SettingsField
+
+One editable setting. `value` carries the effective value; a secret carries `set` and a `hint` instead, because a secret is written once and then rotated, never displayed.
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `key` | string | yes |  |
+| `group` | string (`branding`, `connection`, `limits`, `elevenlabs`, `retention`) | yes |  |
+| `label` | string | yes |  |
+| `type` | string (`string`, `text`, `number`, `boolean`, `color`, `secret`, `enum`) | yes |  |
+| `env` | string | yes | The environment variable that supplies the default |
+| `help` | string | yes |  |
+| `options` | array of string |  |  |
+| `min` | number |  |  |
+| `max` | number |  |  |
+| `placeholder` | string |  |  |
+| `value` | object |  | Effective value (absent for secrets) |
+| `envValue` | object |  | The boot-time default, so the UI can offer 'reset to environment' |
+| `set` | boolean |  | Secrets only: is one configured |
+| `hint` | string |  | Secrets only: enough to recognise the value, no more |
+| `source` | string (`stored`, `env`, `default`) | yes | Where the effective value came from |
+
+### SettingsGroup
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `id` | string | yes |  |
+| `title` | string | yes |  |
+| `description` | string | yes |  |
+| `fields` | array of [SettingsField](#settingsfield) | yes |  |
+
+### SettingsDocument
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `groups` | array of [SettingsGroup](#settingsgroup) | yes |  |
+
+### SettingsPatch
+
+Partial update, keyed by group then field. `null` resets a field to its environment default. Unknown groups and fields are rejected rather than ignored.
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `branding` | object |  |  |
+| `connection` | object |  |  |
+| `limits` | object |  |  |
+| `elevenlabs` | object |  |  |
+| `retention` | object |  |  |
+
+### ApiKey
+
+A stored API key. The secret is returned exactly once, when the key is created.
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `id` | string | yes |  |
+| `name` | string | yes |  |
+| `prefix` | string | yes | Leading characters, enough to recognise the key |
+| `origin` | string (`env`, `store`) | yes | Seeded from API_KEYS, or minted here |
+| `createdAt` | string | yes |  |
+| `lastUsedAt` | string,null |  |  |
+| `uses` | integer | yes | Recorded uses (sampled at most every 30 s per key) |
+| `revoked` | boolean | yes |  |
+| `revokedAt` | string,null |  |  |
+
+### AgentDiffRow
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `field` | string | yes |  |
+| `label` | string | yes |  |
+| `local` | string | yes | What this deployment wants |
+| `remote` | string | yes | What ElevenLabs currently has |
+| `matches` | boolean | yes |  |
+
+### RemoteAgentState
+
+The agent and tool as ElevenLabs currently holds them, reduced to the fields this product owns
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `agent` | object | yes |  |
+| `tool` | object | yes |  |
+
+### PurgeResult
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `turns` | integer | yes |  |
+| `sessions` | integer | yes |  |
+| `evals` | integer | yes |  |
+| `at` | string | yes |  |
+| `windows` | object | yes |  |
+
+### SetupStep
+
+One step of the first-run wizard, with whether this deployment has done it
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `id` | string | yes |  |
+| `title` | string | yes |  |
+| `body` | string | yes |  |
+| `done` | boolean | yes |  |
+| `optional` | boolean | yes | The product works without this step |
+| `detail` | string |  | What the product found when it checked |
+| `href` | string |  | Where to go to do it |
+| `action` | string |  | Label for the link |
 
 ### LatencyMs
 
@@ -1320,6 +1748,7 @@ Everything needed to wire an ElevenLabs Conversational AI agent to this deployme
 | `conversation_id` | string |  |  |
 | `history` | array of [HistoryTurn](#historyturn) |  |  |
 | `generative_model` | string |  | Per-request model override |
+| `trace` | boolean |  | Return the per-step pipeline trace alongside the answer. The Ask tester sets this; a voice agent never should (it adds bytes to every turn). |
 
 ### VoiceAnswerResponse
 
@@ -1329,6 +1758,7 @@ Everything needed to wire an ElevenLabs Conversational AI agent to this deployme
 | `citations` | array of [Citation](#citation) | yes |  |
 | `handoff` | boolean | yes | True when the turn must escalate to a human |
 | `latency_ms` | [LatencyMs](#latencyms) | yes |  |
+| `pipeline` | array of [PipelineStep](#pipelinestep) |  | Present only when the request asked to trace |
 | `handoff_reason` | string (`sentinel`, `not-found-phrase`, `empty-answer`, `no-retrieval`, `upstream-error`, `empty-question`, `question-too-long`, `prompt-injection`, `unsafe-request`, `empty-output`, `unspeakable-content`) |  | Why the turn handed off or deflected (never spoken) |
 
 ### BriefRequest
@@ -1371,7 +1801,6 @@ Non-secret projection of a registry entry (safe for browsers)
 | `agent_id` | string,null |  | ElevenLabs agent id (non-secret) |
 | `voice_id` | string,null |  |  |
 | `golden_questions` | array of [GoldenQuestion](#goldenquestion) |  |  |
-| `avatar_ready` | boolean |  |  |
 | `scribe_ready` | boolean |  |  |
 | `brand` | [Branding](#branding) |  | Deployment branding with this prospect's overrides applied |
 
@@ -1382,7 +1811,7 @@ Full prospect configuration (admin only — contains KB ids)
 | Field | Type | Required | Description |
 |---|---|---|---|
 | `display_name` | string | yes |  |
-| `kb_id` | string | yes | ARAG Knowledge Box id |
+| `kb_id` | string |  | ARAG Knowledge Box id. Empty = the deployment default (Settings → Connection). |
 | `region` | string | yes | ARAG zone slug |
 | `ask_config` | string |  | Stored ask search configuration name |
 | `reranker` | string (`noop`, `predict`) |  |  |
@@ -1393,7 +1822,9 @@ Full prospect configuration (admin only — contains KB ids)
 | `brand` | object |  | White-label overrides for this prospect, layered on the deployment's branding |
 | `agent_id` | string |  |  |
 | `voice_id` | string |  |  |
-| `avatar_id` | string |  |  |
+| `tool_id` | string |  | ElevenLabs custom server tool id |
+| `system_prompt` | string |  | Router prompt override; empty uses the generated default |
+| `agent_api_key_id` | string |  | Which stored API key the pushed tool's X-API-Key header carries |
 | `locale` | string | yes |  |
 | `greeting` | string | yes |  |
 | `handoff_msg` | string | yes |  |
@@ -1409,7 +1840,7 @@ A stored registry entry (admin only)
 | `createdAt` | string |  |  |
 | `updatedAt` | string |  |  |
 | `display_name` | string | yes |  |
-| `kb_id` | string | yes | ARAG Knowledge Box id |
+| `kb_id` | string |  | ARAG Knowledge Box id. Empty = the deployment default (Settings → Connection). |
 | `region` | string | yes | ARAG zone slug |
 | `ask_config` | string |  | Stored ask search configuration name |
 | `reranker` | string (`noop`, `predict`) |  |  |
@@ -1420,7 +1851,9 @@ A stored registry entry (admin only)
 | `brand` | object |  | White-label overrides for this prospect, layered on the deployment's branding |
 | `agent_id` | string |  |  |
 | `voice_id` | string |  |  |
-| `avatar_id` | string |  |  |
+| `tool_id` | string |  | ElevenLabs custom server tool id |
+| `system_prompt` | string |  | Router prompt override; empty uses the generated default |
+| `agent_api_key_id` | string |  | Which stored API key the pushed tool's X-API-Key header carries |
 | `locale` | string | yes |  |
 | `greeting` | string | yes |  |
 | `handoff_msg` | string | yes |  |
