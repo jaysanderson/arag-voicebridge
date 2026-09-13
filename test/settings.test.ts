@@ -36,6 +36,8 @@ function harness(envOverrides: Record<string, string> = {}, voiceOverrides: Reco
     log,
     env,
     voice,
+    // The same literal the config was read from, so "where did this value come from" is answerable.
+    envSrc: { ...envOverrides, ...voiceOverrides },
     onRewire: () => {
       rewires++;
     },
@@ -76,6 +78,32 @@ describe("SettingsService", () => {
     expect(name.value).toBe("Contoso");
     expect(name.source).toBe("env");
     expect(settings.isOverridden("branding")).toBe(false);
+  });
+
+  /**
+   * `BRAND_POWERED_BY=0` and "the variable is not set" produce the same effective value, and a
+   * settings screen that cannot tell them apart tells the operator the wrong story.
+   */
+  it("distinguishes a variable set to a falsy value from one that is not set at all", () => {
+    const { settings } = harness({}, { BRAND_POWERED_BY: "0" });
+    const branding = settings.describe().find((g) => g.id === "branding")!;
+    expect(branding.fields.find((f) => f.key === "poweredBy")!.source).toBe("env");
+    expect(branding.fields.find((f) => f.key === "poweredBy")!.value).toBe(false);
+    // Untouched by the environment, so it is the product's own default.
+    expect(branding.fields.find((f) => f.key === "footerText")!.source).toBe("default");
+  });
+
+  it("says whether resetting a secret would restore one, without revealing it", () => {
+    const conn = harness({ ARAG_API_KEY: "a-real-token-1234" })
+      .settings.describe()
+      .find((g) => g.id === "connection")!;
+    const key = conn.fields.find((f) => f.key === "apiKey")!;
+    expect(key.envSet).toBe(true);
+    expect(JSON.stringify(key)).not.toContain("a-real-token-1234");
+    const without = harness()
+      .settings.describe()
+      .find((g) => g.id === "connection")!;
+    expect(without.fields.find((f) => f.key === "apiKey")!.envSet).toBe(false);
   });
 
   it("a stored override wins over the environment and takes effect in the live config", () => {
@@ -162,11 +190,15 @@ describe("SettingsService", () => {
     const { settings, voice } = harness();
     settings.update({ limits: { maxHistoryTurns: 4 } });
     let message = "";
+    let path = "";
     try {
       settings.update({ limits: { turnTimeoutMs: 20_000, maxHistoryTurns: 9 } });
     } catch (err) {
       message = (err as ValidationFailed).errors[0]!.message;
+      path = (err as ValidationFailed).errors[0]!.path;
     }
+    // Named against the field, so the screen can put the error on an input rather than a summary.
+    expect(path).toBe("/limits/turnTimeoutMs");
     expect(message).toContain("AGENT_TOOL_TIMEOUT_MS");
     expect(voice.turnTimeoutMs).toBe(6000);
     // The whole patch is rolled back, not half-applied.
