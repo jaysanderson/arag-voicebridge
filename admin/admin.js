@@ -248,9 +248,8 @@ async function renderSessions(el) {
 async function deleteSession(id) {
   const ok = await confirmAction({
     title: "Delete this conversation?",
-    body: `The transcript, every version of the brief and the sources it gathered are deleted from ${esc(
-      id,
-    )}. This cannot be undone.`,
+    // Plain text: the shell's confirmAction escapes the body for us.
+    body: `The transcript, every version of the brief and the sources it gathered are deleted from ${id}. This cannot be undone.`,
     confirmLabel: "Delete the conversation",
   });
   if (!ok) return;
