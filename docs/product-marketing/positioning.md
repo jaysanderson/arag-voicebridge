@@ -38,6 +38,8 @@ of its own confidence.
 
 ## Naming
 
+> **Shipped name: VoiceBridge.** The analysis below is kept for the record; the programme ships the product as VoiceBridge, and a partner white-labels it under their own name (DECISIONS D-30, D-31 in the workspace).
+
 Three candidates, re-evaluated against the new hero: a live listener that briefs a person, not (only)
 an automated answer endpoint.
 
