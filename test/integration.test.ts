@@ -645,7 +645,7 @@ describe("admin", () => {
   });
 
   it("records a turn log that redacts guard-tripped questions", async () => {
-    const r = await client.get("/api/v1/admin/turns?limit=200", admin);
+    const r = await client.get("/api/v1/turns?limit=200", admin);
     const items = (r.json as { items: Array<{ question?: string; guard_trip: boolean }> }).items;
     expect(items.length).toBeGreaterThan(0);
     const guard = items.find((t) => t.guard_trip);
@@ -708,7 +708,7 @@ describe("admin", () => {
   });
 
   it("keeps golden-eval history", async () => {
-    const r = await client.get("/api/v1/admin/golden-evals", admin);
+    const r = await client.get("/api/v1/golden-evals", admin);
     expect((r.json as { items: unknown[] }).items.length).toBeGreaterThan(0);
   });
 });

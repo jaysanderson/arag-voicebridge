@@ -202,19 +202,12 @@ describe("responses validate against the spec", () => {
     check("/api/v1/admin/config", "get", 200, (await client.get("/api/v1/admin/config", admin)).json);
     check("/api/v1/admin/usage", "get", 200, (await client.get("/api/v1/admin/usage", admin)).json);
     check("/api/v1/admin/logs", "get", 200, (await client.get("/api/v1/admin/logs", admin)).json);
-    check("/api/v1/admin/turns", "get", 200, (await client.get("/api/v1/admin/turns", admin)).json);
     check("/api/v1/admin/prospects", "get", 200, (await client.get("/api/v1/admin/prospects", admin)).json);
     check(
       "/api/v1/admin/prospects/{key}",
       "get",
       200,
       (await client.get("/api/v1/admin/prospects/progress", admin)).json,
-    );
-    check(
-      "/api/v1/admin/golden-evals",
-      "get",
-      200,
-      (await client.get("/api/v1/admin/golden-evals", admin)).json,
     );
   });
 

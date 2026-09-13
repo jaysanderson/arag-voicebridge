@@ -1801,27 +1801,6 @@ export const openapi = buildOpenApi({
         security: adminSecurity,
       },
     },
-    "/api/v1/admin/turns": {
-      get: {
-        operationId: "adminTurns",
-        tags: ["admin"],
-        summary: "Recent turn log (latency, handoff reason, guard trips)",
-        description: "The question text is omitted for turns where a safety guard tripped.",
-        parameters: [
-          { name: "prospect", in: "query", schema: { type: "string", pattern: prospectKeyPattern } },
-          { name: "limit", in: "query", schema: { type: "integer", minimum: 1, maximum: 500, default: 100 } },
-        ],
-        responses: {
-          200: jsonResponse({
-            type: "object",
-            required: ["items"],
-            properties: { items: { type: "array", items: { $ref: "#/components/schemas/TurnRecord" } } },
-          }),
-          ...standardResponses,
-        },
-        security: adminSecurity,
-      },
-    },
     "/api/v1/admin/listen-sessions": {
       get: {
         operationId: "adminListenSessions",
@@ -2196,26 +2175,6 @@ export const openapi = buildOpenApi({
         }),
         responses: {
           200: jsonResponse({ $ref: "#/components/schemas/PurgeResult" }),
-          ...standardResponses,
-        },
-        security: adminSecurity,
-      },
-    },
-    "/api/v1/admin/golden-evals": {
-      get: {
-        operationId: "adminGoldenEvals",
-        tags: ["admin"],
-        summary: "Golden-set evaluation history",
-        parameters: [
-          { name: "prospect", in: "query", schema: { type: "string", pattern: prospectKeyPattern } },
-          { name: "limit", in: "query", schema: { type: "integer", minimum: 1, maximum: 100, default: 25 } },
-        ],
-        responses: {
-          200: jsonResponse({
-            type: "object",
-            required: ["items"],
-            properties: { items: { type: "array", items: { $ref: "#/components/schemas/GoldenEval" } } },
-          }),
           ...standardResponses,
         },
         security: adminSecurity,

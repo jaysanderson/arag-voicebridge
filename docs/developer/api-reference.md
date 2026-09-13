@@ -1019,30 +1019,6 @@ Responses:
 Auth: AdminToken
 
 
-### `GET /api/v1/admin/turns`
-
-**Recent turn log (latency, handoff reason, guard trips)** — The question text is omitted for turns where a safety guard tripped.
-
-Parameters:
-
-| Name | In | Type | Required | Description |
-|---|---|---|---|---|
-| `prospect` | query | string |  |  |
-| `limit` | query | integer |  |  |
-
-Responses:
-
-- `200` OK — `application/json` object
-- `400` Validation failed — `application/problem+json` [Problem](#problem)
-- `401` Authentication required — `application/problem+json` [Problem](#problem)
-- `403` Forbidden — `application/problem+json` [Problem](#problem)
-- `404` Not found — `application/problem+json` [Problem](#problem)
-- `429` Rate limited — `application/problem+json` [Problem](#problem)
-- `502` Upstream (ARAG) error — `application/problem+json` [Problem](#problem)
-
-Auth: AdminToken
-
-
 ### `GET /api/v1/admin/listen-sessions`
 
 **Recent listen sessions with brief history and latency**
@@ -1342,30 +1318,6 @@ Request body (`application/json`): object
 Responses:
 
 - `200` OK — `application/json` [PurgeResult](#purgeresult)
-- `400` Validation failed — `application/problem+json` [Problem](#problem)
-- `401` Authentication required — `application/problem+json` [Problem](#problem)
-- `403` Forbidden — `application/problem+json` [Problem](#problem)
-- `404` Not found — `application/problem+json` [Problem](#problem)
-- `429` Rate limited — `application/problem+json` [Problem](#problem)
-- `502` Upstream (ARAG) error — `application/problem+json` [Problem](#problem)
-
-Auth: AdminToken
-
-
-### `GET /api/v1/admin/golden-evals`
-
-**Golden-set evaluation history**
-
-Parameters:
-
-| Name | In | Type | Required | Description |
-|---|---|---|---|---|
-| `prospect` | query | string |  |  |
-| `limit` | query | integer |  |  |
-
-Responses:
-
-- `200` OK — `application/json` object
 - `400` Validation failed — `application/problem+json` [Problem](#problem)
 - `401` Authentication required — `application/problem+json` [Problem](#problem)
 - `403` Forbidden — `application/problem+json` [Problem](#problem)

@@ -459,8 +459,8 @@ just-created prospect, or for scripting the onboarding ritual (see
 ### Turn log and golden-eval history
 
 ```bash
-curl -s -b admin.txt "$BASE/api/v1/admin/turns?prospect=progress&limit=50"
-curl -s -b admin.txt "$BASE/api/v1/admin/golden-evals?prospect=progress&limit=10"
+curl -s -b admin.txt "$BASE/api/v1/turns?prospect=progress&limit=50"
+curl -s -b admin.txt "$BASE/api/v1/golden-evals?prospect=progress&limit=10"
 ```
 
 The turn log never carries question text for a turn that tripped a safety guard — it stores the

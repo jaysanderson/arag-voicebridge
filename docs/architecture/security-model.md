@@ -188,7 +188,7 @@ defence, which is grounding-and-handoff itself.
 
 ## Redaction
 
-The turn log (`turns.json`, `GET /api/v1/admin/turns`) stores the question text **only** for turns
+The turn log (`turns.json`, `GET /api/v1/turns`) stores the question text **only** for turns
 that passed the input guard (`DECISIONS.md` V-08) — a turn that tripped a guard records the reason
 (`prompt-injection`, `unsafe-request`, etc.), the prospect and the latency, and nothing else. This
 is exactly backwards from an intuition that "the interesting text to keep is the bad text" — an

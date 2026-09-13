@@ -122,7 +122,10 @@ test.describe("Knowledge", () => {
     await page.fill("#kbQuestion", "What is the capital of France?");
     await page.click("#kbAsk");
     const answer = page.locator("#kbAnswers .arag-bubble.assistant").last();
-    await expect(answer.locator(".arag-chip.warn")).toContainText("handoff", { timeout: 20_000 });
+    // The turn's own outcome badge, not the "handed off" step inside the pipeline stepper below it.
+    await expect(answer.locator(".arag-chips > .arag-chip.warn")).toContainText("handoff", {
+      timeout: 20_000,
+    });
   });
 
   test("runs the golden set, opens the gate, and keeps the run in history", async ({ page }) => {
@@ -170,7 +173,24 @@ test.describe("Quality", () => {
 });
 
 test.describe("Prospects", () => {
-  test("is read-only until the operator token is entered, then allows a full round trip", async ({
+  const ADMIN = { Authorization: "Bearer e2e-admin-token" };
+  /** Every key these tests create. Removed afterwards so a re-run starts from the same registry. */
+  const KEYS = ["e2e-form", "e2e-edit", "e2e-inherit"];
+
+  test.afterEach(async ({ request }) => {
+    for (const k of KEYS) await request.delete(`/api/v1/admin/prospects/${k}`, { headers: ADMIN });
+  });
+
+  /** The registry is readable by anyone; editing it needs the deployment's admin token. */
+  async function unlock(page: Page) {
+    await open(page, "/prospects/");
+    await expect(page.locator("#prTable tbody tr[data-key]").first()).toBeVisible({ timeout: 20_000 });
+    await page.fill("#prToken", "e2e-admin-token");
+    await page.click("#prSignIn");
+    await expect(page.locator("#prNew")).toBeVisible({ timeout: 20_000 });
+  }
+
+  test("is read-only until the operator token is entered, then a prospect is created, provisioned and deleted through the form", async ({
     page,
   }) => {
     await open(page, "/prospects/");
@@ -183,45 +203,192 @@ test.describe("Prospects", () => {
     await expect(page.locator("#prNew")).toBeVisible({ timeout: 20_000 });
 
     await page.click("#prNew");
-    await page.fill("#prKey", "e2e-acme");
-    await page.fill(
-      "#prJson",
-      JSON.stringify(
-        {
-          display_name: "E2E Acme",
-          kb_id: "kb-e2e",
-          region: "europe-1",
-          locale: "en-GB",
-          greeting: "Hello",
-          handoff_msg: "One moment",
-          golden_questions: [{ q: "What is binder jetting?", expect: "answer" }],
-        },
-        null,
-        2,
-      ),
-    );
-    await page.click("#prSave");
-    await expect(page.locator('#prTable tr[data-key="e2e-acme"]')).toBeVisible({ timeout: 20_000 });
+    // The form is the editor. Raw JSON is still reachable, but it is a tab behind it.
+    await expect(page.locator("#prDisplayName")).toBeVisible();
+    await expect(page.locator("#prJson")).toBeHidden();
 
-    await page.click('#prTable tr[data-key="e2e-acme"] [data-edit]');
+    await page.fill("#prKey", "e2e-form");
+    await page.fill("#prDisplayName", "E2E Form Co");
+    await page.fill("#prKbId", "kb-e2e");
+    await page.fill("#prRegion", "europe-1");
+    await page.fill("#prLocale", "en-GB");
+
+    await page.click('#prTabs [data-tab="voice"]');
+    await page.fill("#prGreeting", "Hello, you've reached E2E Form Co.");
+    await page.fill("#prHandoff", "One moment, I'll put you through.");
+
+    // The golden set is a row editor, not a JSON array.
+    await page.click('#prTabs [data-tab="golden"]');
+    await page.click("#prGoldenAdd");
+    await page.fill('[data-gq="0"] [data-gq-q]', "What is binder jetting?");
+    await page.fill('[data-gq="0"] [data-gq-include]', "binder");
+    await page.click("#prGoldenAdd");
+    await expect(page.locator("#prGolden [data-gq]")).toHaveCount(2);
+    await page.click('[data-gq="1"] [data-gq-remove]');
+    await expect(page.locator("#prGolden [data-gq]")).toHaveCount(1);
+
+    await page.click("#prSave");
+    const row = page.locator('#prTable tr[data-key="e2e-form"]');
+    await expect(row).toBeVisible({ timeout: 20_000 });
+    await expect(row).toContainText("E2E Form Co");
+    await expect(row).toContainText("kb-e2e");
+    await expect(row).toContainText("1 question");
+
+    await page.click('#prTable tr[data-key="e2e-form"] [data-edit]');
     await page.click("#prProvision");
-    await expect(page.locator("#prResult")).toContainText("e2e-acme_voice", { timeout: 20_000 });
+    await expect(page.locator("#prResult")).toContainText("e2e-form_voice", { timeout: 20_000 });
 
     await page.click("#prDelete");
     await page.click(".arag-modal [data-ok]");
-    await expect(page.locator('#prTable tr[data-key="e2e-acme"]')).toHaveCount(0, { timeout: 20_000 });
+    await expect(page.locator('#prTable tr[data-key="e2e-form"]')).toHaveCount(0, { timeout: 20_000 });
   });
 
-  test("rejects an invalid configuration with the offending field named", async ({ page }) => {
-    await open(page, "/prospects/");
-    await page.fill("#prToken", "e2e-admin-token");
-    await page.click("#prSignIn");
-    await expect(page.locator("#prNew")).toBeVisible({ timeout: 20_000 });
-    await page.click("#prNew");
-    await page.fill("#prKey", "bad");
-    await page.fill("#prJson", JSON.stringify({ display_name: "only a name" }));
+  test("an edit made in the form is what comes back after a reload", async ({ page, request }) => {
+    // Seeded through the API, so the test is about editing rather than creating. The stored record
+    // carries id/createdAt/updatedAt, which are not input — a PUT that echoed them back would be
+    // rejected, so this also proves the editor builds its body from the form.
+    await request.post("/api/v1/admin/prospects", {
+      headers: ADMIN,
+      data: {
+        key: "e2e-edit",
+        config: {
+          display_name: "E2E Edit Co",
+          kb_id: "kb-e2e",
+          region: "europe-1",
+          locale: "en-GB",
+          greeting: "Original greeting.",
+          handoff_msg: "Original handoff.",
+        },
+      },
+    });
+
+    await unlock(page);
+    await page.click('#prTable tr[data-key="e2e-edit"] [data-edit]');
+    await page.fill("#prDisplayName", "E2E Edit Co (renamed)");
+    await page.click('#prTabs [data-tab="voice"]');
+    await page.fill("#prGreeting", "Good afternoon, E2E Edit Co.");
     await page.click("#prSave");
-    await expect(page.locator("#prError")).toContainText("region", { timeout: 20_000 });
+    await expect(page.locator(".arag-drawer")).toHaveCount(0, { timeout: 20_000 });
+    await expect(page.locator('#prTable tr[data-key="e2e-edit"]')).toContainText("renamed");
+
+    await page.reload();
+    await expect(page.locator("#prNew")).toBeVisible({ timeout: 20_000 });
+    await page.click('#prTable tr[data-key="e2e-edit"] [data-edit]');
+    await expect(page.locator("#prDisplayName")).toHaveValue("E2E Edit Co (renamed)");
+    await page.click('#prTabs [data-tab="voice"]');
+    await expect(page.locator("#prGreeting")).toHaveValue("Good afternoon, E2E Edit Co.");
+  });
+
+  test("a server validation error lands on the field the server named", async ({ page }) => {
+    await unlock(page);
+    await page.click("#prNew");
+    await page.fill("#prKey", "e2e-form");
+    await page.fill("#prDisplayName", "E2E Form Co");
+    // A single character passes the browser's own "is it filled in" check and fails the API's
+    // minLength of 2, so this is the server's verdict being rendered, not the browser's.
+    await page.fill("#prLocale", "e");
+    await page.click("#prSave");
+
+    const slot = page.locator("#prLocale-err");
+    await expect(slot).toBeVisible({ timeout: 20_000 });
+    await expect(slot).toContainText("at least 2 characters");
+    await expect(page.locator("#prLocale")).toHaveAttribute("aria-invalid", "true");
+    // The message is associated with the input, not floated away in a toast.
+    await expect(page.locator("#prLocale")).toHaveAttribute("aria-describedby", /prLocale-err/);
+    await expect(page.locator("#prError")).toContainText("1 field needs attention");
+
+    await page.fill("#prLocale", "en-GB");
+    await page.click("#prSave");
+    await expect(page.locator('#prTable tr[data-key="e2e-form"]')).toBeVisible({ timeout: 20_000 });
+  });
+
+  test("the branding preview layers the overlay on the deployment's branding, live", async ({ page }) => {
+    await unlock(page);
+    await page.click("#prNew");
+    await page.fill("#prKey", "e2e-form");
+    await page.fill("#prDisplayName", "E2E Form Co");
+    await page.click('#prTabs [data-tab="brand"]');
+
+    const pv = page.locator("#prPreview");
+    const name = pv.locator("[data-pv-name]");
+    const tagline = pv.locator("[data-pv-tagline]");
+
+    // Nothing overridden yet: every value in the preview is the deployment's own.
+    await expect(name).toHaveText("VoiceBridge");
+    await expect(name).toHaveAttribute("data-origin", "inherited");
+    await expect(page.locator("#prLayers li").first()).toContainText("inherited");
+
+    await page.fill("#prBrandProductName", "Acme Live Assist");
+    await expect(name).toHaveText("Acme Live Assist");
+    await expect(name).toHaveAttribute("data-origin", "override");
+    await expect(page.locator("#prLayers li").first()).toContainText("overridden");
+
+    // The tagline was not touched, so it still falls through to the deployment's value.
+    await expect(tagline).toHaveText("live, grounded call context");
+    await expect(tagline).toHaveAttribute("data-origin", "inherited");
+
+    await page.fill("#prBrandPrimaryColor", "#6b2fa0");
+    await expect(pv).toHaveAttribute("style", /--vb-pv-primary:\s*#6b2fa0/);
+
+    // A colour the platform's grammar rejects never reaches CSS, and is named before a save.
+    await page.fill("#prBrandPrimaryColor", "url(javascript:alert(1))");
+    await expect(pv).not.toHaveAttribute("style", /url\(/);
+    await page.click("#prSave");
+    await expect(page.locator("#prBrandPrimaryColor-err")).toContainText("not a colour");
+    await expect(page.locator('#prTable tr[data-key="e2e-form"]')).toHaveCount(0);
+  });
+
+  test("hiding the Progress credit takes it out of the preview", async ({ page }) => {
+    await unlock(page);
+    await page.click("#prNew");
+    await page.click('#prTabs [data-tab="brand"]');
+
+    const pv = page.locator("#prPreview");
+    await expect(pv).toContainText("Built on Progress Agentic RAG", { useInnerText: true });
+    await expect(pv.locator(".vb-pv-band")).toBeVisible();
+
+    await page.selectOption("#prBrandPoweredBy", "false");
+    await expect(pv).not.toContainText("Built on Progress Agentic RAG", { useInnerText: true });
+    await expect(pv.locator(".vb-pv-band")).toBeHidden();
+    await expect(page.locator("#prLayers")).toContainText("hidden");
+
+    await page.selectOption("#prBrandPoweredBy", "");
+    await expect(pv.locator(".vb-pv-band")).toBeVisible();
+  });
+
+  test("a prospect with no Knowledge Box of its own says what it inherits", async ({ page }) => {
+    await unlock(page);
+    await page.click("#prNew");
+    await expect(page.locator("#prKbId")).toHaveValue("");
+    await expect(page.locator("#prKbId")).toHaveAttribute("placeholder", /deployment default/);
+    await expect(page.locator("#prKbId-help")).toContainText("deployment default");
+
+    await page.fill("#prKey", "e2e-inherit");
+    await page.fill("#prDisplayName", "E2E Inherit Co");
+    await page.click("#prSave");
+
+    const row = page.locator('#prTable tr[data-key="e2e-inherit"]');
+    await expect(row).toBeVisible({ timeout: 20_000 });
+    await expect(row.locator("td").nth(1)).toContainText("deployment default");
+  });
+
+  test("the raw JSON is still there as an escape hatch, and reads back into the form", async ({ page }) => {
+    await unlock(page);
+    await page.click('#prTable tr[data-key="progress"] [data-edit]');
+    await page.click('#prTabs [data-tab="json"]');
+    const raw = await page.locator("#prJson").inputValue();
+    const parsed = JSON.parse(raw) as Record<string, unknown>;
+    // Store fields are not input, so they are never in the body the editor would send.
+    expect(parsed).not.toHaveProperty("id");
+    expect(parsed).not.toHaveProperty("createdAt");
+    expect(parsed).not.toHaveProperty("updatedAt");
+    expect(parsed.display_name).toBe("Progress");
+
+    await page.locator("#prJson").fill(JSON.stringify({ ...parsed, display_name: "Pasted In" }));
+    await page.click("#prJsonApply");
+    // Apply lands on the form, which stays the primary surface.
+    await expect(page.locator("#prDisplayName")).toBeVisible();
+    await expect(page.locator("#prDisplayName")).toHaveValue("Pasted In");
   });
 });
 

@@ -1,6 +1,11 @@
 /**
  * Admin surface (ADMIN_TOKEN): health per prospect, configuration, usage, logs, the prospect
- * registry CRUD, stored-configuration provisioning, the turn log and golden-eval history.
+ * registry CRUD, stored-configuration provisioning and the listen-session index.
+ *
+ * The turn log and golden-eval history are *not* here: `GET /api/v1/turns` and
+ * `GET /api/v1/golden-evals` already serve them, with filters and paging these copies never had,
+ * and an admin token authenticates against those routes too — so the admin variants were a second
+ * name for the same data with fewer features (V-30).
  */
 import {
   type App,
@@ -235,21 +240,6 @@ export function registerAdminRoutes(app: App, deps: ProductDeps): void {
 
   // ── observability ────────────────────────────────────────────────────────────
   app.get(
-    "/api/v1/admin/turns",
-    (ctx) => ({
-      items: deps.metrics.recent({
-        prospect: ctx.queryObj.prospect as string | undefined,
-        limit: (ctx.queryObj.limit as number | undefined) ?? 100,
-      }),
-    }),
-    {
-      auth: "admin",
-      validate: operationSchemas(openapi, "/api/v1/admin/turns", "get"),
-      operationId: "adminTurns",
-    },
-  );
-
-  app.get(
     "/api/v1/admin/listen-sessions",
     (ctx) => ({
       items: deps.listen
@@ -263,21 +253,6 @@ export function registerAdminRoutes(app: App, deps: ProductDeps): void {
       auth: "admin",
       validate: operationSchemas(openapi, "/api/v1/admin/listen-sessions", "get"),
       operationId: "adminListenSessions",
-    },
-  );
-
-  app.get(
-    "/api/v1/admin/golden-evals",
-    (ctx) => ({
-      items: deps.evals.list({
-        prospect: ctx.queryObj.prospect as string | undefined,
-        limit: (ctx.queryObj.limit as number | undefined) ?? 25,
-      }),
-    }),
-    {
-      auth: "admin",
-      validate: operationSchemas(openapi, "/api/v1/admin/golden-evals", "get"),
-      operationId: "adminGoldenEvals",
     },
   );
 }
