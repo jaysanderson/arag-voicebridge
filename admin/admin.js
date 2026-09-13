@@ -469,7 +469,7 @@ async function renderJobs(el) {
     });
     if (!yes) return;
     try {
-      await api(`/api/v1/jobs/${btn.dataset.cancel}`, { method: "DELETE" });
+      await api(`/api/v1/jobs/${encodeURIComponent(btn.dataset.cancel)}`, { method: "DELETE" });
       await load();
     } catch (err) {
       toast(err.message, "error");
