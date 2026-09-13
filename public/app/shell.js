@@ -96,6 +96,9 @@ export function mountShell(opts) {
       home-href="/" docs-href="/api/v1/docs"${operator ? "" : ' admin-href="/admin/"'}
       status-endpoint="/readyz" branding-src="none" collapsible>
       <div class="arag-pagehead">
+        <button class="arag-btn ghost sm vb-railmenu" type="button" aria-label="Show navigation">
+          ${icon("menu", 16)}
+        </button>
         <nav class="arag-breadcrumb" aria-label="Breadcrumb">
           <ol>
             <li><a href="/" data-brand-name>VoiceBridge</a></li>
@@ -116,6 +119,13 @@ export function mountShell(opts) {
       <div id="vbView"></div>
     </arag-app-shell>`;
 
+  // Below 900 px the rail is a drawer opened from the band's hamburger — but a white-labelled
+  // deployment (BRAND_POWERED_BY=0) hides the whole band, and with it the only way to reach the
+  // navigation. This stand-in drives the kit's own control, so the scrim, focus and Escape
+  // behaviour stay the kit's; CSS shows it only when the band is actually gone.
+  document
+    .querySelector(".vb-railmenu")
+    ?.addEventListener("click", () => document.querySelector(".arag-rail-menu")?.click());
   paintNavIcons(operator ? [...items, BACK_LINK] : [...items, OPERATOR_LINK]);
   setActive(label);
   return document.getElementById("vbView");

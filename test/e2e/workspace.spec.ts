@@ -221,7 +221,7 @@ test.describe("Prospects", () => {
     await page.fill("#prKey", "bad");
     await page.fill("#prJson", JSON.stringify({ display_name: "only a name" }));
     await page.click("#prSave");
-    await expect(page.locator("#prError")).toContainText("kb_id", { timeout: 20_000 });
+    await expect(page.locator("#prError")).toContainText("region", { timeout: 20_000 });
   });
 });
 

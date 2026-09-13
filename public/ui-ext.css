@@ -447,3 +447,18 @@
   display: block;
   min-width: 0;
 }
+
+/* Stand-in for the band's hamburger on a white-labelled deployment: `applyBranding()` hides the
+   whole `.arag-appband` when the Progress signature is off, and the band owns the only trigger for
+   the rail drawer below 900 px. Shown only when the band really is gone. */
+.vb-railmenu {
+  display: none;
+  align-self: flex-start;
+  margin-bottom: 4px;
+}
+
+@media (max-width: 899px) {
+  .arag-app:has(> .arag-appband[hidden]) .vb-railmenu {
+    display: inline-flex;
+  }
+}
