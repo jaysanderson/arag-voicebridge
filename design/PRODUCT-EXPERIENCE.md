@@ -28,6 +28,48 @@ phone.
 
 ---
 
+## Amendments — the full-implementation pass (13 September 2026)
+
+This document specified the product-experience pass (D-28). The full-implementation pass that
+followed it changed four things in the specification itself. Where this document and the list below
+disagree, **the list below is current**; the rest of the document still stands.
+
+1. **LiveAvatar and LiveKit leave the specification entirely** (`DECISIONS.md` V-25). §11.5's two
+   secondary integration rows, the `h.voiceAvatar` heading, the `err.avatarMissing` copy key and
+   every "Voice and avatar" label are withdrawn. The pane was never built, the endpoint behind it
+   could not be exercised end to end, and the bar for the later pass was that nothing sits in the
+   specification the product cannot do. `*.livekit.cloud` remains in the Content-Security-Policy,
+   because the vendored ElevenLabs browser client negotiates its WebRTC media there — it belongs to
+   the ElevenLabs integration now, not to a video-avatar feature.
+
+2. **Settings becomes an editor, not a read-back** (V-26). §11.5 described Settings as a page that
+   explains which environment variables to set. Every setting is now editable in place, persisted in
+   the deployment's own store, and effective on the next request; the environment supplies defaults
+   only. Secrets are write-only — set once, then reported as set with a four-character hint. The
+   canonical inventory of all 41 settings is `docs/developer/settings.md`, generated from the one
+   table in `src/services/settings.ts`.
+
+3. **The ElevenLabs agent is configured from the product** (V-28). §11.5's "paste these two into the
+   dashboard" snippets remain, but as the fallback. The primary surface is a diff between what this
+   deployment wants and what ElevenLabs actually has, and a push that writes it — including the
+   custom server tool's URL and its `X-API-Key` header, which is what makes the call work against an
+   API-key-protected deployment.
+
+4. **Four sections join the information architecture** (§2): **Set up** (the first-run checklist,
+   computed from live configuration), **API** (the in-product explorer over every operation in the
+   OpenAPI document, with try-it), the **pipeline stepper** inside the Ask tester, and **brief
+   version comparison** inside a conversation record. The rail gains a Deployment group carrying
+   Set up and Operator.
+
+5. **Class naming (§6) is superseded by platform v0.2.0.** The `vb-*` components this document
+   proposed for the kit — the rail shell, data table, filter bar, drawer, stat strip, empty state,
+   timeline, segmented control, snippet and skeleton — were taken into the kit and are now `arag-*`.
+   What stays `vb-*` is what stayed product-specific: the Live workspace, the brief card, the
+   transcript, the source picker, the scribe strip, the onboarding hero, the pipeline stepper, the
+   brief diff, the setup checklist and the API explorer's operation list.
+
+---
+
 ## Contents
 
 1. [Personas and jobs-to-be-done](#1-personas-and-jobs-to-be-done)
