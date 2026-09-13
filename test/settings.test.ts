@@ -187,6 +187,28 @@ describe("SettingsService", () => {
     expect(voice.branding.primaryColor).toBe("#6b2fa0");
   });
 
+  /**
+   * Branding is public (`GET /api/v1/branding`) and the kit puts `docsUrl` straight into an
+   * `href`. An operator is trusted; that is not the same as being allowed to hand every future
+   * viewer of the deployment a `javascript:` link.
+   */
+  it("refuses a branding URL that is not a path or http(s)", () => {
+    const { settings, voice } = harness();
+    for (const field of ["docsUrl", "logoUrl", "supportUrl"]) {
+      const errors = settings.validate({ branding: { [field]: "javascript:alert(1)" } });
+      expect(errors[0]!.path).toBe(`/branding/${field}`);
+      expect(errors[0]!.message).toContain("http(s)");
+    }
+    expect(settings.validate({ branding: { docsUrl: "//evil.example" } })).toHaveLength(1);
+    expect(settings.validate({ branding: { logoUrl: "data:text/html,<script>1</script>" } })).toHaveLength(1);
+    // The shapes a partner actually uses are all fine.
+    expect(settings.validate({ branding: { logoUrl: "/branding/logo.svg" } })).toEqual([]);
+    expect(settings.validate({ branding: { docsUrl: "https://docs.acme.example" } })).toEqual([]);
+    expect(settings.validate({ branding: { supportUrl: "" } })).toEqual([]);
+    // Nothing unsafe was written on the way past.
+    expect(voice.branding.docsUrl).toBe("/api/v1/docs");
+  });
+
   it("enforces number ranges and enum options", () => {
     const { settings } = harness();
     expect(settings.validate({ limits: { maxHistoryTurns: 999 } })[0]!.message).toContain("at most");
@@ -315,6 +337,38 @@ describe("ApiKeyStore", () => {
     keys.revoke(key.id);
     expect(keys.activeCount).toBe(0);
     expect(keys.secretOf(key.id)).toBe(null);
+  });
+
+  /**
+   * Adding a second key to `API_KEYS` and restarting used to overwrite the first one's record —
+   * the id was its position in the list, and the counter only advanced for keys it had just added.
+   * The first key stopped authenticating without anybody asking for that.
+   */
+  it("seeding is idempotent and order-independent, so adding a key never revokes another", () => {
+    const dir = mkdtempSync(join(tmpdir(), "vb-seed-"));
+    const first = readEnv({ ARAG_MOCK: "1", DATA_DIR: dir, API_KEYS: "keyAAA" });
+    const store = new Store(dir, { persist: false });
+    const keys = new ApiKeyStore({ store, env: first, log });
+    keys.seedFromEnv(first.apiKeys);
+    expect(keys.list()).toHaveLength(1);
+    const originalId = keys.list()[0]!.id;
+
+    // A restart with one more key in the variable, against the same store.
+    const second = readEnv({ ARAG_MOCK: "1", DATA_DIR: dir, API_KEYS: "keyAAA,keyBBB" });
+    const reopened = new ApiKeyStore({ store, env: second, log });
+    reopened.seedFromEnv(second.apiKeys);
+
+    const list = reopened.list();
+    expect(list).toHaveLength(2);
+    expect(list.every((k) => !k.revoked)).toBe(true);
+    expect(list.some((k) => k.id === originalId)).toBe(true);
+    // Both still authenticate.
+    expect(second.apiKeys.includes("keyAAA")).toBe(true);
+    expect(second.apiKeys.includes("keyBBB")).toBe(true);
+
+    // And seeding again changes nothing at all.
+    reopened.seedFromEnv(second.apiKeys);
+    expect(reopened.list()).toHaveLength(2);
   });
 
   it("generates keys that do not collide", () => {

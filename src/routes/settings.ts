@@ -33,14 +33,71 @@ const LOGO_MAX_BYTES = 1024 * 1024;
 const LOGO_BASENAME = "logo";
 
 /**
- * Active content an SVG must not carry.
+ * Does this SVG carry anything active?
+ *
+ * The test is run against a *normalised* copy — character references decoded, whitespace, control
+ * characters and quotes removed — rather than against the raw text. A regex over raw markup loses
+ * to `&#106;avascript:`, to a newline inside an attribute name, and to quoting; decoding first
+ * means the check sees what a browser will see.
  *
  * `/branding/*` is already served under a `default-src 'none'; sandbox` policy, so this is the
  * second lock rather than the only one — but an operator who uploads a scripted logo should be
  * told, at the moment they do it, that it was refused and why, instead of shipping a file whose
  * payload is inert only because of a header somewhere else.
  */
-const SVG_ACTIVE_CONTENT = /<script|<foreignObject|<handler|\son[a-z]+\s*=|javascript:|<!ENTITY/i;
+const SVG_ACTIVE_CONTENT = [
+  /<script/,
+  /<foreignobject/,
+  /<handler/,
+  /<!entity/,
+  // An event handler: `on` plus at least two letters, then `=`.
+  /on[a-z]{2,}=/,
+  /javascript:/,
+  /vbscript:/,
+  /data:text\/html/,
+  // `<animate>` and `<set>` are legitimate in a logo; rewriting a link with one is not.
+  /attributename=(?:xlink:)?href/,
+];
+
+export function svgIsActive(svg: string): boolean {
+  const normalised = svg
+    .replace(/&#x([0-9a-f]+);?/gi, (_, hex) => codePoint(Number.parseInt(hex, 16)))
+    .replace(/&#(\d+);?/g, (_, dec) => codePoint(Number(dec)))
+    .toLowerCase();
+  // Whitespace, control characters and quotes are removed with a filter rather than a regex: a
+  // character class of control characters is exactly what a linter is right to be suspicious of,
+  // and this says what it means.
+  const bare = [...normalised].filter((ch) => ch > " " && ch !== '"' && ch !== "'").join("");
+  return SVG_ACTIVE_CONTENT.some((re) => re.test(bare));
+}
+
+function codePoint(n: number): string {
+  return Number.isFinite(n) && n >= 0 && n <= 0x10ffff ? String.fromCodePoint(n) : "";
+}
+
+/**
+ * What the bytes actually are, regardless of what the browser said they were.
+ *
+ * The declared `Content-Type` on a multipart part is supplied by the client, so gating the SVG
+ * check on it let an SVG through under `image/png`: refused as a script, accepted as a picture.
+ * The magic numbers below are the file's own claim, and the two have to agree.
+ */
+function sniff(data: Buffer): string | null {
+  const head = data.subarray(0, 64);
+  if (head.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))) return "png";
+  if (head[0] === 0xff && head[1] === 0xd8 && head[2] === 0xff) return "jpg";
+  if (head.subarray(0, 6).toString("latin1").startsWith("GIF8")) return "gif";
+  if (
+    head.subarray(0, 4).toString("latin1") === "RIFF" &&
+    data.subarray(8, 12).toString("latin1") === "WEBP"
+  ) {
+    return "webp";
+  }
+  // SVG is text: an XML declaration, a comment, a doctype or the root element, in any order.
+  const text = data.subarray(0, 1024).toString("utf8").trimStart();
+  if (/^<(\?xml|!--|!doctype\s+svg|svg[\s>])/i.test(text)) return "svg";
+  return null;
+}
 
 /** Who made this change, for the audit line. Operators are identified by how they authenticated. */
 function actorOf(ctx: Ctx): string {
@@ -84,17 +141,32 @@ export function registerSettingsRoutes(app: App, deps: ProductDeps): void {
     (ctx) => {
       const file = ctx.files?.[0];
       if (!file) throw badRequest("Send the image as a multipart field named 'file'.");
-      const ext = LOGO_TYPES[file.contentType.split(";")[0]!.trim().toLowerCase()];
-      if (!ext) {
+      const declared = LOGO_TYPES[file.contentType.split(";")[0]!.trim().toLowerCase()];
+      if (!declared) {
         throw badRequest(`Unsupported image type "${file.contentType}". Use SVG, PNG, JPEG, WebP or GIF.`);
       }
       if (file.data.byteLength > LOGO_MAX_BYTES) {
         throw badRequest(`The logo must be at most ${LOGO_MAX_BYTES / 1024} KB.`);
       }
-      if (ext === "svg" && SVG_ACTIVE_CONTENT.test(file.data.toString("utf8"))) {
+      // The bytes decide, not the browser: a declared type that disagrees with the file is either
+      // a mistake worth telling the operator about, or an attempt to smuggle one format past the
+      // checks that apply to another.
+      const actual = sniff(file.data);
+      if (actual === null) {
         throw badRequest(
-          "That SVG carries active content (a script, an event handler, a foreignObject or an " +
-            "entity declaration). Export it as a plain vector, or upload a PNG.",
+          "That file is not an image the product recognises. Use SVG, PNG, JPEG, WebP or GIF.",
+        );
+      }
+      if (actual !== declared) {
+        throw badRequest(
+          `That file is a ${actual.toUpperCase()} sent as ${file.contentType}. Upload it with its own type.`,
+        );
+      }
+      const ext = actual;
+      if (ext === "svg" && svgIsActive(file.data.toString("utf8"))) {
+        throw badRequest(
+          "That SVG carries active content (a script, an event handler, an animation that can " +
+            "rewrite a link, or an entity declaration). Export it as a plain vector, or upload a PNG.",
         );
       }
       const dir = resolve(deps.env.dataDir, "branding");

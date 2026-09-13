@@ -99,6 +99,29 @@ export const SETTINGS_GROUPS: SettingsGroup[] = [
 
 const str = (v: unknown) => String(v ?? "").trim();
 
+/**
+ * A URL a browser will be told to follow or load.
+ *
+ * Branding is served publicly from `GET /api/v1/branding` and the UI kit puts `docsUrl` straight
+ * into an `href` and `logoUrl` into an `img src`. An operator is trusted, but "trusted" is not the
+ * same as "allowed to hand every future viewer of this deployment a `javascript:` link" — so these
+ * fields take a site-relative path or an http(s) URL, and nothing else. Same reasoning as
+ * `citeChip` applies to a citation's URL, one layer further down.
+ */
+export function isSafeUrl(value: string): boolean {
+  if (value === "") return true;
+  // A site-relative path, but not a protocol-relative one (`//evil.example` is off-site).
+  if (value.startsWith("/") && !value.startsWith("//")) return true;
+  try {
+    return ["http:", "https:"].includes(new URL(value).protocol);
+  } catch {
+    return false;
+  }
+}
+
+/** The branding fields that become a URL in the page. */
+const URL_FIELDS = new Set(["branding.logoUrl", "branding.docsUrl", "branding.supportUrl"]);
+
 function field(spec: FieldSpec): FieldSpec {
   return spec;
 }
@@ -820,6 +843,13 @@ export class SettingsService {
           default:
             if (typeof value !== "string") errors.push({ path, message: "must be a string" });
             else if (value.length > 4000) errors.push({ path, message: "must be at most 4000 characters" });
+            else if (URL_FIELDS.has(`${group}.${key}`) && !isSafeUrl(value))
+              errors.push({
+                path,
+                message:
+                  "must be a site-relative path (/logo.svg) or an http(s) URL — this value becomes a " +
+                  "link or an image for everyone who opens the deployment",
+              });
         }
       }
     }

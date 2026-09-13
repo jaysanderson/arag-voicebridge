@@ -22,6 +22,7 @@ import type {
   ProspectRecord,
   PublicProspect,
 } from "../types.ts";
+import { isSafeUrl } from "./settings.ts";
 
 export class ProspectNotFoundError extends Error {
   readonly key: string;
@@ -56,6 +57,9 @@ const OPTIONAL_STRINGS: Array<keyof ProspectConfig> = [
 /** The branding fields a prospect may override (see `ProspectBrand`). */
 /** The branding fields that end up as CSS values, and so must pass the platform's colour grammar. */
 const COLOUR_KEYS = ["primaryColor", "accentColor"];
+
+/** The branding fields that become a URL in the page, and so must not be able to carry a scheme. */
+const URL_KEYS = ["logoUrl"];
 
 const BRAND_KEYS = [
   "productName",
@@ -112,6 +116,13 @@ export function validateProspect(cfg: unknown): FieldError[] {
           errors.push({
             path: `/brand/${k}`,
             message: k === "poweredBy" ? "must be a boolean" : "must be a string",
+          });
+        } else if (URL_KEYS.includes(k) && !isSafeUrl(String(v))) {
+          errors.push({
+            path: `/brand/${k}`,
+            message:
+              "must be a site-relative path (/logo.svg) or an http(s) URL — this value becomes an " +
+              "image for everyone who opens this prospect",
           });
         } else if (COLOUR_KEYS.includes(k) && v !== "" && !isSafeColor(String(v))) {
           // The same grammar the deployment's own branding is held to. A prospect overlay reaches

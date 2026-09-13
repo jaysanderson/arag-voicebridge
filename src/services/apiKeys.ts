@@ -16,7 +16,7 @@
  * `X-API-Key` header. That is the same trust level as the `.env` file the store replaces; the
  * API never returns a secret after the one response that creates it.
  */
-import { randomBytes } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import type {
   Collection,
   Logger,
@@ -63,6 +63,19 @@ export function keyPrefix(secret: string): string {
   return secret.slice(0, 10);
 }
 
+/**
+ * A stable, collision-free id for a key seeded from `API_KEYS`.
+ *
+ * Derived from the secret rather than from its position in the list. Numbering by position meant
+ * that adding a second key to the variable and restarting gave the new key the id the *first* one
+ * already had — overwriting it, and silently revoking a key that was still in use. Deriving the id
+ * from the secret makes seeding idempotent and order-independent: the same key is always the same
+ * record, whatever else is in the list.
+ */
+export function envKeyId(secret: string): string {
+  return `env_${createHash("sha256").update(secret).digest("hex").slice(0, 16)}`;
+}
+
 export class ApiKeyStore {
   private readonly col: Collection<ApiKeyRecord>;
   private readonly env: PlatformEnv;
@@ -82,11 +95,13 @@ export class ApiKeyStore {
   seedFromEnv(keys: string[]): number {
     const known = new Set(this.col.list().map((k) => k.secret));
     let seeded = 0;
+    let position = 0;
     for (const secret of keys) {
+      position++;
       if (!secret || known.has(secret)) continue;
       this.col.put({
-        id: `env-${seeded + 1}`,
-        name: keys.length > 1 ? `API_KEYS #${seeded + 1}` : "API_KEYS",
+        id: envKeyId(secret),
+        name: keys.length > 1 ? `API_KEYS #${position}` : "API_KEYS",
         secret,
         prefix: keyPrefix(secret),
         origin: "env",

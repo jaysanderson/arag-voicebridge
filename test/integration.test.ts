@@ -1229,6 +1229,50 @@ describe("the logo upload", () => {
     await client.request("DELETE", "/api/v1/admin/settings/logo", { headers: admin });
   });
 
+  /**
+   * The declared content type on a multipart part comes from the client, so gating the SVG check
+   * on it let the same bytes through under a different name: refused as a script, accepted as a
+   * picture. The file's own magic numbers decide now.
+   */
+  it("refuses a file whose bytes disagree with the type it was sent as", async () => {
+    const disguised = multipart(
+      "logo.png",
+      "image/png",
+      '<svg xmlns="http://www.w3.org/2000/svg"><script>fetch("/api/v1/admin/settings")</script></svg>',
+    );
+    const r = await client.request("POST", "/api/v1/admin/settings/logo", {
+      body: disguised.body,
+      headers: { ...admin, "content-type": disguised.contentType },
+    });
+    expect(r.status).toBe(400);
+    expect((r.json as { detail: string }).detail).toContain("SVG sent as image/png");
+
+    // And a raster image whose bytes say what its type says is fine. GIF's magic number is plain
+    // ASCII, which survives this helper's string body — a PNG's 0x89 would not.
+    const good = multipart("logo.gif", "image/gif", "GIF89a\u0001\u0000\u0001\u0000pretend-pixels");
+    const ok = await client.request("POST", "/api/v1/admin/settings/logo", {
+      body: good.body,
+      headers: { ...admin, "content-type": good.contentType },
+    });
+    expect(ok.status).toBe(200);
+    expect((ok.json as { logoUrl: string }).logoUrl.startsWith("/branding/logo.gif")).toBe(true);
+    await client.request("DELETE", "/api/v1/admin/settings/logo", { headers: admin });
+  });
+
+  it("refuses an SVG whose payload is hidden behind character references", async () => {
+    const encoded = multipart(
+      "sneaky.svg",
+      "image/svg+xml",
+      '<svg xmlns="http://www.w3.org/2000/svg"><a href="&#106;avascript:alert(1)">x</a></svg>',
+    );
+    const r = await client.request("POST", "/api/v1/admin/settings/logo", {
+      body: encoded.body,
+      headers: { ...admin, "content-type": encoded.contentType },
+    });
+    expect(r.status).toBe(400);
+    expect((r.json as { detail: string }).detail).toContain("active content");
+  });
+
   it("refuses a type that is not an image", async () => {
     const { body, contentType } = multipart("payload.html", "text/html", "<script>alert(1)</script>");
     const r = await client.request("POST", "/api/v1/admin/settings/logo", {
