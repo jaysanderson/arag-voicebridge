@@ -1277,22 +1277,38 @@ function wireIndex() {
       else a.removeAttribute("aria-current");
     }
   };
-  const observer = new IntersectionObserver(
-    (entries) => {
-      const hit = entries
-        .filter((e) => e.isIntersecting)
-        .sort((a, b) => a.boundingClientRect.top - b.boundingClientRect.top)[0];
-      if (hit) mark(hit.target.id);
-    },
-    { rootMargin: "-60px 0px -70% 0px", threshold: 0 },
-  );
-  for (const s of $$(".vb-set-section")) observer.observe(s);
+  /**
+   * Which section is the reader in? Decided from geometry, not from whichever entry the observer
+   * happened to report: a section taller than the viewport stops producing entries while you are
+   * still inside it, which left the index pointing at the section above.
+   */
+  const pick = () => {
+    const line = 140; // just below the sticky index
+    let current = SECTIONS[0].id;
+    for (const el of $$(".vb-set-section")) {
+      if (el.getBoundingClientRect().top <= line) current = el.id;
+    }
+    mark(current);
+  };
+  let queued = false;
+  const onScroll = () => {
+    if (queued) return;
+    queued = true;
+    requestAnimationFrame(() => {
+      queued = false;
+      pick();
+    });
+  };
+  window.addEventListener("scroll", onScroll, { passive: true });
+  window.addEventListener("resize", onScroll, { passive: true });
   mark(location.hash.slice(1) || SECTIONS[0].id);
   window.addEventListener("hashchange", () => {
     mark(location.hash.slice(1));
     scrollToHash();
   });
   scrollToHash();
+  // After the jump, geometry is the authority again.
+  requestAnimationFrame(pick);
 }
 
 function scrollToHash() {

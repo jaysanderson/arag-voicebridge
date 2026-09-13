@@ -573,3 +573,26 @@ test.describe("connection", () => {
     expect(problems).toEqual([]);
   });
 });
+
+test.describe("the section index", () => {
+  test("marks the section the reader is actually in", async ({ page }) => {
+    await unlock(page);
+    await expect(page.locator(".vb-set-section").first()).toBeVisible({ timeout: 20_000 });
+    for (const id of ["connection", "branding", "limits", "elevenlabs", "api-keys", "retention"]) {
+      // Put the section's heading just under the sticky index, the way a reader scrolling would.
+      await page.evaluate((sel) => {
+        const el = document.querySelector(sel);
+        if (el) {
+          window.scrollTo({
+            top: window.scrollY + el.getBoundingClientRect().top - 100,
+            behavior: "instant",
+          });
+        }
+      }, `#${id}`);
+      await page.waitForTimeout(200);
+      // A section taller than the viewport stops producing observer entries while you are still
+      // inside it; the index is decided from geometry so it cannot drift a section behind.
+      await expect(page.locator("[data-jump][aria-current]")).toHaveAttribute("data-jump", id);
+    }
+  });
+});
