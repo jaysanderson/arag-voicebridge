@@ -22,7 +22,8 @@
 // agent is configured from the product (V-28), so the panel that compares this deployment against
 // ElevenLabs is shown honestly reporting that no key is set here; and the in-product API explorer
 // closes the loop — every operation the workspace uses, callable by the viewer's own application.
-import { existsSync, mkdirSync, statSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { existsSync, mkdirSync, renameSync, statSync, unlinkSync } from "node:fs";
 import { expect, type Page, test } from "@playwright/test";
 
 const OUT = "showcase/out";
@@ -102,30 +103,126 @@ async function shootClear(page: Page, locator: ReturnType<Page["locator"]>, path
   }
 }
 
+/**
+ * Put the recorded video back on a real-time clock.
+ *
+ * Playwright's screencast writes frames with a slightly stretched timeline: a take measured at
+ * 167.3s of wall time came back as a 171.6s file, so everything in it drifted later and later
+ * against the clock this spec prints — about +0.2s at the first cue and +4.0s by the last one.
+ * That is exactly the failure this file exists to avoid: a narration cue landing seconds before
+ * the picture it describes. Measured, not assumed — the drift was found by matching the stills
+ * back to the frames they were taken from.
+ *
+ * The frames themselves are fine; only their timestamps are wrong, so `-itsscale` with a stream
+ * copy fixes it without re-encoding a single frame. `wallSec` is measured from the start of the
+ * test body to the moment the page is closed, which is a few hundred milliseconds inside the
+ * recording at each end — that residual is a constant, not a drift, and is under half a second
+ * across a three-minute take.
+ *
+ * Returns null when ffprobe/ffmpeg are not on PATH; the recording is still usable then, so this
+ * reports rather than fails, and the printed timeline says which of the two it is.
+ */
+function retimeToRealTime(path: string, wallSec: number): { from: number; to: number } | null {
+  let encoded = NaN;
+  try {
+    encoded = Number(
+      execFileSync(
+        "ffprobe",
+        ["-v", "error", "-show_entries", "format=duration", "-of", "default=nw=1:nk=1", path],
+        { encoding: "utf8" },
+      ).trim(),
+    );
+  } catch {
+    return null;
+  }
+  if (!Number.isFinite(encoded) || encoded <= 0) return null;
+  const scale = wallSec / encoded;
+  // A scale this far from 1 means the measurement, not the recorder, is wrong — leave the file be.
+  if (!(scale > 0.8 && scale < 1.25)) return null;
+  if (Math.abs(scale - 1) < 0.002) return { from: encoded, to: encoded };
+  const tmp = `${path}.retimed.webm`;
+  try {
+    execFileSync("ffmpeg", [
+      "-v",
+      "error",
+      "-itsscale",
+      scale.toFixed(6),
+      "-i",
+      path,
+      "-c",
+      "copy",
+      "-y",
+      tmp,
+    ]);
+  } catch {
+    if (existsSync(tmp)) unlinkSync(tmp);
+    return null;
+  }
+  renameSync(tmp, path);
+  return { from: encoded, to: encoded * scale };
+}
+
 test.describe("VoiceBridge showcase", () => {
   test("showcase walkthrough", async ({ page, request }) => {
     test.setTimeout(420_000);
     mkdirSync(OUT, { recursive: true });
-    const startedAt = Date.now();
+    const bootAt = Date.now();
+    let startedAt = bootAt;
 
-    // When each still was actually taken. SCRIPT.md quotes timestamps for every beat, and a beat
-    // that waits on real UI state cannot be timed by adding up the `beat()` calls — so the run
-    // prints its own timeline at the end and SCRIPT.md is re-timed from that rather than guessed.
-    const timeline: string[] = [];
-    const mark = (label: string) => timeline.push(`${clock((Date.now() - startedAt) / 1000)}  ${label}`);
+    // Two timelines, because SCRIPT.md needs two different moments and conflating them is what
+    // put the narration out of step with the picture.
+    //
+    // `enter()` is when a beat's screen is *ready* — the assertions that prove the new state have
+    // passed, so what the narration is about to describe is on camera. That is a section's start
+    // time in SCRIPT.md.
+    //
+    // `mark()` is when the still was taken, which is deliberately later: a beat holds for several
+    // seconds so the frame is readable before it is captured. Timing a section from the previous
+    // beat's still — which is what this file used to print — started every cue 3 to 4.5 seconds
+    // before its screen existed. The golden-set beat showed it worst: the narration said "all ten
+    // pass, so the gate opens" while the panel still read "Nothing has run in this session",
+    // because the run takes about three seconds to come back.
+    const beats: string[] = [];
+    const shots: string[] = [];
+    const since = () => (Date.now() - startedAt) / 1000;
+    const enter = (label: string) => beats.push(`${clock(since())}  ${label}`);
+    const mark = (label: string) => shots.push(`${clock(since())}  ${label}`);
 
     // ── the problem ─────────────────────────────────────────────────────────────
     // Live is the default screen. A fresh browser sees the first-run banner rather than an empty
     // workspace — that banner carries the customer promise almost verbatim, so it is the opening
     // frame rather than something to skip past.
-    await page.goto("/");
-    await page.evaluate(() => localStorage.clear());
-    await page.reload();
+    //
+    // One navigation, not two. Clearing localStorage after the first load and reloading meant the
+    // recording opened on the workspace booting twice, so the take began on a blank page. An init
+    // script runs before any page script on the very first document, so the first thing the video
+    // shows is the finished first-run screen. The sessionStorage guard keeps it to that one
+    // document — later navigations in this take must not lose the workspace's own state.
+    await page.addInitScript(() => {
+      if (!sessionStorage.getItem("vb.showcase.cleared")) {
+        localStorage.clear();
+        sessionStorage.setItem("vb.showcase.cleared", "1");
+      }
+    });
+    await page.goto("/", { waitUntil: "domcontentloaded" });
     await expect(page.locator("#vbOnboard")).toBeVisible();
     await expect(page.locator("#vbOnboard")).toContainText("The right answer, while you are still talking");
     await expect(page.locator("#vbOnboard")).toContainText("It never speaks");
     await expect(page.locator("#vbSessionChip")).toHaveText("not started");
-    await beat(page, 7000);
+    // The whole screen, not just the banner: the brief and session cards below it paint a moment
+    // later, and starting the clock before they do would put the first seconds of the take on a
+    // half-drawn page.
+    await expect(page.locator(".vb-brief-card")).toBeVisible();
+    await expect(page.locator("#vbSessionCard")).toContainText("No session yet");
+
+    // Everything SCRIPT.md quotes is measured from here: the first frame that shows the product.
+    // The video begins a few hundred milliseconds earlier, at the blank page this navigation
+    // replaces; the run prints that lead-in at the end so it can be checked rather than assumed.
+    const firstPaintAt = Date.now();
+    const paintLeadIn = (firstPaintAt - startedAt) / 1000;
+    startedAt = firstPaintAt;
+    enter("The problem");
+    await beat(page, 6500);
     await page.screenshot({ path: `${OUT}/01-live-first-run.png` });
     mark("01 live, first run");
 
@@ -133,6 +230,7 @@ test.describe("VoiceBridge showcase", () => {
     const briefCard = page.locator(".vb-brief-card");
     await page.click("#vbSampleOnboard");
     await expect(page.locator("#vbSessionChip")).toHaveText("listening", { timeout: 60_000 });
+    enter("Play the sample conversation, and watch the brief evolve");
 
     // First real state: the brief has said something grounded, with a citation under it.
     await expect(page.locator("#vbSources .arag-cite").first()).toBeVisible({ timeout: 45_000 });
@@ -160,6 +258,7 @@ test.describe("VoiceBridge showcase", () => {
     // ── the transcript and the session's own numbers ────────────────────────────
     const transcriptCard = cardAround(page, "#vbTranscript");
     await expect(transcriptCard).toContainText("machine shop");
+    enter("The transcript and the session's own numbers");
     await beat(page, 6000);
     await shootClear(page, transcriptCard, `${OUT}/04-transcript.png`);
     mark("04 transcript");
@@ -179,6 +278,7 @@ test.describe("VoiceBridge showcase", () => {
     await page.click("#vbEnd");
     await expect(page.locator("#vbSessionChip")).toHaveText("ended", { timeout: 30_000 });
     await expect(page.locator("#vbSessionBody")).toContainText("Open in Conversations", { timeout: 30_000 });
+    enter("End the call, then find it again in Conversations");
     await beat(page, 2500);
 
     await page.click('.arag-railnav a:has-text("Conversations")');
@@ -223,6 +323,7 @@ test.describe("VoiceBridge showcase", () => {
     await expect(page.locator("h1")).toHaveText("Knowledge");
     await expect(page.locator("#kbCard")).toContainText("Knowledge Box", { timeout: 30_000 });
     await expect(page.locator("#kbCard")).toContainText("connected");
+    enter("Knowledge: what it is grounded in, a cited answer, and the pipeline behind it");
     await beat(page, 5500);
     await page.locator("#kbCard").screenshot({ path: `${OUT}/08-knowledge-box.png` });
     mark("08 knowledge box");
@@ -262,11 +363,24 @@ test.describe("VoiceBridge showcase", () => {
     // already shows a prior result on load. Running it again is still the real journey — the same
     // ten questions, through the same pipeline, right now — the gate just may not start "closed".
     const goldenSection = cardAround(page, "#kbGoldenTable");
+    // Put the card on camera *before* pressing the button. The click alone only scrolls the button
+    // itself into view, which left the run happening against a card whose body was out of frame —
+    // the take spent this beat looking at "Nothing has run in this session" while the narration
+    // said the opposite.
+    await goldenSection.evaluate((el) => el.scrollIntoView({ block: "start" }));
+    await expect(page.locator("#kbGoldenTable")).toContainText("Nothing has run in this session");
+    await beat(page, 1600);
     await page.click("#kbRunGolden");
+    // The job is real: posted, run through the same pipeline a live turn uses, and streamed back
+    // over SSE. That takes a few seconds, and they are visible ones — the chip goes to "running"
+    // and the timeline fills in — so they belong to the beat before this one, not to a narration
+    // cue that is already claiming the gate is open.
     await expect(page.locator("#kbGoldenChip")).toHaveText("gate open", { timeout: 90_000 });
     await expect(page.locator("#kbGoldenTable tbody tr")).toHaveCount(10);
     await expect(page.locator("#kbGoldenRun")).toContainText("10/10 passed");
-    await beat(page, 7500);
+    // Only now is the thing the narration describes on screen.
+    enter("The quality gate: the golden set, live");
+    await beat(page, 7000);
     await shootClear(page, goldenSection, `${OUT}/11-knowledge-golden-gate-open.png`);
     mark("11 golden set, gate open");
 
@@ -288,6 +402,7 @@ test.describe("VoiceBridge showcase", () => {
     await page.selectOption("#qOutcome", "guard");
     await expect(page.locator("#qTable tbody")).toContainText("redacted (guard trip)", { timeout: 30_000 });
     await expect(page.locator("#qTable tbody")).not.toContainText("Ignore all previous instructions");
+    enter("Quality: the numbers, and a guard trip redacted");
     await beat(page, 7500);
     await page.screenshot({ path: `${OUT}/12-quality.png`, fullPage: true });
     mark("12 quality");
@@ -299,6 +414,7 @@ test.describe("VoiceBridge showcase", () => {
     await expect(page.locator(".arag-app")).toBeVisible({ timeout: 30_000 });
     await expect(page.locator("h1")).toHaveText("Overview");
     await expect(page.locator("#ovStats")).toContainText("Knowledge Box calls", { timeout: 30_000 });
+    enter("Into the Operator panel");
     await beat(page, 6500);
     await page.screenshot({ path: `${OUT}/13-admin-overview.png`, fullPage: true });
     mark("13 operator, overview");
@@ -335,6 +451,7 @@ test.describe("VoiceBridge showcase", () => {
     // worth watching.
     await expect(page.locator("[data-locked]").first()).toBeVisible();
     await expect(page.locator("form[data-group]")).toHaveCount(0);
+    enter("Settings, read-only until it is unlocked");
     await beat(page, 6500);
     await page.screenshot({ path: `${OUT}/15-settings-read-only.png` });
     mark("15 settings, read-only");
@@ -344,6 +461,7 @@ test.describe("VoiceBridge showcase", () => {
     const brandingForm = page.locator('form[data-group="branding"]');
     await expect(brandingForm).toBeVisible({ timeout: 30_000 });
     await expect(page.locator("#stSignIn")).toHaveCount(0);
+    enter("Rebrand it while you watch");
     await beat(page, 1500);
 
     // ── rebrand it while you watch ──────────────────────────────────────────────
@@ -402,6 +520,7 @@ test.describe("VoiceBridge showcase", () => {
     // No key on this deployment, so every capability reports itself unavailable. That is the
     // honest frame and the one this recording keeps.
     await expect(capabilities).toContainText("not configured");
+    enter("The voice agent is configured from the product");
     await beat(page, 5000);
     await shootClear(page, capabilities, `${OUT}/18-settings-elevenlabs.png`);
     mark("18 ElevenLabs integration");
@@ -431,6 +550,7 @@ test.describe("VoiceBridge showcase", () => {
     await expect(page.locator("#apiCount")).toHaveText(/^\d+ operations$/, { timeout: 30_000 });
     await expect(page.locator(".vb-op-group").first()).toBeVisible();
     expect(await page.locator("[data-op]").count()).toBeGreaterThan(20);
+    enter("The API explorer: everything the workspace does, callable");
     await beat(page, 5500);
     await page.screenshot({ path: `${OUT}/20-api-explorer.png` });
     mark("20 API explorer, every operation");
@@ -467,6 +587,8 @@ test.describe("VoiceBridge showcase", () => {
     // safety net on top of that: if a screencast is ever lost to machine load on a long take, the
     // run fails loudly on this line instead of silently shipping an empty video directory.
     const video = page.video();
+    // The recording ends here, so this is the far end of the span the video covers.
+    const closedAt = Date.now();
     await page.close();
     if (video) await video.saveAs(`${OUT}/showcase.webm`);
     expect(existsSync(`${OUT}/showcase.webm`), "the walkthrough video was not recorded").toBe(true);
@@ -487,8 +609,21 @@ test.describe("VoiceBridge showcase", () => {
         "re-run when the machine is quieter",
     ).toBeGreaterThan(35);
 
+    const retimed = retimeToRealTime(`${OUT}/showcase.webm`, (closedAt - bootAt) / 1000);
+    const retimeNote = retimed
+      ? retimed.from === retimed.to
+        ? "video already on a real-time clock; times below are video times."
+        : `video retimed ${retimed.from.toFixed(2)}s → ${retimed.to.toFixed(2)}s ` +
+          "(Playwright writes a stretched timeline); times below are video times."
+      : "ffprobe/ffmpeg not found, so the video keeps Playwright's stretched timeline — " +
+        "times below run early against it by up to a few seconds.";
+
     console.log(
-      `\nshowcase timeline (${clock(elapsedSec)} total) — SCRIPT.md is timed from this:\n${timeline.join("\n")}\n`,
+      `\nshowcase run — ${clock(elapsedSec)} from the first painted frame, ` +
+        `${paintLeadIn.toFixed(2)}s of blank page before it.\n${retimeNote}\n\n` +
+        `SECTION STARTS (SCRIPT.md headings are these — each is when the beat's screen was ready):\n` +
+        `${beats.join("\n")}\n\n` +
+        `STILLS (SCRIPT.md quotes these against each screenshot):\n${shots.join("\n")}\n`,
     );
   });
 });

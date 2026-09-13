@@ -4,9 +4,14 @@ Target running time: **2:48**. Recorded by `showcase/record.spec.ts` against the
 (`ARAG_MOCK=1`, prospect `progress`) — no credentials required. The screen is the rebuilt
 workspace: the Live, Conversations, Knowledge, Quality, Settings and API sections at `/`, and the
 Operator panel at `/admin/`, all at 1280×800. The timestamps below are taken from a real recording,
-not estimated — the spec prints the moment each still was captured and this file is re-timed from
-that printout — but they still drift a little between runs, because the spec paces itself off real
-UI state (a version number moving forward, a chip changing, text appearing) rather than the clock.
+not estimated. The spec prints two timelines and this file is re-timed from them: each section
+heading below is the moment that section's screen was *ready* — the assertions proving the new
+state have passed — and each screenshot time is when that still was actually captured, several
+seconds into the beat. The clock starts at the first painted frame, and the spec puts the recording
+back on a real-time clock before it finishes (Playwright's screencast writes a slightly stretched
+timeline), so these are video times. They still drift a little between runs, because the spec paces
+itself off real UI state (a version number moving forward, a chip changing, text appearing) rather
+than the clock.
 
 VoiceBridge's hero capability is real-time listening: a live conversation streamed in, one
 grounded brief kept current throughout the call. That leads the showcase. A one-off question, the
@@ -33,7 +38,7 @@ what it will not.
 
 ---
 
-## 00:07–00:29 — Play the sample conversation, and watch the brief evolve
+## 00:07–00:28 — Play the sample conversation, and watch the brief evolve
 
 **On screen:** press **Play sample conversation** from the banner. A scripted nine-line discovery
 call feeds in, roughly one line every 1.4 seconds. Within a few lines the brief on the left fills
@@ -50,13 +55,13 @@ citations have accumulated underneath.
 > titanium and budget. Every claim in it is grounded, and the sources are listed right there,
 > building up underneath as the call goes on."
 
-**Screenshots:** `02-brief-first-citation.png` (00:17 — the brief's first grounded version, with
-its first citation), `03-brief-evolved.png` (00:29 — a later version, after the whole sample call
+**Screenshots:** `02-brief-first-citation.png` (00:16 — the brief's first grounded version, with
+its first citation), `03-brief-evolved.png` (00:28 — a later version, after the whole sample call
 has played through)
 
 ---
 
-## 00:29–00:41 — The transcript and the session's own numbers
+## 00:28–00:40 — The transcript and the session's own numbers
 
 **On screen:** alongside the brief, the full transcript of the scripted call, caller and agent
 lines labelled. The session card's own numbers: turns heard, brief refreshes, how many were
@@ -68,11 +73,11 @@ skipped by the throttle, and the latency of the last refresh.
 > Knowledge Box that is a handful of milliseconds — against a real one, expect a few seconds, which
 > is still comfortable against a caller speaking for eight to fifteen seconds a turn."
 
-**Screenshots:** `04-transcript.png` (00:35), `05-session-stats.png` (00:41)
+**Screenshots:** `04-transcript.png` (00:34), `05-session-stats.png` (00:40)
 
 ---
 
-## 00:41–01:00 — End the call, then find it again in Conversations
+## 00:40–00:59 — End the call, then find it again in Conversations
 
 **On screen:** **End and save**. The session card confirms the brief is kept and offers to open it
 in Conversations. Switch to **Conversations**, search for something the caller actually said —
@@ -86,12 +91,12 @@ it got there, the full transcript, and an export link.
 > full, and — scrolling down — every version the brief passed through on the way there, oldest at
 > the bottom, each one timestamped and timed."
 
-**Screenshots:** `06-conversation-brief.png` (00:53 — the drawer's final brief and citations),
-`07-conversation-evolution.png` (01:00 — the same drawer, scrolled to "How the brief evolved")
+**Screenshots:** `06-conversation-brief.png` (00:52 — the drawer's final brief and citations),
+`07-conversation-evolution.png` (00:59 — the same drawer, scrolled to "How the brief evolved")
 
 ---
 
-## 01:00–01:19 — Knowledge: what it is grounded in, a cited answer, and the pipeline behind it
+## 00:59–01:20 — Knowledge: what it is grounded in, a cited answer, and the pipeline behind it
 
 **On screen:** **Knowledge**. Which Knowledge Box this prospect is grounded in, honestly marked as
 sample content on this deployment. The Ask tester runs the same pipeline a live turn does: ask it
@@ -107,17 +112,20 @@ and it hands off with the prospect's own handoff line rather than guessing.
 > the output guard. Ask it something it knows, and the answer carries a citation. Ask it something
 > it does not, and it hands off — a fixed rule, not a judgement call."
 
-**Screenshots:** `08-knowledge-box.png` (01:06), `09-knowledge-ask-grounded.png` (01:13),
-`10-knowledge-ask-handoff.png` (01:19)
+**Screenshots:** `08-knowledge-box.png` (01:05), `09-knowledge-ask-grounded.png` (01:12),
+`10-knowledge-ask-handoff.png` (01:18)
 
 ---
 
-## 01:19–01:27 — The quality gate: the golden set, live
+## 01:20–01:28 — The quality gate: the golden set, live
 
-**On screen:** press **Run golden set**. Ten questions — seven that should answer, three that
-should hand off — run through the exact same pipeline, right now. Against the mock corpus the run
-finishes in single-digit milliseconds per question; the chip settles on **"gate open"** and the
-table fills in, ten out of ten passed.
+**On screen:** the golden-set card is brought into frame first, reading *"Nothing has run in this
+session"*, and held there for a beat. Then **Run golden set** is pressed. Ten questions — seven
+that should answer, three that should hand off — are posted and run through the exact same pipeline
+a live turn uses, and the results stream back over the card's own event stream: the chip goes to
+*running*, then settles on **"gate open"**, and the table fills in question by question, ten out of
+ten passed. The narration below starts on the settled gate, not on the press — the run itself takes
+a few real seconds, and they are the point.
 
 **Voice-over:**
 > "Before a prospect is trusted to answer, it has to clear this gate: the same ten questions, run
@@ -129,7 +137,7 @@ table fills in, ten out of ten passed.
 
 ---
 
-## 01:27–01:35 — Quality: the numbers, and a guard trip redacted
+## 01:28–01:35 — Quality: the numbers, and a guard trip redacted
 
 **On screen:** **Quality**. The metrics strip — turns in the window, latency percentiles, handoff
 rate, citation coverage, guard-trip rate. Filtered to guard trips, the turn log shows a row whose
@@ -145,7 +153,7 @@ rather than the text itself.
 
 ---
 
-## 01:35–01:48 — Into the Operator panel
+## 01:35–01:49 — Into the Operator panel
 
 **On screen:** sign in at **/admin/** with the deployment's admin token. Overview reports Knowledge
 Box call counts and store sizes. Switching to **Listen sessions** and opening this exact call shows
@@ -157,11 +165,11 @@ latency.
 > It sees the same session Conversations showed, but from the operator's side — every version the
 > brief passed through, and exactly how long each refresh took to produce."
 
-**Screenshots:** `13-admin-overview.png` (01:42), `14-admin-session-brief-history.png` (01:48)
+**Screenshots:** `13-admin-overview.png` (01:42), `14-admin-session-brief-history.png` (01:49)
 
 ---
 
-## 01:48–01:55 — Settings: read-only until it is unlocked
+## 01:49–01:55 — Settings: read-only until it is unlocked
 
 **On screen:** **Settings**. The connection's real health is on the page for anyone — connected,
 answering from the mock Knowledge Box — but every group of values is withheld behind a single
@@ -178,7 +186,7 @@ token that opened the Operator panel unlocks the forms here, in place.
 
 ---
 
-## 01:55–02:17 — Rebrand it while you watch
+## 01:55–02:18 — Rebrand it while you watch
 
 **On screen:** unlock, and every group becomes a form. Type a partner's product name into
 **Branding** and the preview beside it repaints on the keystroke — new name, "including unsaved
@@ -196,11 +204,11 @@ its environment variables say.
 > the store, resetting the group puts the deployment straight back."
 
 **Screenshots:** `16-settings-brand-preview.png` (02:03 — the preview changed, the rail not yet),
-`17-settings-brand-live.png` (02:11 — saved, and the rail repainted)
+`17-settings-brand-live.png` (02:12 — saved, and the rail repainted)
 
 ---
 
-## 02:17–02:29 — The voice agent is configured from the product
+## 02:18–02:30 — The voice agent is configured from the product
 
 **On screen:** the **ElevenLabs** section. Every capability it powers here — Scribe v2 Realtime for
 live transcription, Conversational AI for the voice channel, text-to-speech for the optional spoken
@@ -224,7 +232,7 @@ button is disabled rather than inviting a click that could not go anywhere.
 
 ---
 
-## 02:29–02:48 — The API explorer: everything the workspace does, callable
+## 02:30–02:48 — The API explorer: everything the workspace does, callable
 
 **On screen:** **API**. Every operation this deployment exposes, grouped by tag and built from its
 own OpenAPI document, with the auth each one needs marked on it. Search for the voice turn, open
