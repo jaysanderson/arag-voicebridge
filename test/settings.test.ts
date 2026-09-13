@@ -497,10 +497,11 @@ describe("settings that are read after boot, not at boot", () => {
     metrics.record(turn);
     expect(metrics.size).toBe(3);
 
-    // And growing it takes effect too.
-    voice.turnLogLimit = 8;
-    for (let i = 0; i < 10; i++) metrics.record(turn);
-    expect(metrics.size).toBe(8);
+    // And growing it past the boot-time value takes effect too — the case a cap fixed at
+    // construction would quietly have kept enforcing.
+    voice.turnLogLimit = 40;
+    for (let i = 0; i < 60; i++) metrics.record(turn);
+    expect(metrics.size).toBe(40);
   });
 
   it("a per-route budget reads the current value on every request", () => {

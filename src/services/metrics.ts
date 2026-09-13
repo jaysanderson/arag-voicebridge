@@ -53,10 +53,11 @@ export class MetricsService {
   constructor(deps: { store: Store; cap?: number | (() => number) }) {
     const read = typeof deps.cap === "function" ? deps.cap : () => (deps.cap as number) ?? 500;
     this.cap = read;
-    // The store's own cap is set once at construction and cannot be changed afterwards, so it is
-    // given the boot-time value as a floor and `record()` enforces the current one. Without this
-    // the "turn log size" setting would be editable and inert.
-    this.col = deps.store.collection<TurnRecord>("turns", { cap: Math.max(read(), 1) });
+    // The collection is deliberately created *uncapped*: its own cap is fixed at construction, so
+    // leaving it set to the boot-time value would silently keep evicting at that number however
+    // far the operator raised the setting. `record()` is the only writer, and it trims to the
+    // current limit on every call — so the ring follows the setting in both directions.
+    this.col = deps.store.collection<TurnRecord>("turns");
   }
 
   /** Record one turn. The caller must already have redacted unsafe question text. */
